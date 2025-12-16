@@ -1,17 +1,49 @@
 {
-  "pluginAlias": "ExampleHomebridgePlugin",
+  "pluginAlias": "PhilipsAmbilightTV",
   "pluginType": "platform",
   "singular": true,
   "strictValidation": false,
   "schema": {
     "type": "object",
-    "required": ["name"],
+    "required": ["name","mac","ip","pin"],
     "additionalProperties": false,
     "properties": {
       "name": {
-        "title": "Name",
+        "title": "TV Name",
         "type": "string",
-        "default": "Example Dynamic Platform"
+        "default": "Living Room TV",
+        "description": "The name of the TV as it will appear in HomeKit."
+      },
+      "mac": {
+        "title": "MAC Address",
+        "type": "string",
+        "pattern": "^([A-Fa-f0-9]{2}:){5}[A-Fa-f0-9]{2}$",
+        "placeholder": "AA:BB:CC:DD:EE:FF",
+        "description": "The MAC address of the TV on the local network."
+      },
+      "ip": {
+        "title": "IP Address",
+        "type": "string",
+        "format": "ipv4",
+        "placeholder": "192.168.1.100",
+        "description": "The IP address of the TV on the local network."
+      },
+      "pin": {
+        "title": "PIN Code",
+        "type": "string",
+        "pattern": "^[0-9]{4}$",
+        "placeholder": "1234",
+        "description": "The PIN code provided during the pairing process."
+      },
+      "username": {
+        "title": "Username",
+        "type": "string",
+        "description": "The username for authentication with the TV."
+      },
+      "password": {
+        "title": "Password",
+        "type": "string",
+        "description": "The password for authentication with the TV."
       }
     }
   }
