@@ -23,12 +23,22 @@
     },
     {
       "platform": "PhilipsAmbilightTV",
-      "name": "Philips TV",
-      "ip": "192.168.1.10",
-      "mac": "11:22:33:44:55:66",
-      "pin": "1234",
-      "username": "your_username",
-      "password": "your_password"
+      "devices": [
+        {
+          "name": "Living Room TV",
+          "ip": "192.168.1.10",
+          "mac": "11:22:33:44:55:66",
+          "pin": "1234",
+          "username": "your_username",
+          "password": "your_password"
+        },
+        {
+          "name": "Bedroom TV",
+          "ip": "192.168.1.11",
+          "mac": "22:33:44:55:66:77",
+          "pin": "4321"
+        }
+      ]
     }
   ],
   "accessories": []
