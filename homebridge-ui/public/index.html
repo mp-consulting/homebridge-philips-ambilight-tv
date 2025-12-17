@@ -1,0 +1,65 @@
+<p class="text-center">
+  <img src="https://github.com/homebridge/branding/raw/latest/logos/homebridge-wordmark-logo-vertical.png" width="150">
+</p>
+<div id="app" class="card p-3">
+  <h4 class="text-center">Philips Ambilight TV Configuration</h4>
+  <form id="configForm">
+    <div class="form-group">
+      <label for="name">Name</label>
+      <input type="text" class="form-control" id="name" required placeholder="Philips TV">
+    </div>
+    <div class="form-group">
+      <label for="ip">IP Address</label>
+      <input type="text" class="form-control" id="ip" required placeholder="192.168.1.10">
+    </div>
+    <div class="form-group">
+      <label for="mac">MAC Address</label>
+      <input type="text" class="form-control" id="mac" required placeholder="AA:BB:CC:DD:EE:FF">
+    </div>
+    <div class="form-group">
+      <label for="pin">PIN</label>
+      <input type="text" class="form-control" id="pin" placeholder="1234">
+    </div>
+    <div class="form-group">
+      <label for="username">Username</label>
+      <input type="text" class="form-control" id="username">
+    </div>
+    <div class="form-group">
+      <label for="password">Password</label>
+      <input type="password" class="form-control" id="password">
+    </div>
+  </form>
+</div>
+
+<script>
+  (async () => {
+    // Get the current config
+    const pluginConfig = await homebridge.getPluginConfig();
+
+    if (pluginConfig.length) {
+      const config = pluginConfig[0];
+      document.getElementById('name').value = config.name || 'Philips TV';
+      document.getElementById('ip').value = config.ip || '';
+      document.getElementById('mac').value = config.mac || '';
+      document.getElementById('pin').value = config.pin || '';
+      document.getElementById('username').value = config.username || '';
+      document.getElementById('password').value = config.password || '';
+    } else {
+        document.getElementById('name').value = 'Philips TV';
+    }
+
+    // Watch for changes
+    document.getElementById('configForm').addEventListener('input', async () => {
+      const config = {
+        platform: 'PhilipsAmbilightTV',
+        name: document.getElementById('name').value,
+        ip: document.getElementById('ip').value,
+        mac: document.getElementById('mac').value,
+        pin: document.getElementById('pin').value,
+        username: document.getElementById('username').value,
+        password: document.getElementById('password').value,
+      };
+      await homebridge.updatePluginConfig([config]);
+    });
+  })();
+</script>

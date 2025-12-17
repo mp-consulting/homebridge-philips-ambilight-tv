@@ -1,13 +1,12 @@
 {
   "bridge": {
-    "name": "PluginTemplate",
-    "username": "AA:BB:CC:DD:EE:FF",
+    "name": "PhilipsTVBridge",
+    "username": "0E:33:44:55:66:77",
     "port": 51826,
     "pin": "031-45-154"
   },
   "description": "HomeBridge HTTP Status Control",
   "plugins": [
-    "homebridge-plugin-name",
     "homebridge-config-ui-x"
   ],
   "platforms": [
@@ -23,8 +22,13 @@
       "debug": false
     },
     {
-      "name": "homebridge-plugin-name",
-      "platform": "ExampleHomebridgePlugin"
+      "platform": "PhilipsAmbilightTV",
+      "name": "Philips TV",
+      "ip": "192.168.1.10",
+      "mac": "11:22:33:44:55:66",
+      "pin": "1234",
+      "username": "your_username",
+      "password": "your_password"
     }
   ],
   "accessories": []
