@@ -7,7 +7,7 @@ class UiServer extends HomebridgePluginUiServer {
     this.ready();
   }
 
-  async pair(payload) {
+  async pair() {
     // Implement pairing logic here
     // This is where you would communicate with the TV to start pairing
     return { status: 'success' };
