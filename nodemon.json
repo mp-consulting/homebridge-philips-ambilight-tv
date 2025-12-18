@@ -1,8 +1,9 @@
 {
   "watch": [
-    "src"
+    "src",
+    "homebridge-ui"
   ],
-  "ext": "ts",
+  "ext": "ts,js,json,html,css",
   "ignore": [],
   "exec": "tsc && homebridge -U ./test/hbConfig -D -P .",
   "signal": "SIGTERM",

@@ -1,0 +1,53 @@
+/* Philips Ambilight TV Configuration Styles */
+
+#pairingStatus {
+  text-align: left;
+}
+
+.spinner-border-sm {
+  display: none;
+}
+
+#wizardStep1,
+#wizardStep2,
+#successScreen,
+#editScreen,
+#deviceList,
+#pinInputSection {
+  display: none;
+}
+
+/* Add borders to list groups */
+.list-group {
+  border: 1px solid rgba(0, 0, 0, 0.125);
+  border-radius: 0.25rem;
+}
+
+/* Close button styling */
+.close-btn {
+  position: absolute;
+  background: none;
+  border: none;
+  font-size: 24px;
+  color: #6c757d;
+  cursor: pointer;
+  padding: 5px 10px;
+  line-height: 1;
+  transition: color 0.2s ease;
+  z-index: 10;
+}
+
+.close-btn:hover {
+  color: #dc3545;
+}
+
+.close-btn:focus {
+  outline: none;
+}
+
+/* Make sure parent container has relative positioning */
+#wizardStep1,
+#wizardStep2,
+#editScreen {
+  position: relative;
+}

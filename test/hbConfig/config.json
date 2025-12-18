@@ -20,16 +20,16 @@
             "platform": "config"
         },
         {
+            "platform": "PhilipsAmbilightTV",
             "devices": [
                 {
                     "name": "Living Room TV",
-                    "mac": "11:22:33:44:55:66",
-                    "ip": "192.168.1.10",
+                    "mac": "3c:7a:aa:f3:d5:b0",
+                    "ip": "192.168.2.108",
                     "username": "your_username",
                     "password": "your_password"
                 }
-            ],
-            "platform": "PhilipsAmbilightTV"
+            ]
         }
     ],
     "accessories": []

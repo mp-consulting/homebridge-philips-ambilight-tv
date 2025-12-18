@@ -1,59 +1,94 @@
+<link rel="stylesheet" href="styles.css">
+
 <p class="text-center">
   <img src="https://github.com/homebridge/branding/raw/latest/logos/homebridge-wordmark-logo-vertical.png" width="150">
 </p>
+
 <div id="app" class="card p-3">
   <h4 class="text-center">Philips Ambilight TV Configuration</h4>
-  <form id="configForm">
-    <div class="form-group">
-      <label for="name">Name</label>
-      <input type="text" class="form-control" id="name" required placeholder="Philips TV">
+  <hr>
+  <!-- Wizard Step 1: Device Discovery -->
+  <div id="wizardStep1">
+    <h5>Step 1: Discover Your TV</h5>
+    <p class="text-muted">Click the button below to scan your network for Android TVs.</p>
+    <button id="discoverBtn" class="btn btn-primary btn-block mb-3">
+      <span id="discoverBtnText">Discover TVs</span>
+      <span id="discoverSpinner" class="spinner-border spinner-border-sm ml-2"></span>
+    </button>
+    <div id="deviceList">
+      <div id="deviceListContainer"></div>
     </div>
-    <div class="form-group">
-      <label for="ip">IP Address</label>
-      <input type="text" class="form-control" id="ip" required placeholder="192.168.1.10">
+  </div>
+
+  <!-- Wizard Step 2: Pairing -->
+  <div id="wizardStep2">
+    <h5>Step 2: Pair with Your TV</h5>
+    <div id="pairingStatus" class="alert alert-info mb-3">
+      <strong>Starting pairing process...</strong>
     </div>
-    <div class="form-group">
-      <label for="mac">MAC Address</label>
-      <input type="text" class="form-control" id="mac" required placeholder="AA:BB:CC:DD:EE:FF">
+    <div id="pinInputSection">
+      <div class="alert alert-warning mb-3">
+        <strong>Look at your TV!</strong> A 4-digit PIN code should be displayed on the screen.
+      </div>
+      <div class="form-group">
+        <label for="pinInput"><strong>Enter the PIN from your TV screen:</strong></label>
+        <input type="text" class="form-control form-control-lg text-center" id="pinInput" placeholder="0000"
+          maxlength="4" pattern="[0-9]{4}" inputmode="numeric">
+      </div>
+      <button id="submitPinBtn" class="btn btn-success btn-block btn-lg mb-2">Confirm PIN</button>
     </div>
-    <div class="form-group">
-      <label for="username">Username</label>
-      <input type="text" class="form-control" id="username">
-    </div>
-    <div class="form-group">
-      <label for="password">Password</label>
-      <input type="password" class="form-control" id="password">
-    </div>
-  </form>
+    <button id="cancelPairingBtn" class="btn btn-secondary btn-block">Cancel</button>
+  </div>
+
+  <!-- Success Screen -->
+  <div id="successScreen">
+    <h5>Configured TVs</h5>
+    <ul id="configuredTvList" class="list-group mb-3"></ul>
+    <button id="addAnotherTvBtn" class="btn btn-primary btn-block">Add Another TV</button>
+  </div>
+
+  <!-- Edit TV Screen -->
+  <div id="editScreen">
+    <h5>Edit TV Configuration</h5>
+    <form id="editTvForm" class="needs-validation" novalidate>
+      <div class="mb-3 row">
+        <label for="editTvName" class="col-sm-3 col-form-label">TV Name</label>
+        <div class="col-sm-9">
+          <input type="text" class="form-control" id="editTvName" placeholder="Living Room TV" required>
+          <div class="invalid-feedback">Please provide a TV name.</div>
+        </div>
+      </div>
+      <div class="mb-3 row">
+        <label for="editTvIp" class="col-sm-3 col-form-label">IP Address</label>
+        <div class="col-sm-9">
+          <input type="text" class="form-control" id="editTvIp" placeholder="192.168.1.100" required>
+          <div class="invalid-feedback">Please provide an IP address.</div>
+        </div>
+      </div>
+      <div class="mb-3 row">
+        <label for="editTvMac" class="col-sm-3 col-form-label">MAC Address</label>
+        <div class="col-sm-9">
+          <div class="input-group">
+            <input type="text" class="form-control" id="editTvMac" placeholder="AA:BB:CC:DD:EE:FF" required>
+            <div class="input-group-append">
+              <button class="btn btn-info" type="button" id="getMacBtn">
+                <i class="fas fa-search"></i> Get MAC
+              </button>
+            </div>
+            <div class="invalid-feedback">Please provide a MAC address.</div>
+          </div>
+        </div>
+      </div>
+      <div class="alert alert-info">
+        <small><i class="fas fa-info-circle"></i> You cannot edit username/password. To change authentication, delete this
+          TV and pair it again.</small>
+      </div>
+      <div class="d-flex justify-content-end">
+        <button id="cancelEditBtn" class="btn btn-primary m-1" type="button">Cancel</button>
+        <button id="saveEditBtn" class="btn btn-success m-1" type="submit">Save Changes</button>
+      </div>
+    </form>
+  </div>
 </div>
 
-<script>
-  (async () => {
-    // Get the current config
-    const pluginConfig = await homebridge.getPluginConfig();
-
-    if (pluginConfig.length) {
-      const config = pluginConfig[0];
-      document.getElementById('name').value = config.name || 'Philips TV';
-      document.getElementById('ip').value = config.ip || '';
-      document.getElementById('mac').value = config.mac || '';
-      document.getElementById('username').value = config.username || '';
-      document.getElementById('password').value = config.password || '';
-    } else {
-      document.getElementById('name').value = 'Philips TV';
-    }
-
-    // Watch for changes
-    document.getElementById('configForm').addEventListener('input', async () => {
-      const config = {
-        platform: 'PhilipsAmbilightTV',
-        name: document.getElementById('name').value,
-        ip: document.getElementById('ip').value,
-        mac: document.getElementById('mac').value,
-        username: document.getElementById('username').value,
-        password: document.getElementById('password').value,
-      };
-      await homebridge.updatePluginConfig([config]);
-    });
-  })();
-</script>
+<script src="app.js"></script>
