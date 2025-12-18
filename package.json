@@ -32,7 +32,7 @@
     "build": "rimraf ./dist && tsc",
     "lint": "eslint . --max-warnings=0",
     "prepublishOnly": "npm run lint && npm run build",
-    "watch": "npm run build && nodemon",
+    "watch": "npm run build && npm link && nodemon",
     "start": "npm run build && homebridge -U ./test/hbConfig -D -P ."
   },
   "dependencies": {
@@ -44,7 +44,7 @@
     "@types/node": "^24.10.1",
     "eslint": "^9.39.1",
     "homebridge": "^2.0.0-beta.55",
-    "homebridge-config-ui-x": "^5.12.0",
+    "homebridge-config-ui-x": "^4.6.7",
     "nodemon": "^3.1.11",
     "rimraf": "^6.1.0",
     "ts-node": "^10.9.2",

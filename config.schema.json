@@ -5,7 +5,9 @@
   "strictValidation": false,
   "schema": {
     "type": "object",
-    "required": ["devices"],
+    "required": [
+      "devices"
+    ],
     "additionalProperties": false,
     "properties": {
       "devices": {
@@ -14,7 +16,12 @@
         "minItems": 1,
         "items": {
           "type": "object",
-          "required": ["name","mac","ip","pin"],
+          "required": [
+            "name",
+            "mac",
+            "ip",
+            "pin"
+          ],
           "additionalProperties": false,
           "properties": {
             "name": {
@@ -36,13 +43,6 @@
               "format": "ipv4",
               "placeholder": "192.168.1.100",
               "description": "The IP address of the TV on the local network."
-            },
-            "pin": {
-              "title": "PIN Code",
-              "type": "string",
-              "pattern": "^[0-9]{4}$",
-              "placeholder": "1234",
-              "description": "The PIN code provided during the pairing process."
             },
             "username": {
               "title": "Username",

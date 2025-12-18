@@ -33,7 +33,6 @@ Add the following to your `config.json` file:
             "name": "Philips TV",
             "ip": "192.168.1.10",
             "mac": "AA:BB:CC:DD:EE:FF",
-            "pin": "1234",
             "username": "your_username",
             "password": "your_password"
         }

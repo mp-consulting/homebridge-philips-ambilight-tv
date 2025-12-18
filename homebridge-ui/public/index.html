@@ -17,10 +17,6 @@
       <input type="text" class="form-control" id="mac" required placeholder="AA:BB:CC:DD:EE:FF">
     </div>
     <div class="form-group">
-      <label for="pin">PIN</label>
-      <input type="text" class="form-control" id="pin" placeholder="1234">
-    </div>
-    <div class="form-group">
       <label for="username">Username</label>
       <input type="text" class="form-control" id="username">
     </div>
@@ -41,11 +37,10 @@
       document.getElementById('name').value = config.name || 'Philips TV';
       document.getElementById('ip').value = config.ip || '';
       document.getElementById('mac').value = config.mac || '';
-      document.getElementById('pin').value = config.pin || '';
       document.getElementById('username').value = config.username || '';
       document.getElementById('password').value = config.password || '';
     } else {
-        document.getElementById('name').value = 'Philips TV';
+      document.getElementById('name').value = 'Philips TV';
     }
 
     // Watch for changes
@@ -55,7 +50,6 @@
         name: document.getElementById('name').value,
         ip: document.getElementById('ip').value,
         mac: document.getElementById('mac').value,
-        pin: document.getElementById('pin').value,
         username: document.getElementById('username').value,
         password: document.getElementById('password').value,
       };
