@@ -10,23 +10,25 @@ import type { PhilipsAmbilightTVPlatform } from './platform.js';
 export class PhilipsAmbilightTVAccessory {
   private service: Service;
 
-
-
   constructor(
     private readonly platform: PhilipsAmbilightTVPlatform,
     private readonly accessory: PlatformAccessory,
   ) {
     // set accessory information
+    const deviceContext = (this.accessory.context && (this.accessory.context.device as { name?: string; mac?: string } | undefined)) || undefined;
+    const serial = deviceContext?.mac || 'Unknown Serial';
+
     this.accessory.getService(this.platform.Service.AccessoryInformation)!
       .setCharacteristic(this.platform.Characteristic.Manufacturer, 'Philips')
       .setCharacteristic(this.platform.Characteristic.Model, 'Ambilight TV')
-      .setCharacteristic(this.platform.Characteristic.SerialNumber, accessory.context.device.mac || 'Default-Serial');
+      .setCharacteristic(this.platform.Characteristic.SerialNumber, serial);
 
     // get the Television service if it exists, otherwise create a new Television service
     this.service = this.accessory.getService(this.platform.Service.Television) || this.accessory.addService(this.platform.Service.Television);
 
     // set the service name, this is what is displayed as the default name on the Home app
-    this.service.setCharacteristic(this.platform.Characteristic.Name, accessory.context.device.name || 'Philips TV');
+    const displayName = deviceContext?.name || 'Philips TV';
+    this.service.setCharacteristic(this.platform.Characteristic.Name, displayName);
 
     // set sleep discovery characteristic
     this.service.setCharacteristic(this.platform.Characteristic.SleepDiscoveryMode, this.platform.Characteristic.SleepDiscoveryMode.ALWAYS_DISCOVERABLE);
