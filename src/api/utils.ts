@@ -5,6 +5,7 @@
 import crypto from 'crypto';
 import dgram from 'dgram';
 import https from 'https';
+import fetch, { type RequestInit } from 'node-fetch';
 import { TV_API_PORT, TV_API_VERSION, ERROR_MESSAGES, AUTH_SHARED_KEY, WOL_PORT, WOL_BROADCAST_IP } from './constants.js';
 import type { DeviceInfo, DigestAuthParams, FetchOptions, PairingSession, DiscoveredDevice } from './types.js';
 
@@ -39,7 +40,7 @@ export const fetchWithTimeout = async (
   url: string,
   options: RequestInit & { agent?: https.Agent },
   timeout: number,
-): Promise<Response> => {
+) => {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeout);
 
@@ -47,7 +48,6 @@ export const fetchWithTimeout = async (
     return await fetch(url, {
       ...options,
       signal: controller.signal,
-      // @ts-expect-error - agent is valid for node-fetch
       agent: options.agent || httpsAgent,
     });
   } finally {
@@ -60,7 +60,7 @@ export const postToTv = (
   endpoint: string,
   body: unknown,
   options: FetchOptions = {},
-): Promise<Response> =>
+) =>
   fetchWithTimeout(
     buildUrl(ip, endpoint),
     {
@@ -76,7 +76,7 @@ export const getFromTv = (
   ip: string,
   endpoint: string,
   options: FetchOptions = {},
-): Promise<Response> =>
+) =>
   fetchWithTimeout(
     buildUrl(ip, endpoint),
     {
@@ -162,7 +162,7 @@ export const parseErrorResponse = (status: number, text?: string): string => {
 };
 
 export const handleErrorResponse = async (
-  response: Response,
+  response: Awaited<ReturnType<typeof fetchWithTimeout>>,
   context: string,
 ): Promise<{ success: false; error: string }> => {
   const text = await response.text();

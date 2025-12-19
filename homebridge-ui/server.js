@@ -86,7 +86,7 @@ class UiServer extends HomebridgePluginUiServer {
     try {
       console.log(`[Test] Testing connection to ${ipAddress}`);
 
-      const response = await getFromTv(ipAddress, '/system');
+      const response = await getFromTv(ipAddress, '/system', { timeout: CONNECTION_TIMEOUT });
       console.log(`[Test] Response status: ${response.status}`);
 
       if (response.ok || response.status === 401) {

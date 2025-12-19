@@ -7,8 +7,8 @@ export const TV_API_VERSION = 6;
 
 // Timeouts (in milliseconds)
 export const DISCOVERY_TIMEOUT = 5000;
-export const CONNECTION_TIMEOUT = 5000;
-export const PAIRING_TIMEOUT = 10000;
+export const CONNECTION_TIMEOUT = 15000;
+export const PAIRING_TIMEOUT = 15000;
 
 // Wake-on-LAN
 export const WOL_PORT = 9;

@@ -235,15 +235,14 @@
   };
 
   const startPairing = async (ip, listItem) => {
-    showScreen('wizardStep2');
-
-    const pinSection = $('pinInputSection');
-    const submitBtn = $('submitPinBtn');
-
-    clearPinInputs();
-    submitBtn.disabled = false;
-    submitBtn.textContent = 'Confirm PIN';
-    pinSection.style.display = 'none';
+    // Show loading state on the list item
+    const badge = listItem?.querySelector('.select-badge');
+    const originalBadgeText = badge?.textContent;
+    if (badge) {
+      badge.textContent = 'Connecting...';
+      badge.classList.remove('badge-primary');
+      badge.classList.add('badge-secondary');
+    }
 
     homebridge.toast.info('Initiating pairing with TV...');
 
@@ -251,19 +250,39 @@
       const result = await api.pair(ip, state.currentConfig.name);
 
       if (result.success) {
+        // Only show Step 2 after pairing request succeeds
+        showScreen('wizardStep2');
+
+        const pinSection = $('pinInputSection');
+        const submitBtn = $('submitPinBtn');
+
+        clearPinInputs();
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Confirm PIN';
+
         homebridge.toast.success('Check your TV for the PIN code');
         pinSection.style.display = 'block';
         setTimeout(() => focusFirstPinInput(), 100);
       } else {
         homebridge.toast.error(result.error);
-        showScreen('wizardStep1');
+        // Restore badge
+        if (badge) {
+          badge.textContent = originalBadgeText;
+          badge.classList.remove('badge-secondary');
+          badge.classList.add('badge-primary');
+        }
         if (state.currentConfig.mac && listItem) {
           showWolCollapse(listItem);
         }
       }
     } catch (e) {
       homebridge.toast.error(e.message);
-      showScreen('wizardStep1');
+      // Restore badge
+      if (badge) {
+        badge.textContent = originalBadgeText;
+        badge.classList.remove('badge-secondary');
+        badge.classList.add('badge-primary');
+      }
       if (state.currentConfig.mac && listItem) {
         showWolCollapse(listItem);
       }

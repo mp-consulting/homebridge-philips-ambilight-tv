@@ -10,11 +10,62 @@
 
 #wizardStep1,
 #wizardStep2,
+#wizardStep3,
 #successScreen,
 #editScreen,
 #deviceList,
 #pinInputSection {
   display: none;
+}
+
+/* Dark mode text visibility fixes */
+@media (prefers-color-scheme: dark) {
+  .text-muted {
+    color: #a0a0a0 !important;
+  }
+
+  .device-row .text-muted {
+    color: #b0b0b0 !important;
+  }
+}
+
+/* Homebridge UI dark mode (uses data attribute) */
+[data-theme="dark"] .text-muted,
+.dark-mode .text-muted {
+  color: #a0a0a0 !important;
+}
+
+[data-theme="dark"] .device-row .text-muted,
+.dark-mode .device-row .text-muted {
+  color: #b0b0b0 !important;
+}
+
+/* Badge visibility in dark mode */
+@media (prefers-color-scheme: dark) {
+  .badge-secondary {
+    background-color: #6c757d !important;
+    color: #fff !important;
+  }
+
+  .list-group-item:hover .badge-secondary,
+  .list-group-item-action:hover .badge-secondary {
+    background-color: #5a6268 !important;
+    color: #fff !important;
+  }
+}
+
+[data-theme="dark"] .badge-secondary,
+.dark-mode .badge-secondary {
+  background-color: #6c757d !important;
+  color: #fff !important;
+}
+
+[data-theme="dark"] .list-group-item:hover .badge-secondary,
+[data-theme="dark"] .list-group-item-action:hover .badge-secondary,
+.dark-mode .list-group-item:hover .badge-secondary,
+.dark-mode .list-group-item-action:hover .badge-secondary {
+  background-color: #5a6268 !important;
+  color: #fff !important;
 }
 
 /* Add borders to list groups */

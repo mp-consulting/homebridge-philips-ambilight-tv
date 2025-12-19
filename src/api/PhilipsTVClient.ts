@@ -119,7 +119,7 @@ export class PhilipsTVClient {
   }
 
   private async handleDigestAuth<T>(
-    response: Response,
+    response: Awaited<ReturnType<typeof fetchWithTimeout>>,
     method: 'GET' | 'POST',
     url: string,
     uri: string,
@@ -154,7 +154,7 @@ export class PhilipsTVClient {
     return authResponse.ok ? this.parseJsonResponse<T>(authResponse) : null;
   }
 
-  private async parseJsonResponse<T>(response: Response): Promise<T | null> {
+  private async parseJsonResponse<T>(response: Awaited<ReturnType<typeof fetchWithTimeout>>): Promise<T | null> {
     const text = await response.text();
     return text ? (JSON.parse(text) as T) : null;
   }
