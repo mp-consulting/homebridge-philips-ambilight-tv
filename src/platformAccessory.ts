@@ -1,86 +1,534 @@
 import type { CharacteristicValue, PlatformAccessory, Service } from 'homebridge';
 
 import type { PhilipsAmbilightTVPlatform } from './platform.js';
+import { PhilipsTVClient, HDMI_SOURCES, WATCH_TV_URI } from './api/PhilipsTVClient.js';
+import type { TVDeviceConfig, TVApplication, RemoteKey } from './api/types.js';
+
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+
+/** Default polling interval in milliseconds */
+const DEFAULT_POLLING_INTERVAL_MS = 10000;
+
+/** Maximum number of input sources allowed by HomeKit */
+const MAX_INPUT_SOURCES = 15;
+
+/** Fallback apps when TV is unreachable */
+const FALLBACK_APPS: ReadonlyArray<{ id: string; name: string }> = [
+  { id: 'com.google.android.tvlauncher', name: 'Home' },
+  { id: 'com.google.android.youtube.tv', name: 'YouTube' },
+  { id: 'com.netflix.ninja', name: 'Netflix' },
+  { id: 'com.disney.disneyplus', name: 'Disney Plus' },
+  { id: 'com.amazon.amazonvideo.livingroom', name: 'Prime Video' },
+];
+
+/** HomeKit RemoteKey to Philips TV key mapping */
+const HOMEKIT_TO_TV_KEY: Readonly<Record<number, RemoteKey>> = {
+  0: 'Rewind',
+  1: 'FastForward',
+  2: 'Next',
+  3: 'Previous',
+  4: 'CursorUp',
+  5: 'CursorDown',
+  6: 'CursorLeft',
+  7: 'CursorRight',
+  8: 'Confirm',
+  9: 'Back',
+  10: 'Home',
+  11: 'PlayPause',
+  15: 'Info',
+};
+
+// ============================================================================
+// TYPES
+// ============================================================================
+
+/** Input source type for HomeKit categorization */
+type InputType = 'app' | 'source' | 'channel';
+
+/** Runtime input source with associated HomeKit service */
+interface InputSource {
+  readonly id: string;
+  readonly name: string;
+  readonly type: InputType;
+  readonly identifier: number;
+  readonly service: Service;
+}
+
+/** Persisted input source configuration (stored in accessory context) */
+interface InputSourceConfig {
+  readonly id: string;
+  readonly name: string;
+  readonly configuredName: string;
+  readonly type: InputType;
+  readonly identifier: number;
+  readonly visibility: number;
+}
+
+/** Raw input data before HomeKit service creation */
+interface InputData {
+  readonly id: string;
+  readonly name: string;
+  readonly type: InputType;
+}
+
+// ============================================================================
+// UTILITIES
+// ============================================================================
 
 /**
- * Platform Accessory
- * An instance of this class is created for each accessory your platform registers
- * Each accessory may expose multiple services of different service types.
+ * Sanitize a name for HomeKit compatibility.
+ * HomeKit only allows alphanumeric, space, and apostrophe characters.
  */
+function sanitizeForHomeKit(name: string): string {
+  return name
+    .replace(/\+/g, ' Plus')
+    .replace(/&/g, ' and ')
+    .replace(/@/g, ' at ')
+    .replace(/#/g, ' ')
+    .replace(/[^a-zA-Z0-9 ']/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/^[^a-zA-Z0-9]+/, '')
+    .replace(/[^a-zA-Z0-9]+$/, '')
+    || 'Unknown';
+}
+
+// ============================================================================
+// PHILIPS AMBILIGHT TV ACCESSORY
+// ============================================================================
+
 export class PhilipsAmbilightTVAccessory {
-  private service: Service;
+  private readonly tvService: Service;
+  private readonly tvClient: PhilipsTVClient;
+  private readonly config: TVDeviceConfig;
+
+  private inputSources: InputSource[] = [];
+  private currentInputId = 1;
+  private isPoweredOn = false;
+  private pollingTimer?: ReturnType<typeof setInterval>;
 
   constructor(
     private readonly platform: PhilipsAmbilightTVPlatform,
     private readonly accessory: PlatformAccessory,
   ) {
-    // set accessory information
-    const deviceContext = (this.accessory.context && (this.accessory.context.device as { name?: string; mac?: string } | undefined)) || undefined;
-    const serial = deviceContext?.mac || 'Unknown Serial';
+    this.config = accessory.context.device as TVDeviceConfig;
+    this.tvClient = new PhilipsTVClient(this.config);
 
-    this.accessory.getService(this.platform.Service.AccessoryInformation)!
-      .setCharacteristic(this.platform.Characteristic.Manufacturer, 'Philips')
-      .setCharacteristic(this.platform.Characteristic.Model, 'Ambilight TV')
-      .setCharacteristic(this.platform.Characteristic.SerialNumber, serial);
-
-    // get the Television service if it exists, otherwise create a new Television service
-    this.service = this.accessory.getService(this.platform.Service.Television) || this.accessory.addService(this.platform.Service.Television);
-
-    // set the service name, this is what is displayed as the default name on the Home app
-    const displayName = deviceContext?.name || 'Philips TV';
-    this.service.setCharacteristic(this.platform.Characteristic.Name, displayName);
-
-    // set sleep discovery characteristic
-    this.service.setCharacteristic(this.platform.Characteristic.SleepDiscoveryMode, this.platform.Characteristic.SleepDiscoveryMode.ALWAYS_DISCOVERABLE);
-
-    // handle on / off events using the Active characteristic
-    this.service.getCharacteristic(this.platform.Characteristic.Active)
-      .onSet(this.setActive.bind(this))
-      .onGet(this.getActive.bind(this));
-
-    this.service.setCharacteristic(this.platform.Characteristic.ActiveIdentifier, 1);
-
-    // handle input source changes
-    this.service.getCharacteristic(this.platform.Characteristic.ActiveIdentifier)
-      .onSet(this.setActiveIdentifier.bind(this))
-      .onGet(this.getActiveIdentifier.bind(this));
-
-    // handle remote control input
-    this.service.getCharacteristic(this.platform.Characteristic.RemoteKey)
-      .onSet(this.setRemoteKey.bind(this));
+    this.configureAccessoryInfo();
+    this.tvService = this.configureTelevisionService();
+    this.configureSpeakerService();
+    this.configureInputSources();
+    this.startStatePolling();
   }
 
-  /**
-   * Handle "SET" requests from HomeKit
-   * These are sent when the user changes the state of an accessory, for example, turning on a Light bulb.
-   */
-  async setActive(value: CharacteristicValue) {
-    // implement your own code to turn your device on/off
-    this.platform.log.debug('Set Characteristic Active ->', value);
+  // ==========================================================================
+  // ACCESSORS
+  // ==========================================================================
+
+  private get Service() {
+    return this.platform.Service;
   }
 
-  /**
-   * Handle the "GET" requests from HomeKit
-   * These are sent when HomeKit wants to know the current state of the accessory, for example, checking if a Light bulb is on.
-   */
-  async getActive(): Promise<CharacteristicValue> {
-    // implement your own code to check if the device is on
-    const isActive = false;
-    this.platform.log.debug('Get Characteristic Active ->', isActive);
-    return isActive;
+  private get Characteristic() {
+    return this.platform.Characteristic;
   }
 
-  async setActiveIdentifier(value: CharacteristicValue) {
-    this.platform.log.debug('Set Characteristic Active Identifier -> ', value);
+  // ============================================================================
+  // ACCESSORY CONFIGURATION
+  // ============================================================================
+
+  private configureAccessoryInfo(): void {
+    this.accessory.getService(this.Service.AccessoryInformation)!
+      .setCharacteristic(this.Characteristic.Manufacturer, 'Philips')
+      .setCharacteristic(this.Characteristic.Model, 'Ambilight TV')
+      .setCharacteristic(this.Characteristic.SerialNumber, this.config.mac);
   }
 
-  async getActiveIdentifier(): Promise<CharacteristicValue> {
-    const activeIdentifier = 1;
-    this.platform.log.debug('Get Characteristic Active Identifier -> ', activeIdentifier);
-    return activeIdentifier;
+  private configureTelevisionService(): Service {
+    const service = this.accessory.getService(this.Service.Television)
+      ?? this.accessory.addService(this.Service.Television);
+
+    service
+      .setCharacteristic(this.Characteristic.Name, this.config.name)
+      .setCharacteristic(this.Characteristic.ConfiguredName, this.config.name)
+      .setCharacteristic(this.Characteristic.SleepDiscoveryMode, this.Characteristic.SleepDiscoveryMode.ALWAYS_DISCOVERABLE)
+      .setCharacteristic(this.Characteristic.CurrentMediaState, this.Characteristic.CurrentMediaState.STOP);
+
+    service.getCharacteristic(this.Characteristic.Active)
+      .onGet(() => this.handleGetPower())
+      .onSet((value) => this.handleSetPower(value));
+
+    service.getCharacteristic(this.Characteristic.ActiveIdentifier)
+      .onGet(() => this.handleGetInput())
+      .onSet((value) => this.handleSetInput(value));
+
+    service.getCharacteristic(this.Characteristic.RemoteKey)
+      .onSet((value) => this.handleRemoteKey(value));
+
+    return service;
   }
 
-  async setRemoteKey(value: CharacteristicValue) {
-    this.platform.log.debug('Set Characteristic Remote Key -> ', value);
+  private configureSpeakerService(): void {
+    const service = this.accessory.getService(this.Service.TelevisionSpeaker)
+      ?? this.accessory.addService(this.Service.TelevisionSpeaker);
+
+    service
+      .setCharacteristic(this.Characteristic.Active, this.Characteristic.Active.ACTIVE)
+      .setCharacteristic(this.Characteristic.VolumeControlType, this.Characteristic.VolumeControlType.ABSOLUTE);
+
+    service.getCharacteristic(this.Characteristic.VolumeSelector)
+      .onSet((value) => this.handleVolumeChange(value));
+
+    service.getCharacteristic(this.Characteristic.Mute)
+      .onGet(() => this.handleGetMute())
+      .onSet((value) => this.handleSetMute(value));
+
+    this.tvService.addLinkedService(service);
+  }
+
+  private async configureInputSources(): Promise<void> {
+    const allInputs = await this.fetchAllInputSources();
+    const cachedConfigs = this.getCachedInputConfigs();
+
+    // Remove input sources that no longer exist
+    this.removeStaleInputSources(allInputs);
+
+    allInputs.forEach((input, index) => {
+      const identifier = index + 1;
+      const cached = cachedConfigs.find(c => c.id === input.id);
+      const inputSource = this.restoreOrCreateInputSource(input, identifier, cached);
+      this.inputSources.push(inputSource);
+    });
+
+    // Save current configuration to context
+    this.saveInputConfigs();
+    this.log('info', `Configured ${this.inputSources.length} input sources`);
+  }
+
+  private async fetchAllInputSources(): Promise<InputData[]> {
+    const inputs: InputData[] = [];
+
+    // Add HDMI sources first (Watch TV + HDMI 1-4)
+    inputs.push({ id: WATCH_TV_URI, name: 'Watch TV', type: 'source' });
+    for (const [id, name] of Object.entries(HDMI_SOURCES)) {
+      inputs.push({ id, name, type: 'source' });
+    }
+
+    // Add apps
+    const apps = await this.fetchApplications();
+    for (const app of apps) {
+      // Avoid exceeding max input sources
+      if (inputs.length >= MAX_INPUT_SOURCES) {
+        break;
+      }
+      inputs.push({ ...app, type: 'app' });
+    }
+
+    return inputs.slice(0, MAX_INPUT_SOURCES);
+  }
+
+  private getCachedInputConfigs(): InputSourceConfig[] {
+    return this.accessory.context.inputConfigs || [];
+  }
+
+  private saveInputConfigs(): void {
+    this.accessory.context.inputConfigs = this.inputSources.map(input => ({
+      id: input.id,
+      name: input.name,
+      configuredName: input.service.getCharacteristic(this.Characteristic.ConfiguredName).value as string,
+      type: input.type,
+      identifier: input.identifier,
+      visibility: input.service.getCharacteristic(this.Characteristic.CurrentVisibilityState).value as number,
+    }));
+  }
+
+  private removeStaleInputSources(currentInputs: InputData[]): void {
+    const currentIds = new Set(currentInputs.map(input => input.id));
+
+    this.accessory.services
+      .filter(s => s.UUID === this.Service.InputSource.UUID)
+      .forEach(s => {
+        const subtype = s.subtype;
+        const cachedConfig = this.getCachedInputConfigs().find(c => `input-${c.identifier}` === subtype);
+        if (cachedConfig && !currentIds.has(cachedConfig.id)) {
+          this.accessory.removeService(s);
+        }
+      });
+
+    this.inputSources = [];
+  }
+
+  private restoreOrCreateInputSource(
+    input: InputData,
+    identifier: number,
+    cached?: InputSourceConfig,
+  ): InputSource {
+    const subtype = `input-${identifier}`;
+    const defaultName = sanitizeForHomeKit(input.name);
+
+    // Determine input source type for HomeKit
+    const inputSourceType = input.type === 'source'
+      ? this.Characteristic.InputSourceType.HDMI
+      : this.Characteristic.InputSourceType.APPLICATION;
+
+    // Try to restore existing service or create new one
+    let service = this.accessory.getService(subtype);
+
+    if (service) {
+      this.updateExistingInputSource(service, cached, inputSourceType);
+    } else {
+      service = this.createInputSourceService(subtype, defaultName, identifier, cached, inputSourceType);
+    }
+
+    this.setupInputSourceHandlers(service);
+
+    return { id: input.id, name: defaultName, type: input.type, identifier, service };
+  }
+
+  private updateExistingInputSource(
+    service: Service,
+    cached: InputSourceConfig | undefined,
+    inputSourceType: number,
+  ): void {
+    if (cached) {
+      service
+        .setCharacteristic(this.Characteristic.ConfiguredName, cached.configuredName)
+        .setCharacteristic(this.Characteristic.CurrentVisibilityState, cached.visibility);
+    }
+    service.setCharacteristic(this.Characteristic.InputSourceType, inputSourceType);
+  }
+
+  private createInputSourceService(
+    subtype: string,
+    defaultName: string,
+    identifier: number,
+    cached: InputSourceConfig | undefined,
+    inputSourceType: number,
+  ): Service {
+    const service = this.accessory.addService(this.Service.InputSource, defaultName, subtype);
+
+    const configuredName = cached?.configuredName ?? defaultName;
+    const visibility = cached?.visibility ?? this.Characteristic.CurrentVisibilityState.SHOWN;
+
+    service
+      .setCharacteristic(this.Characteristic.Identifier, identifier)
+      .setCharacteristic(this.Characteristic.ConfiguredName, configuredName)
+      .setCharacteristic(this.Characteristic.Name, defaultName)
+      .setCharacteristic(this.Characteristic.IsConfigured, this.Characteristic.IsConfigured.CONFIGURED)
+      .setCharacteristic(this.Characteristic.InputSourceType, inputSourceType)
+      .setCharacteristic(this.Characteristic.CurrentVisibilityState, visibility);
+
+    this.tvService.addLinkedService(service);
+    return service;
+  }
+
+  private setupInputSourceHandlers(service: Service): void {
+    service.getCharacteristic(this.Characteristic.ConfiguredName)
+      .onSet((value) => {
+        this.log('debug', `Input renamed to: ${value}`);
+        this.saveInputConfigs();
+      });
+
+    service.getCharacteristic(this.Characteristic.TargetVisibilityState)
+      .onSet((value) => {
+        service.setCharacteristic(this.Characteristic.CurrentVisibilityState, value as number);
+        this.log('debug', `Input visibility changed: ${value === 0 ? 'shown' : 'hidden'}`);
+        this.saveInputConfigs();
+      });
+  }
+
+  private async fetchApplications(): Promise<Array<{ id: string; name: string }>> {
+    try {
+      const tvApps = await this.tvClient.getApplications();
+      if (tvApps.length > 0) {
+        return tvApps
+          .filter((app: TVApplication) => app.label && app.id)
+          .slice(0, MAX_INPUT_SOURCES)
+          .map((app: TVApplication) => ({ id: app.id, name: app.label }));
+      }
+    } catch {
+      this.log('debug', 'Failed to fetch apps from TV, using defaults');
+    }
+    return [...FALLBACK_APPS];
+  }
+
+  // ============================================================================
+  // POWER HANDLERS
+  // ============================================================================
+
+  private async handleGetPower(): Promise<CharacteristicValue> {
+    this.log('debug', 'Getting power state');
+
+    try {
+      this.isPoweredOn = await this.tvClient.getPowerState();
+    } catch {
+      this.log('debug', 'Failed to get power state');
+    }
+
+    return this.isPoweredOn
+      ? this.Characteristic.Active.ACTIVE
+      : this.Characteristic.Active.INACTIVE;
+  }
+
+  private async handleSetPower(value: CharacteristicValue): Promise<void> {
+    const shouldBeOn = value === this.Characteristic.Active.ACTIVE;
+    this.log('info', `Setting power to ${shouldBeOn ? 'ON' : 'OFF'}`);
+
+    // Skip if already in desired state
+    if (shouldBeOn === this.isPoweredOn) {
+      this.log('debug', 'Already in desired power state');
+      return;
+    }
+
+    const success = await this.tvClient.setPowerState(shouldBeOn);
+    if (success) {
+      this.isPoweredOn = shouldBeOn;
+      this.log('debug', `Power state changed to ${shouldBeOn ? 'ON' : 'OFF'}`);
+    } else {
+      this.log('warn', 'Failed to change power state');
+    }
+  }
+
+  // ============================================================================
+  // INPUT HANDLERS
+  // ============================================================================
+
+  private async handleGetInput(): Promise<CharacteristicValue> {
+    this.log('debug', 'Getting active input');
+
+    try {
+      const currentApp = await this.tvClient.getCurrentActivity();
+      const inputSource = this.inputSources.find(i => i.id === currentApp);
+      if (inputSource) {
+        this.currentInputId = inputSource.identifier;
+      }
+    } catch {
+      this.log('debug', 'Failed to get current activity');
+    }
+
+    return this.currentInputId;
+  }
+
+  private async handleSetInput(value: CharacteristicValue): Promise<void> {
+    const identifier = value as number;
+    const inputSource = this.inputSources.find(i => i.identifier === identifier);
+
+    if (!inputSource) {
+      this.log('warn', `Unknown input identifier: ${identifier}`);
+      return;
+    }
+
+    this.log('info', `Switching to: ${inputSource.name}`);
+
+    const success = await this.switchInput(inputSource);
+    if (success) {
+      this.currentInputId = identifier;
+    } else {
+      this.log('warn', 'Failed to switch input');
+    }
+  }
+
+  private async switchInput(input: InputSource): Promise<boolean> {
+    switch (input.type) {
+    case 'app':
+      return this.tvClient.launchApplication(input.id);
+    case 'source':
+      return this.tvClient.setSource(input.id);
+    case 'channel':
+      return this.tvClient.setChannel(parseInt(input.id, 10));
+    }
+  }
+
+  // ============================================================================
+  // REMOTE KEY HANDLER
+  // ============================================================================
+
+  private async handleRemoteKey(value: CharacteristicValue): Promise<void> {
+    const tvKey = HOMEKIT_TO_TV_KEY[value as number];
+
+    if (!tvKey) {
+      this.log('debug', `Unknown remote key: ${value}`);
+      return;
+    }
+
+    this.log('debug', `Remote key: ${tvKey}`);
+
+    const success = await this.tvClient.sendKey(tvKey);
+    if (!success) {
+      this.log('warn', 'Failed to send remote key');
+    }
+  }
+
+  // ============================================================================
+  // VOLUME HANDLERS
+  // ============================================================================
+
+  private async handleVolumeChange(value: CharacteristicValue): Promise<void> {
+    const key: RemoteKey = value === 0 ? 'VolumeUp' : 'VolumeDown';
+    this.log('debug', `Volume ${value === 0 ? 'up' : 'down'}`);
+    await this.tvClient.sendKey(key);
+  }
+
+  private async handleGetMute(): Promise<CharacteristicValue> {
+    try {
+      const volume = await this.tvClient.getVolume();
+      return volume?.muted ?? false;
+    } catch {
+      return false;
+    }
+  }
+
+  private async handleSetMute(value: CharacteristicValue): Promise<void> {
+    this.log('debug', `Setting mute to ${value}`);
+    await this.tvClient.setMuted(value as boolean);
+  }
+
+  // ============================================================================
+  // STATE POLLING
+  // ============================================================================
+
+  private startStatePolling(): void {
+    const interval = this.config.pollingInterval ?? DEFAULT_POLLING_INTERVAL_MS;
+
+    this.pollingTimer = setInterval(() => this.pollState(), interval);
+    this.log('debug', `Started polling every ${interval}ms`);
+
+    // Initial poll
+    this.pollState();
+  }
+
+  private async pollState(): Promise<void> {
+    try {
+      const isOn = await this.tvClient.getPowerState();
+      if (isOn !== this.isPoweredOn) {
+        this.isPoweredOn = isOn;
+        this.tvService.updateCharacteristic(
+          this.Characteristic.Active,
+          isOn
+            ? this.Characteristic.Active.ACTIVE
+            : this.Characteristic.Active.INACTIVE,
+        );
+        this.log('debug', `Power state updated: ${isOn ? 'ON' : 'OFF'}`);
+      }
+    } catch {
+      // TV might be off or unreachable - this is expected
+    }
+  }
+
+  // ============================================================================
+  // UTILITIES
+  // ============================================================================
+
+  private log(level: 'debug' | 'info' | 'warn' | 'error', message: string): void {
+    this.platform.log[level](`[${this.config.name}] ${message}`);
+  }
+
+  public cleanup(): void {
+    if (this.pollingTimer) {
+      clearInterval(this.pollingTimer);
+      this.pollingTimer = undefined;
+    }
   }
 }

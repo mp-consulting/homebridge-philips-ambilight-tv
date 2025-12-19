@@ -46,28 +46,43 @@ export class PhilipsAmbilightTVPlatform implements DynamicPlatformPlugin {
   }
 
   discoverDevices() {
-    for (const tv of this.config.devices) {
-      // generate a unique identifier for the accessory based on the TV's MAC address
+    const devices = this.config.devices || [];
+
+    if (!devices.length) {
+      this.log.warn('No devices configured');
+    }
+
+    // Track which UUIDs are still in the config
+    const configuredUUIDs = new Set<string>();
+
+    for (const tv of devices) {
       const uuid = this.api.hap.uuid.generate(PLATFORM_NAME + '-' + tv.mac);
-      // see if an accessory with the same UUID has already been registered and restored from cache
+      configuredUUIDs.add(uuid);
+
       const existingAccessory = this.accessories.get(uuid);
 
-      // if not, register a new accessory
-      if (!existingAccessory) {
+      if (existingAccessory) {
+        // Accessory already exists, update context and re-initialize
+        this.log.info('Restoring existing accessory from cache:', tv.name);
+        existingAccessory.context.device = tv;
+        new PhilipsAmbilightTVAccessory(this, existingAccessory);
+      } else {
+        // Create new accessory
         this.log.info('Adding new accessory:', tv.name);
-
-        // create a new accessory
         const accessory = new this.api.platformAccessory(tv.name, uuid, this.api.hap.Categories.TELEVISION);
-
-        // store a copy of the device object in the `accessory.context`
-        new PhilipsAmbilightTVAccessory(this, accessory);
         accessory.context.device = tv;
-
-        // register the accessory
+        new PhilipsAmbilightTVAccessory(this, accessory);
         this.api.publishExternalAccessories(PLUGIN_NAME, [accessory]);
-
-        // store the accessory in the cache
         this.accessories.set(uuid, accessory);
+      }
+    }
+
+    // Remove accessories that are no longer in the config
+    for (const [uuid, accessory] of this.accessories) {
+      if (!configuredUUIDs.has(uuid)) {
+        this.log.info('Removing accessory no longer in config:', accessory.displayName);
+        this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
+        this.accessories.delete(uuid);
       }
     }
   }

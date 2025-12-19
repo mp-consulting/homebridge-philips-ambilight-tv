@@ -14,7 +14,7 @@ export const PAIRING_TIMEOUT = 10000;
 export const WOL_PORT = 9;
 export const WOL_BROADCAST_IP = '255.255.255.255';
 
-// Philips TV shared secret key for signature verification (from ha-philipsjs)
+// Philips TV shared secret key for signature verification
 export const AUTH_SHARED_KEY = Buffer.from(
   'ZmVay1EQVFOaZhwQ4Kv81ypLAZNczV9sG4KkseXWn1NEk6cXmPKO/MCa9sryslvLCFMnNe4Z4CPXzToowvhHvA==',
   'base64',

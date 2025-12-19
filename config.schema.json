@@ -21,7 +21,8 @@
             "name",
             "mac",
             "ip",
-            "pin"
+            "username",
+            "password"
           ],
           "additionalProperties": false,
           "properties": {
@@ -36,7 +37,7 @@
               "type": "string",
               "pattern": "^([A-Fa-f0-9]{2}:){5}[A-Fa-f0-9]{2}$",
               "placeholder": "AA:BB:CC:DD:EE:FF",
-              "description": "The MAC address of the TV on the local network."
+              "description": "The MAC address of the TV (required for Wake-on-LAN)."
             },
             "ip": {
               "title": "IP Address",
@@ -48,16 +49,113 @@
             "username": {
               "title": "Username",
               "type": "string",
-              "description": "The username for authentication with the TV."
+              "description": "The username obtained during TV pairing."
             },
             "password": {
               "title": "Password",
               "type": "string",
-              "description": "The password for authentication with the TV."
+              "description": "The password (auth key) obtained during TV pairing."
+            },
+            "pollingInterval": {
+              "title": "Polling Interval (ms)",
+              "type": "integer",
+              "default": 10000,
+              "minimum": 1000,
+              "maximum": 60000,
+              "description": "How often to poll the TV for state updates (in milliseconds)."
+            },
+            "wakeOnLanEnabled": {
+              "title": "Wake-on-LAN",
+              "type": "boolean",
+              "default": true,
+              "description": "Enable Wake-on-LAN to turn on the TV from standby."
+            },
+            "inputs": {
+              "title": "Custom Input Sources",
+              "type": "array",
+              "description": "Custom input sources to display in HomeKit. If not specified, apps will be fetched from the TV.",
+              "items": {
+                "type": "object",
+                "required": [
+                  "name",
+                  "type",
+                  "identifier"
+                ],
+                "properties": {
+                  "name": {
+                    "title": "Name",
+                    "type": "string",
+                    "description": "The display name for this input source."
+                  },
+                  "type": {
+                    "title": "Type",
+                    "type": "string",
+                    "enum": [
+                      "app",
+                      "source",
+                      "channel"
+                    ],
+                    "description": "The type of input source."
+                  },
+                  "identifier": {
+                    "title": "Identifier",
+                    "type": "string",
+                    "description": "The app package name, source ID, or channel number."
+                  },
+                  "displayOrder": {
+                    "title": "Display Order",
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "The order in which this input appears in HomeKit."
+                  }
+                }
+              }
             }
           }
         }
       }
     }
-  }
+  },
+  "layout": [
+    {
+      "type": "fieldset",
+      "title": "TV Devices",
+      "expandable": true,
+      "expanded": true,
+      "items": [
+        {
+          "key": "devices",
+          "type": "array",
+          "orderable": true,
+          "buttonText": "Add TV",
+          "items": [
+            "devices[].name",
+            "devices[].ip",
+            "devices[].mac",
+            "devices[].username",
+            "devices[].password",
+            {
+              "key": "devices[].pollingInterval",
+              "description": "Polling interval in milliseconds (default: 10000)"
+            },
+            "devices[].wakeOnLanEnabled",
+            {
+              "key": "devices[].inputs",
+              "type": "array",
+              "title": "Custom Input Sources (Optional)",
+              "expandable": true,
+              "expanded": false,
+              "buttonText": "Add Input",
+              "items": [
+                "devices[].inputs[].name",
+                "devices[].inputs[].type",
+                "devices[].inputs[].identifier",
+                "devices[].inputs[].displayOrder"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
 }
