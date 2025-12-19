@@ -87,6 +87,7 @@
     pair: (ip, deviceName) => homebridge.request('/pair', { ip, deviceName }),
     pairGrant: (ip, pin) => homebridge.request('/pair-grant', { ip, pin }),
     getMac: (ip) => homebridge.request('/get-mac', ip),
+    wakeOnLan: (mac) => homebridge.request('/wake-on-lan', { mac }),
   };
 
   // ============================================================================
@@ -151,26 +152,6 @@
     return li;
   };
 
-  const createDeviceListItem = (device) => {
-    const li = document.createElement('li');
-    li.className = 'list-group-item list-group-item-action';
-    li.style.cursor = 'pointer';
-    li.innerHTML = `
-      <div class="d-flex w-100 justify-content-between align-items-center">
-        <div>
-          <h6 class="mb-1"><i class="fas fa-tv mr-2"></i> ${device.name || 'Unknown Device'}</h6>
-          <small class="text-muted"><i class="fas fa-network-wired mr-1"></i> ${getDeviceIp(device)}</small>
-        </div>
-        <span class="badge badge-primary badge-pill">Select</span>
-      </div>
-    `;
-    li.addEventListener('click', (e) => {
-      e.preventDefault();
-      selectDevice(device);
-    });
-    return li;
-  };
-
   const renderConfiguredTvs = () => {
     const container = $('configuredTvList');
     const noTvsMessage = $('noTvsMessage');
@@ -191,11 +172,58 @@
   // DISCOVERY & PAIRING
   // ============================================================================
 
-  const selectDevice = async (device) => {
+  const setupWolButtons = (listItem) => {
+    const wolBtn = listItem.querySelector('.wol-btn');
+    const retryBtn = listItem.querySelector('.wol-retry-btn');
+
+    wolBtn.onclick = async () => {
+      if (!state.currentConfig.mac) {
+        homebridge.toast.error('No MAC address available for this TV');
+        return;
+      }
+      setButtonLoading(wolBtn, true, 'Sending...');
+      try {
+        const result = await api.wakeOnLan(state.currentConfig.mac);
+        if (result.success) {
+          homebridge.toast.success('Wake-on-LAN packet sent! Wait a few seconds for the TV to wake up.');
+        } else {
+          homebridge.toast.error(result.error);
+        }
+      } catch (e) {
+        homebridge.toast.error('Failed: ' + e.message);
+      } finally {
+        setButtonLoading(wolBtn, false);
+      }
+    };
+
+    retryBtn.onclick = async () => {
+      setButtonLoading(retryBtn, true, 'Retrying...');
+      const collapse = listItem.querySelector('.wol-collapse');
+      if (collapse) {
+        collapse.style.display = 'none';
+      }
+      try {
+        await startPairing(state.currentConfig.ip, listItem);
+      } finally {
+        setButtonLoading(retryBtn, false);
+      }
+    };
+  };
+
+  const showWolCollapse = (listItem) => {
+    const collapse = listItem?.querySelector('.wol-collapse');
+    if (collapse) {
+      collapse.style.display = 'block';
+      setupWolButtons(listItem);
+    }
+  };
+
+  const selectDevice = async (device, listItem) => {
     const ip = getDeviceIp(device);
     state.currentConfig.ip = ip;
     state.currentConfig.name = device.name || 'Philips TV';
 
+    // Get MAC address first (needed for WOL)
     try {
       const result = await api.getMac(ip);
       if (result.success) {
@@ -203,10 +231,10 @@
       }
     } catch (e) { /* MAC is optional */ }
 
-    await startPairing(ip);
+    await startPairing(ip, listItem);
   };
 
-  const startPairing = async (ip) => {
+  const startPairing = async (ip, listItem) => {
     showScreen('wizardStep2');
 
     const pinSection = $('pinInputSection');
@@ -229,11 +257,54 @@
       } else {
         homebridge.toast.error(result.error);
         showScreen('wizardStep1');
+        if (state.currentConfig.mac && listItem) {
+          showWolCollapse(listItem);
+        }
       }
     } catch (e) {
       homebridge.toast.error(e.message);
       showScreen('wizardStep1');
+      if (state.currentConfig.mac && listItem) {
+        showWolCollapse(listItem);
+      }
     }
+  };
+
+  const createDeviceListItem = (device) => {
+    const ip = getDeviceIp(device);
+    const li = document.createElement('li');
+    li.className = 'list-group-item list-group-item-action';
+    li.dataset.ip = ip;
+    li.innerHTML = `
+      <div class="device-row" style="cursor: pointer;">
+        <div class="d-flex w-100 justify-content-between align-items-center">
+          <div>
+            <h6 class="mb-1"><i class="fas fa-tv mr-2"></i> ${device.name || 'Unknown Device'}</h6>
+            <small class="text-muted"><i class="fas fa-network-wired mr-1"></i> ${ip}</small>
+          </div>
+          <span class="badge badge-primary badge-pill select-badge">Select</span>
+        </div>
+      </div>
+      <div class="wol-collapse mt-2" style="display: none;">
+        <div class="alert alert-warning mb-0">
+          <h6 class="alert-heading mb-1"><i class="fas fa-power-off"></i> TV not responding</h6>
+          <p class="mb-2 small">The TV may be in standby mode.</p>
+          <button class="btn btn-warning btn-sm wol-btn" type="button">
+            <i class="fas fa-bolt"></i> Wake TV
+          </button>
+          <button class="btn btn-secondary btn-sm wol-retry-btn" type="button">
+            <i class="fas fa-redo"></i> Retry
+          </button>
+        </div>
+      </div>
+    `;
+
+    li.querySelector('.device-row').addEventListener('click', (e) => {
+      e.preventDefault();
+      selectDevice(device, li);
+    });
+
+    return li;
   };
 
   const handlePinSubmit = async () => {
