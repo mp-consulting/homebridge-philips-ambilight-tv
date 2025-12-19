@@ -8,7 +8,7 @@
   // CONSTANTS & STATE
   // ============================================================================
 
-  const SCREENS = ['wizardStep1', 'wizardStep2', 'successScreen', 'editScreen'];
+  const SCREENS = ['wizardStep1', 'wizardStep2', 'wizardStep3', 'successScreen', 'editScreen'];
   const PLATFORM_NAME = 'PhilipsAmbilightTV';
 
   const state = {
@@ -253,9 +253,7 @@
       if (result.success) {
         state.currentConfig.username = result.username;
         state.currentConfig.password = result.password;
-        await addTv();
-        homebridge.toast.success('TV paired successfully!');
-        showScreen('successScreen');
+        showConfirmScreen();
       } else {
         homebridge.toast.error(result.error);
         setButtonLoading(btn, false, null, 'Confirm PIN');
@@ -307,8 +305,8 @@
     }
   };
 
-  const handleGetMac = async (btn) => {
-    const ip = $('editTvIp').value.trim();
+  const handleGetMac = async (btn, ipInputId, macInputId) => {
+    const ip = $(ipInputId).value.trim();
     if (!ip) {
       homebridge.toast.error('Please enter an IP address first');
       return;
@@ -319,7 +317,7 @@
     try {
       const result = await api.getMac(ip);
       if (result.success) {
-        $('editTvMac').value = result.mac;
+        $(macInputId).value = result.mac;
         homebridge.toast.success('MAC address retrieved');
       } else {
         homebridge.toast.error('Failed: ' + result.error);
@@ -328,6 +326,42 @@
       homebridge.toast.error('Failed: ' + e.message);
     } finally {
       setButtonLoading(btn, false);
+    }
+  };
+
+  // ============================================================================
+  // CONFIRM SCREEN (Step 3)
+  // ============================================================================
+
+  const showConfirmScreen = () => {
+    $('confirmTvName').value = state.currentConfig.name || 'Philips TV';
+    $('confirmTvIp').value = state.currentConfig.ip || '';
+    $('confirmTvMac').value = state.currentConfig.mac || '';
+    showScreen('wizardStep3');
+    $('confirmTvName').focus();
+    $('confirmTvName').select();
+  };
+
+  const handleConfirmSubmit = async (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const form = event.target;
+    if (!form.checkValidity()) {
+      form.classList.add('was-validated');
+      return;
+    }
+
+    state.currentConfig.name = $('confirmTvName').value.trim();
+    state.currentConfig.mac = $('confirmTvMac').value.trim();
+
+    try {
+      await addTv();
+      homebridge.toast.success('TV saved successfully!');
+      form.classList.remove('was-validated');
+      showScreen('successScreen');
+    } catch (e) {
+      homebridge.toast.error('Failed to save: ' + e.message);
     }
   };
 
@@ -421,11 +455,19 @@
   $('cancelEditBtn').addEventListener('click', () => showScreen('successScreen'));
   $('cancelDiscoveryBtn').addEventListener('click', () => showScreen('successScreen'));
 
-  document.addEventListener('click', (e) => {
-    const btn = e.target.closest('#getMacBtn');
-    if (btn && !btn.disabled) {
-      handleGetMac(btn);
-    }
+  // Step 3 confirm screen
+  $('confirmTvForm').addEventListener('submit', handleConfirmSubmit);
+  $('cancelConfirmBtn').addEventListener('click', () => {
+    resetCurrentConfig();
+    showScreen('wizardStep1');
+  });
+
+  // MAC address buttons
+  $('getMacBtn').addEventListener('click', function() {
+    if (!this.disabled) handleGetMac(this, 'editTvIp', 'editTvMac');
+  });
+  $('confirmGetMacBtn').addEventListener('click', function() {
+    if (!this.disabled) handleGetMac(this, 'confirmTvIp', 'confirmTvMac');
   });
 
   // ============================================================================

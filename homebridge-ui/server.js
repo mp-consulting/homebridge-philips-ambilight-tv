@@ -9,7 +9,7 @@ import https from 'https';
 const getMAC = promisify(arp.getMAC);
 
 // Philips TV shared secret key for signature verification
-// This is a known constant from the Philips TV API
+// This is a known constant from the Philips TV API (from ha-philipsjs)
 const AUTH_SHARED_KEY = Buffer.from(
   'ZmVay1EQVFOaZhwQ4Kv81ypLAZNczV9sG4KkseXWn1NEk6cXmPKO/MCa9sryslvLCFMnNe4Z4CPXzToowvhHvA==',
   'base64',
@@ -17,6 +17,7 @@ const AUTH_SHARED_KEY = Buffer.from(
 
 /**
  * Calculate HMAC-SHA1 signature for pairing
+ * Based on ha-philipsjs implementation: base64(binary_digest)
  * @param {Buffer} key - Shared secret key
  * @param {string} timestamp - Timestamp from pair request
  * @param {string} pin - PIN code from TV
@@ -24,7 +25,7 @@ const AUTH_SHARED_KEY = Buffer.from(
  */
 function hmacSignature(key, timestamp, pin) {
   const hmac = crypto.createHmac('sha1', key);
-  hmac.update(timestamp.toString());
+  hmac.update(timestamp);
   hmac.update(pin);
   return hmac.digest('base64');
 }
@@ -117,16 +118,20 @@ class UiServer extends HomebridgePluginUiServer {
       // Generate random device ID
       const deviceId = crypto.randomBytes(8).toString('hex');
 
+      const device = {
+        device_name: deviceName,
+        device_os: 'Android',
+        app_name: 'Homebridge Philips TV',
+        type: 'native',
+        app_id: `app.homebridge.philips.${deviceId}`,
+        id: deviceId,
+      };
+
       const pairRequest = {
-        scope: ['read', 'write', 'control'],
-        device: {
-          device_name: deviceName,
-          device_os: 'Node.js',
-          app_name: 'Homebridge Philips TV',
-          type: 'native',
-          app_id: `app.homebridge.philips.${deviceId}`,
-          id: deviceId,
+        access: {
+          scope: ['read', 'write', 'control'],
         },
+        device: device,
       };
 
       console.log('[Pairing] Sending pairing request to TV...');
@@ -155,11 +160,11 @@ class UiServer extends HomebridgePluginUiServer {
 
       const result = await response.json();
 
-      // Store pairing session
+      // Store pairing session with full device object
       this.pairingSessions.set(ip, {
         auth_key: result.auth_key,
         timestamp: result.timestamp,
-        deviceId: deviceId,
+        device: device,
       });
 
       return {
@@ -193,10 +198,11 @@ class UiServer extends HomebridgePluginUiServer {
 
     try {
       console.log('[PairGrant] Calculating HMAC signature...');
-      // Calculate signature using timestamp and PIN
+      // Calculate signature using shared key, timestamp and PIN
       const signature = hmacSignature(AUTH_SHARED_KEY, session.timestamp.toString(), pin);
       console.log('[PairGrant] Signature calculated');
 
+      // Use exact structure from ha-philipsjs with same device from pair request
       const grantRequest = {
         auth: {
           auth_appId: '1',
@@ -204,14 +210,7 @@ class UiServer extends HomebridgePluginUiServer {
           auth_signature: signature,
           pin: pin,
         },
-        device: {
-          device_name: 'Homebridge',
-          device_os: 'Node.js',
-          app_name: 'Homebridge Philips TV',
-          type: 'native',
-          app_id: `app.homebridge.philips.${session.deviceId}`,
-          id: session.deviceId,
-        },
+        device: session.device,
       };
 
       console.log('[PairGrant] Sending grant request with Digest Auth...');
@@ -235,7 +234,7 @@ class UiServer extends HomebridgePluginUiServer {
         if (wwwAuth && wwwAuth.toLowerCase().startsWith('digest')) {
           // Parse digest challenge
           const digestAuth = this.createDigestAuth(
-            session.deviceId,
+            session.device.id,
             session.auth_key,
             wwwAuth,
             'POST',
@@ -255,8 +254,8 @@ class UiServer extends HomebridgePluginUiServer {
 
           if (!response.ok) {
             const text = await response.text();
+            console.error(`[PairGrant] Grant failed: ${response.status} - ${text}`);
             const errorMessage = parseErrorResponse(response.status, text);
-            console.error(`[PairGrant] Grant failed: ${response.status} - ${errorMessage}`);
             return {
               success: false,
               error: errorMessage,
@@ -278,7 +277,7 @@ class UiServer extends HomebridgePluginUiServer {
 
           return {
             success: true,
-            username: session.deviceId,
+            username: session.device.id,
             password: session.auth_key,
             message: 'Pairing successful!',
           };
@@ -302,7 +301,7 @@ class UiServer extends HomebridgePluginUiServer {
 
       return {
         success: true,
-        username: session.deviceId,
+        username: session.device.id,
         password: session.auth_key,
         message: 'Pairing successful!',
       };
@@ -321,13 +320,14 @@ class UiServer extends HomebridgePluginUiServer {
   createDigestAuth(username, password, wwwAuthHeader, method, uri) {
     // Parse the WWW-Authenticate header
     const authParams = {};
-    const matches = wwwAuthHeader.match(/(\w+)=["']?([^"',]+)["']?/g);
+    // Match key="value" or key=value patterns, handling = inside quoted values
+    const regex = /(\w+)=(?:"([^"]*)"|([^,\s]*))/g;
+    let match;
 
-    if (matches) {
-      matches.forEach(match => {
-        const [key, value] = match.split('=');
-        authParams[key] = value.replace(/["']/g, '');
-      });
+    while ((match = regex.exec(wwwAuthHeader)) !== null) {
+      const key = match[1];
+      const value = match[2] !== undefined ? match[2] : match[3];
+      authParams[key] = value;
     }
 
     const realm = authParams.realm || '';

@@ -66,6 +66,53 @@
     </div>
   </div>
 
+  <!-- Wizard Step 3: Confirm Details -->
+  <div id="wizardStep3" class="container">
+    <div class="row g-2">
+      <div class="col-12">
+        <h5>Step 3: Confirm TV Details</h5>
+        <div class="alert alert-success mb-3">
+          <i class="fas fa-check-circle"></i> Pairing successful! Please review and customize the TV details below.
+        </div>
+        <form id="confirmTvForm" class="needs-validation" novalidate>
+          <div class="mb-3 row">
+            <label for="confirmTvName" class="col-sm-3 col-form-label">TV Name</label>
+            <div class="col-sm-9">
+              <input type="text" class="form-control" id="confirmTvName" placeholder="Living Room TV" required>
+              <div class="invalid-feedback">Please provide a TV name.</div>
+              <small class="form-text text-muted">This name will appear in HomeKit.</small>
+            </div>
+          </div>
+          <div class="mb-3 row">
+            <label for="confirmTvIp" class="col-sm-3 col-form-label">IP Address</label>
+            <div class="col-sm-9">
+              <input type="text" class="form-control" id="confirmTvIp" readonly>
+            </div>
+          </div>
+          <div class="mb-3 row">
+            <label for="confirmTvMac" class="col-sm-3 col-form-label">MAC Address</label>
+            <div class="col-sm-9">
+              <div class="input-group">
+                <input type="text" class="form-control" id="confirmTvMac" placeholder="AA:BB:CC:DD:EE:FF">
+                <button class="btn btn-secondary" type="button" id="confirmGetMacBtn">
+                  <i class="fas fa-search"></i> Get MAC
+                </button>
+              </div>
+              <small class="form-text text-muted">Required for Wake-on-LAN functionality.</small>
+            </div>
+          </div>
+          <hr>
+          <div class="col-12">
+            <button id="saveTvBtn" class="btn btn-success" type="submit">
+              <i class="fas fa-save"></i> Save TV
+            </button>
+            <button id="cancelConfirmBtn" class="btn btn-secondary" type="button">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
   <!-- Success Screen -->
   <div id="successScreen">
     <h5>Configured TVs</h5>
