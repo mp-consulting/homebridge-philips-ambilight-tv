@@ -34,6 +34,46 @@ const httpsAgent = new https.Agent({
   rejectUnauthorized: false,
 });
 
+/**
+ * Parse error response and return user-friendly message
+ * @param {number} status - HTTP status code
+ * @param {string} text - Response text (may contain HTML)
+ * @returns {string} User-friendly error message
+ */
+function parseErrorResponse(status, text) {
+  // Map common HTTP errors to user-friendly messages
+  const errorMessages = {
+    401: 'Invalid PIN code. Please check the PIN on your TV screen and try again.',
+    403: 'Access denied. The TV rejected the pairing request.',
+    404: 'Pairing endpoint not found. Your TV may not support this pairing method.',
+    408: 'Request timeout. The TV took too long to respond.',
+    500: 'TV internal error. Please try again.',
+    503: 'TV is temporarily unavailable. Please try again later.',
+  };
+
+  // Check if we have a specific message for this status
+  if (errorMessages[status]) {
+    return errorMessages[status];
+  }
+
+  // Try to extract meaningful text from HTML response
+  if (text && text.includes('<html>')) {
+    // Try to extract the title or first paragraph
+    const titleMatch = text.match(/<title>([^<]+)<\/title>/i);
+    const pMatch = text.match(/<p[^>]*>([^<]+)<\/p>/i);
+
+    if (titleMatch && titleMatch[1] && titleMatch[1] !== 'Status page') {
+      return titleMatch[1];
+    }
+    if (pMatch && pMatch[1]) {
+      return pMatch[1].trim();
+    }
+  }
+
+  // Return generic message with status code
+  return `Request failed with status ${status}`;
+}
+
 class UiServer extends HomebridgePluginUiServer {
   constructor() {
     super();
@@ -215,10 +255,11 @@ class UiServer extends HomebridgePluginUiServer {
 
           if (!response.ok) {
             const text = await response.text();
-            console.error('[PairGrant] Grant failed:', response.status, text);
+            const errorMessage = parseErrorResponse(response.status, text);
+            console.error(`[PairGrant] Grant failed: ${response.status} - ${errorMessage}`);
             return {
               success: false,
-              error: `Pairing failed: ${response.status} - ${text}`,
+              error: errorMessage,
             };
           }
 
@@ -247,10 +288,11 @@ class UiServer extends HomebridgePluginUiServer {
       // Handle non-401 responses
       if (!initialResponse.ok) {
         const text = await initialResponse.text();
-        console.error('[PairGrant] Unexpected response:', initialResponse.status, text);
+        const errorMessage = parseErrorResponse(initialResponse.status, text);
+        console.error(`[PairGrant] Unexpected response: ${initialResponse.status} - ${errorMessage}`);
         return {
           success: false,
-          error: `Pairing failed: ${initialResponse.status} - ${text}`,
+          error: errorMessage,
         };
       }
 
