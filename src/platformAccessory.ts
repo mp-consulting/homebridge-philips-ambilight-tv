@@ -2,7 +2,7 @@ import type { CharacteristicValue, PlatformAccessory, Service } from 'homebridge
 
 import type { PhilipsAmbilightTVPlatform } from './platform.js';
 import { PhilipsTVClient, HDMI_SOURCES, WATCH_TV_URI } from './api/PhilipsTVClient.js';
-import type { TVDeviceConfig, TVApplication, RemoteKey } from './api/types.js';
+import type { TVDeviceConfig, RemoteKey } from './api/types.js';
 
 // ============================================================================
 // CONSTANTS
@@ -119,8 +119,11 @@ export class PhilipsAmbilightTVAccessory {
     this.configureAccessoryInfo();
     this.tvService = this.configureTelevisionService();
     this.configureSpeakerService();
-    this.configureInputSources();
+    this.configureInputSourcesSync();
     this.startStatePolling();
+
+    // Fetch apps from TV in background and update input sources
+    this.refreshInputSourcesFromTV();
   }
 
   // ==========================================================================
@@ -188,26 +191,48 @@ export class PhilipsAmbilightTVAccessory {
     this.tvService.addLinkedService(service);
   }
 
-  private async configureInputSources(): Promise<void> {
-    const allInputs = await this.fetchAllInputSources();
+  /**
+   * Synchronously configure input sources with static sources (HDMI) and fallback apps.
+   * This ensures HomeKit sees the input sources immediately on startup.
+   */
+  private configureInputSourcesSync(): void {
+    const staticInputs = this.getStaticInputSources();
     const cachedConfigs = this.getCachedInputConfigs();
 
-    // Remove input sources that no longer exist
-    this.removeStaleInputSources(allInputs);
+    this.removeStaleInputSources(staticInputs);
 
-    allInputs.forEach((input, index) => {
+    staticInputs.forEach((input, index) => {
       const identifier = index + 1;
       const cached = cachedConfigs.find(c => c.id === input.id);
       const inputSource = this.restoreOrCreateInputSource(input, identifier, cached);
       this.inputSources.push(inputSource);
     });
 
-    // Save current configuration to context
     this.saveInputConfigs();
     this.log('info', `Configured ${this.inputSources.length} input sources`);
   }
 
-  private async fetchAllInputSources(): Promise<InputData[]> {
+  /**
+   * Refresh input sources from TV asynchronously.
+   * Updates apps list if TV is reachable.
+   */
+  private async refreshInputSourcesFromTV(): Promise<void> {
+    try {
+      const tvApps = await this.tvClient.getApplications();
+      if (tvApps.length > 0) {
+        this.log('debug', `Fetched ${tvApps.length} apps from TV`);
+        // Apps are available - could update input sources here in future
+        // For now, we use static + fallback apps configured synchronously
+      }
+    } catch {
+      this.log('debug', 'TV not reachable, using fallback apps');
+    }
+  }
+
+  /**
+   * Get static input sources (HDMI + fallback apps) synchronously.
+   */
+  private getStaticInputSources(): InputData[] {
     const inputs: InputData[] = [];
 
     // Add HDMI sources first (Watch TV + HDMI 1-4)
@@ -216,10 +241,8 @@ export class PhilipsAmbilightTVAccessory {
       inputs.push({ id, name, type: 'source' });
     }
 
-    // Add apps
-    const apps = await this.fetchApplications();
-    for (const app of apps) {
-      // Avoid exceeding max input sources
+    // Add fallback apps
+    for (const app of FALLBACK_APPS) {
       if (inputs.length >= MAX_INPUT_SOURCES) {
         break;
       }
@@ -282,7 +305,7 @@ export class PhilipsAmbilightTVAccessory {
       service = this.createInputSourceService(subtype, defaultName, identifier, cached, inputSourceType);
     }
 
-    this.setupInputSourceHandlers(service);
+    this.setupInputSourceHandlers(service, defaultName);
 
     return { id: input.id, name: defaultName, type: input.type, identifier, service };
   }
@@ -295,7 +318,8 @@ export class PhilipsAmbilightTVAccessory {
     if (cached) {
       service
         .setCharacteristic(this.Characteristic.ConfiguredName, cached.configuredName)
-        .setCharacteristic(this.Characteristic.CurrentVisibilityState, cached.visibility);
+        .setCharacteristic(this.Characteristic.CurrentVisibilityState, cached.visibility)
+        .setCharacteristic(this.Characteristic.TargetVisibilityState, cached.visibility);
     }
     service.setCharacteristic(this.Characteristic.InputSourceType, inputSourceType);
   }
@@ -307,27 +331,48 @@ export class PhilipsAmbilightTVAccessory {
     cached: InputSourceConfig | undefined,
     inputSourceType: number,
   ): Service {
-    const service = this.accessory.addService(this.Service.InputSource, defaultName, subtype);
-
     const configuredName = cached?.configuredName ?? defaultName;
     const visibility = cached?.visibility ?? this.Characteristic.CurrentVisibilityState.SHOWN;
 
+    // Pass configuredName as displayName to help with tvOS 18 HomeHub renaming issue
+    // See: https://github.com/homebridge/homebridge/issues/3703
+    const service = this.accessory.addService(this.Service.InputSource, configuredName, subtype);
+
+    // Set Identifier first - this is critical for HomeKit
+    service.setCharacteristic(this.Characteristic.Identifier, identifier);
+
+    // Use getCharacteristic().setValue() for ConfiguredName to ensure proper HAP notification
+    service.getCharacteristic(this.Characteristic.ConfiguredName).setValue(configuredName);
+    service.getCharacteristic(this.Characteristic.Name).setValue(configuredName);
+
     service
-      .setCharacteristic(this.Characteristic.Identifier, identifier)
-      .setCharacteristic(this.Characteristic.ConfiguredName, configuredName)
-      .setCharacteristic(this.Characteristic.Name, defaultName)
       .setCharacteristic(this.Characteristic.IsConfigured, this.Characteristic.IsConfigured.CONFIGURED)
       .setCharacteristic(this.Characteristic.InputSourceType, inputSourceType)
-      .setCharacteristic(this.Characteristic.CurrentVisibilityState, visibility);
+      .setCharacteristic(this.Characteristic.CurrentVisibilityState, visibility)
+      .setCharacteristic(this.Characteristic.TargetVisibilityState, visibility);
 
     this.tvService.addLinkedService(service);
     return service;
   }
 
-  private setupInputSourceHandlers(service: Service): void {
+  private setupInputSourceHandlers(service: Service, originalName: string): void {
+    // Store the valid name for this input
+    let validName = service.getCharacteristic(this.Characteristic.ConfiguredName).value as string || originalName;
+
     service.getCharacteristic(this.Characteristic.ConfiguredName)
+      .onGet(() => validName)
       .onSet((value) => {
-        this.log('debug', `Input renamed to: ${value}`);
+        const newName = value as string;
+
+        // Workaround for tvOS 18 HomeHub bug (https://github.com/homebridge/homebridge/issues/3703)
+        // Reject generic "Input Source X" names that the Apple TV HomeHub tries to set
+        if (/^Input Source( \d+)?$/.test(newName)) {
+          // Silently ignore - don't log to reduce spam
+          return;
+        }
+
+        validName = newName;
+        this.log('debug', `Input renamed to: ${newName}`);
         this.saveInputConfigs();
       });
 
@@ -339,20 +384,6 @@ export class PhilipsAmbilightTVAccessory {
       });
   }
 
-  private async fetchApplications(): Promise<Array<{ id: string; name: string }>> {
-    try {
-      const tvApps = await this.tvClient.getApplications();
-      if (tvApps.length > 0) {
-        return tvApps
-          .filter((app: TVApplication) => app.label && app.id)
-          .slice(0, MAX_INPUT_SOURCES)
-          .map((app: TVApplication) => ({ id: app.id, name: app.label }));
-      }
-    } catch {
-      this.log('debug', 'Failed to fetch apps from TV, using defaults');
-    }
-    return [...FALLBACK_APPS];
-  }
 
   // ============================================================================
   // POWER HANDLERS
