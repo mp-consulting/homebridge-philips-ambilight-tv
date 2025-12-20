@@ -13,6 +13,7 @@
 #wizardStep3,
 #successScreen,
 #editScreen,
+#editSourcesScreen,
 #deviceList,
 #pinInputSection {
   display: none;
@@ -101,4 +102,148 @@
 #wizardStep2,
 #editScreen {
   position: relative;
+}
+
+/* ============================================================================
+   DRAG AND DROP SOURCES STYLES
+   ============================================================================ */
+
+.sources-sortable {
+  min-height: 100px;
+}
+
+.source-item {
+  display: flex;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  cursor: grab;
+  user-select: none;
+  transition: transform 0.2s ease, opacity 0.2s ease, background-color 0.15s ease;
+}
+
+.source-item:active {
+  cursor: grabbing;
+}
+
+.source-item.dragging {
+  opacity: 0.4;
+  background-color: #e3f2fd !important;
+  border: 2px dashed #007bff;
+  transform: scale(0.98);
+  z-index: 1000;
+}
+
+.source-item .drag-handle {
+  color: #adb5bd;
+  margin-right: 0.75rem;
+  font-size: 1rem;
+}
+
+.source-item:hover .drag-handle {
+  color: #6c757d;
+}
+
+.source-item .source-icon {
+  width: 32px;
+  text-align: center;
+  margin-right: 0.75rem;
+  font-size: 1.25rem;
+}
+
+.source-item .source-icon.hdmi {
+  color: #007bff;
+}
+
+.source-item .source-icon.app {
+  color: #28a745;
+}
+
+.source-item .source-icon.tv {
+  color: #6f42c1;
+}
+
+.source-item .source-info {
+  flex: 1;
+}
+
+.source-item .source-name {
+  font-weight: 500;
+  margin-bottom: 0;
+}
+
+.source-item .source-type {
+  font-size: 0.75rem;
+  color: #6c757d;
+}
+
+.source-item .source-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.source-item .visibility-btn {
+  background: none;
+  border: none;
+  padding: 0.25rem 0.5rem;
+  cursor: pointer;
+  color: #6c757d;
+  font-size: 1rem;
+  transition: color 0.15s ease;
+}
+
+.source-item .visibility-btn:hover {
+  color: #007bff;
+}
+
+.source-item .visibility-btn.hidden {
+  color: #dc3545;
+}
+
+.source-item.source-hidden {
+  opacity: 0.5;
+}
+
+.source-item.source-hidden .source-name {
+  text-decoration: line-through;
+}
+
+/* Dark mode for sources */
+@media (prefers-color-scheme: dark) {
+  .source-item.dragging {
+    background-color: #1a252f !important;
+    border-color: #4dabf7;
+  }
+
+  .source-item .drag-handle {
+    color: #6c757d;
+  }
+
+  .source-item:hover .drag-handle {
+    color: #adb5bd;
+  }
+
+  .source-item .source-type {
+    color: #adb5bd;
+  }
+}
+
+[data-theme="dark"] .source-item.dragging,
+.dark-mode .source-item.dragging {
+  background-color: #1a252f !important;
+  border-color: #4dabf7;
+}
+
+[data-theme="dark"] .source-item .drag-handle,
+.dark-mode .source-item .drag-handle {
+  color: #6c757d;
+}
+
+[data-theme="dark"] .source-item:hover .drag-handle,
+.dark-mode .source-item:hover .drag-handle {
+  color: #adb5bd;
+}
+
+[data-theme="dark"] .source-item .source-type,
+.dark-mode .source-item .source-type {
+  color: #adb5bd;
 }

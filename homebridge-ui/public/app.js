@@ -8,13 +8,17 @@
   // CONSTANTS & STATE
   // ============================================================================
 
-  const SCREENS = ['wizardStep1', 'wizardStep2', 'wizardStep3', 'successScreen', 'editScreen'];
+  const SCREENS = ['wizardStep1', 'wizardStep2', 'wizardStep3', 'successScreen', 'editScreen', 'editSourcesScreen'];
   const PLATFORM_NAME = 'PhilipsAmbilightTV';
 
   const state = {
     currentConfig: { name: '', ip: '', mac: '', username: '', password: '' },
     configuredTvs: [],
     editingTvIndex: null,
+    editingSourcesTvIndex: null,
+    sources: [],
+    draggedItem: null,
+    dragStartIndex: null,
   };
 
   // ============================================================================
@@ -88,6 +92,7 @@
     pairGrant: (ip, pin) => homebridge.request('/pair-grant', { ip, pin }),
     getMac: (ip) => homebridge.request('/get-mac', ip),
     wakeOnLan: (mac) => homebridge.request('/wake-on-lan', { mac }),
+    getSources: (ip, username, password, mac) => homebridge.request('/get-sources', { ip, username, password, mac }),
   };
 
   // ============================================================================
@@ -132,12 +137,14 @@
           <small class="text-muted"><i class="fas fa-network-wired mr-1"></i> ${tv.ip}</small>
         </div>
         <div>
+          <button class="btn btn-sm btn-secondary edit-sources-btn mr-2"><i class="fas fa-list"></i> Sources</button>
           <button class="btn btn-sm btn-primary edit-tv-btn mr-2"><i class="fas fa-edit"></i> Edit</button>
           <button class="btn btn-sm btn-danger delete-tv-btn"><i class="fas fa-trash"></i> Delete</button>
         </div>
       </div>
     `;
 
+    li.querySelector('.edit-sources-btn').addEventListener('click', () => openEditSourcesScreen(index));
     li.querySelector('.edit-tv-btn').addEventListener('click', () => openEditScreen(index));
     li.querySelector('.delete-tv-btn').addEventListener('click', async function () {
       setButtonLoading(this, true, 'Deleting...');
@@ -456,6 +463,250 @@
   };
 
   // ============================================================================
+  // EDIT SOURCES SCREEN
+  // ============================================================================
+
+  const openEditSourcesScreen = async (index) => {
+    state.editingSourcesTvIndex = index;
+    const tv = state.configuredTvs[index];
+
+    $('editSourcesTvName').textContent = tv.name;
+    $('sourcesLoadingSpinner').style.display = 'block';
+    $('sourcesListContainer').style.display = 'none';
+    $('sourcesErrorContainer').style.display = 'none';
+
+    showScreen('editSourcesScreen');
+
+    await loadSources(tv);
+  };
+
+  const loadSources = async (tv) => {
+    try {
+      const result = await api.getSources(tv.ip, tv.username, tv.password, tv.mac);
+
+      if (result.success) {
+        // Merge with existing source config (order and visibility)
+        const existingConfig = tv.sources || [];
+        state.sources = mergeSourcesWithConfig(result.sources, existingConfig);
+        renderSourcesList();
+
+        $('sourcesLoadingSpinner').style.display = 'none';
+        $('sourcesListContainer').style.display = 'block';
+      } else {
+        showSourcesError(result.error);
+      }
+    } catch (e) {
+      showSourcesError(e.message);
+    }
+  };
+
+  const mergeSourcesWithConfig = (fetchedSources, existingConfig) => {
+    // Create a map of existing config by id
+    const configMap = new Map(existingConfig.map(s => [s.id, s]));
+
+    // Merge fetched sources with existing config
+    const merged = fetchedSources.map((source, index) => {
+      const existing = configMap.get(source.id);
+      return {
+        ...source,
+        order: existing?.order ?? index,
+        visible: existing?.visible ?? true,
+        customName: existing?.customName,
+      };
+    });
+
+    // Sort by order
+    merged.sort((a, b) => a.order - b.order);
+
+    return merged;
+  };
+
+  const showSourcesError = (message) => {
+    $('sourcesLoadingSpinner').style.display = 'none';
+    $('sourcesListContainer').style.display = 'none';
+    $('sourcesErrorContainer').style.display = 'block';
+    $('sourcesErrorMessage').textContent = message;
+  };
+
+  const renderSourcesList = () => {
+    const list = $('sourcesList');
+    list.innerHTML = '';
+
+    state.sources.forEach((source, index) => {
+      const li = createSourceListItem(source, index);
+      list.appendChild(li);
+    });
+
+    setupDragAndDrop();
+  };
+
+  const getSourceIcon = (source) => {
+    if (source.icon === 'hdmi') return '<i class="fas fa-plug source-icon hdmi"></i>';
+    if (source.icon === 'tv') return '<i class="fas fa-broadcast-tower source-icon tv"></i>';
+    return '<i class="fas fa-mobile-alt source-icon app"></i>';
+  };
+
+  const getSourceTypeName = (source) => {
+    if (source.icon === 'hdmi') return 'HDMI Input';
+    if (source.icon === 'tv') return 'TV Tuner';
+    return 'Application';
+  };
+
+  const createSourceListItem = (source, index) => {
+    const li = document.createElement('li');
+    li.className = `list-group-item source-item${source.visible === false ? ' source-hidden' : ''}`;
+    li.dataset.index = index;
+    li.dataset.id = source.id;
+    li.draggable = true;
+
+    li.innerHTML = `
+      <span class="drag-handle"><i class="fas fa-grip-vertical"></i></span>
+      ${getSourceIcon(source)}
+      <div class="source-info">
+        <p class="source-name">${source.customName || source.name}</p>
+        <span class="source-type">${getSourceTypeName(source)}</span>
+      </div>
+      <div class="source-actions">
+        <button class="visibility-btn${source.visible === false ? ' hidden' : ''}" title="${source.visible === false ? 'Show' : 'Hide'} source">
+          <i class="fas fa-eye${source.visible === false ? '-slash' : ''}"></i>
+        </button>
+      </div>
+    `;
+
+    // Visibility toggle
+    li.querySelector('.visibility-btn').addEventListener('click', async (e) => {
+      e.stopPropagation();
+      source.visible = source.visible === false ? true : false;
+      await saveSourcesConfig();
+      renderSourcesList();
+    });
+
+    return li;
+  };
+
+  const setupDragAndDrop = () => {
+    const list = $('sourcesList');
+
+    list.addEventListener('dragstart', handleDragStart);
+    list.addEventListener('dragend', handleDragEnd);
+    list.addEventListener('dragover', handleDragOver);
+    list.addEventListener('drop', handleDrop);
+  };
+
+  const handleDragStart = (e) => {
+    const item = e.target.closest('.source-item');
+    if (!item) return;
+
+    state.draggedItem = item;
+    state.dragStartIndex = parseInt(item.dataset.index);
+
+    // Small delay to allow the drag image to be captured before adding class
+    setTimeout(() => {
+      if (state.draggedItem) {
+        state.draggedItem.classList.add('dragging');
+      }
+    }, 0);
+
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', item.dataset.index);
+  };
+
+  const handleDragEnd = async () => {
+    if (!state.draggedItem) return;
+
+    state.draggedItem.classList.remove('dragging');
+
+    // Remove placeholder if exists
+    const placeholder = document.querySelector('.drag-placeholder');
+    if (placeholder) {
+      placeholder.remove();
+    }
+
+    // Get final order from DOM
+    const list = $('sourcesList');
+    const items = Array.from(list.querySelectorAll('.source-item'));
+    const newOrder = items.map(item => item.dataset.id);
+
+    // Reorder state.sources to match DOM order
+    state.sources.sort((a, b) => newOrder.indexOf(a.id) - newOrder.indexOf(b.id));
+
+    // Update order values
+    state.sources.forEach((source, index) => {
+      source.order = index;
+    });
+
+    // Update data-index attributes
+    items.forEach((item, index) => {
+      item.dataset.index = index;
+    });
+
+    await saveSourcesConfig();
+    homebridge.toast.success('Order saved');
+
+    state.draggedItem = null;
+    state.dragStartIndex = null;
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+
+    if (!state.draggedItem) return;
+
+    const target = e.target.closest('.source-item');
+    if (!target || target === state.draggedItem) return;
+
+    const list = $('sourcesList');
+    const rect = target.getBoundingClientRect();
+    const midY = rect.top + rect.height / 2;
+
+    // Determine if we should insert before or after the target
+    if (e.clientY < midY) {
+      // Insert before
+      if (target.previousElementSibling !== state.draggedItem) {
+        list.insertBefore(state.draggedItem, target);
+      }
+    } else {
+      // Insert after
+      if (target.nextElementSibling !== state.draggedItem) {
+        list.insertBefore(state.draggedItem, target.nextElementSibling);
+      }
+    }
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+  };
+
+  const saveSourcesConfig = async () => {
+    const tv = state.configuredTvs[state.editingSourcesTvIndex];
+    tv.sources = state.sources.map(s => ({
+      id: s.id,
+      order: s.order,
+      visible: s.visible,
+      customName: s.customName,
+    }));
+    await saveConfig();
+  };
+
+  const resetSourcesOrder = async () => {
+    const tv = state.configuredTvs[state.editingSourcesTvIndex];
+
+    // Clear saved sources config to restore original order
+    tv.sources = [];
+    await saveConfig();
+
+    // Show loading state
+    $('sourcesLoadingSpinner').style.display = 'block';
+    $('sourcesListContainer').style.display = 'none';
+
+    // Re-fetch sources from TV (will use default order since config is cleared)
+    await loadSources(tv);
+
+    homebridge.toast.success('Source order reset to original');
+  };
+
+  // ============================================================================
   // DISCOVERY
   // ============================================================================
 
@@ -558,6 +809,15 @@
   });
   $('confirmGetMacBtn').addEventListener('click', function() {
     if (!this.disabled) handleGetMac(this, 'confirmTvIp', 'confirmTvMac');
+  });
+
+  // Edit Sources screen buttons
+  $('doneEditSourcesBtn').addEventListener('click', () => showScreen('successScreen'));
+  $('resetSourcesOrderBtn').addEventListener('click', resetSourcesOrder);
+  $('retryLoadSourcesBtn').addEventListener('click', () => {
+    $('sourcesLoadingSpinner').style.display = 'block';
+    $('sourcesErrorContainer').style.display = 'none';
+    loadSources(state.configuredTvs[state.editingSourcesTvIndex]);
   });
 
   // ============================================================================

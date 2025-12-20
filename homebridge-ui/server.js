@@ -21,6 +21,7 @@ import {
   createPairingSuccess,
   sendWakeOnLan,
 } from './api/utils.js';
+import { PhilipsTVClient, WATCH_TV_URI } from './api/PhilipsTVClient.js';
 
 const getMAC = promisify(arp.getMAC);
 
@@ -41,6 +42,7 @@ class UiServer extends HomebridgePluginUiServer {
     this.onRequest('/pair', this.pair.bind(this));
     this.onRequest('/pair-grant', this.pairGrant.bind(this));
     this.onRequest('/system-info', this.getSystemInfo.bind(this));
+    this.onRequest('/get-sources', this.getSources.bind(this));
 
     this.ready();
   }
@@ -317,6 +319,84 @@ class UiServer extends HomebridgePluginUiServer {
     } catch (error) {
       console.log('[SystemInfo] Error:', error.message);
       return { success: false, error: error.message || 'Failed to get system information' };
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // Get Sources (HDMI + Apps)
+  // --------------------------------------------------------------------------
+
+  async getSources(data) {
+    const { ip, username, password, mac } = data;
+
+    if (!ip) {
+      return { success: false, error: 'IP address is required' };
+    }
+
+    try {
+      console.log(`[Sources] Getting sources from ${ip}`);
+
+      // Create PhilipsTVClient instance
+      const client = new PhilipsTVClient({
+        ip,
+        mac: mac || '',
+        username: username || '',
+        password: password || '',
+      });
+
+      // Fetch sources from TV API (async call)
+      let tvSources = [];
+      try {
+        tvSources = await client.getSources();
+        console.log(`[Sources] Fetched ${tvSources.length} sources from TV API`);
+      } catch (sourceError) {
+        console.log('[Sources] Could not fetch sources from TV, using built-in:', sourceError.message);
+        tvSources = client.getBuiltInSources();
+      }
+
+      // Convert TV sources to UI format
+      const builtInSources = tvSources.map(source => ({
+        id: source.id,
+        name: source.name,
+        type: 'source',
+        icon: source.id === WATCH_TV_URI ? 'tv' : 'hdmi',
+      }));
+
+      // Try to get apps from TV using the client
+      let apps = [];
+      try {
+        apps = await client.getApplications();
+      } catch (appError) {
+        console.log('[Sources] Could not fetch apps:', appError.message);
+      }
+
+      // If no apps from TV, use fallback apps
+      if (apps.length === 0) {
+        apps = [
+          { label: 'Home', intent: { component: { packageName: 'com.google.android.tvlauncher' } } },
+          { label: 'YouTube', intent: { component: { packageName: 'com.google.android.youtube.tv' } } },
+          { label: 'Netflix', intent: { component: { packageName: 'com.netflix.ninja' } } },
+          { label: 'Disney+', intent: { component: { packageName: 'com.disney.disneyplus' } } },
+          { label: 'Prime Video', intent: { component: { packageName: 'com.amazon.amazonvideo.livingroom' } } },
+        ];
+      }
+
+      // Convert apps to source format
+      const appSources = apps.slice(0, 10).map(app => ({
+        id: app.intent?.component?.packageName || app.id || app.label,
+        name: app.label || app.name || 'Unknown App',
+        type: 'app',
+        icon: 'app',
+      }));
+
+      const sources = [...builtInSources, ...appSources];
+
+      console.log(`[Sources] Found ${sources.length} sources (${builtInSources.length} built-in, ${appSources.length} apps)`);
+
+      return { success: true, sources };
+    } catch (error) {
+      console.log('[Sources] Error:', error.message);
+      return { success: false, error: error.message || 'Failed to get sources' };
     }
   }
 }

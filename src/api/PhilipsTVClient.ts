@@ -14,6 +14,8 @@ import {
 import type {
   PowerState,
   VolumeState,
+  TVSource,
+  TVSourceList,
   TVApplication,
   TVApplicationList,
   TVChannel,
@@ -27,7 +29,7 @@ import type {
 // ============================================================================
 
 const WOL_WAKE_DELAY_MS = 2000;
-const DEFAULT_TIMEOUT_MS = 5000;
+const DEFAULT_TIMEOUT_MS = 15000;
 
 /** HDMI passthrough URI prefix for Android TV */
 const HDMI_PASSTHROUGH_PREFIX = 'content://android.media.tv/passthrough/com.mediatek.tvinput%2F.hdmi.HDMIInputService%2F';
@@ -216,7 +218,24 @@ export class PhilipsTVClient {
   // SOURCES (v6 intent-based)
   // ==========================================================================
 
-  getAvailableSources(): Array<{ id: string; name: string }> {
+  /**
+   * Fetches available sources from the TV API.
+   * Falls back to built-in sources if the API call fails.
+   */
+  async getSources(): Promise<TVSource[]> {
+    const result = await this.get<TVSourceList>('/sources');
+    if (result?.sources && result.sources.length > 0) {
+      return result.sources;
+    }
+    // Fall back to hardcoded sources if TV doesn't return any
+    return this.getBuiltInSources();
+  }
+
+  /**
+   * Returns hardcoded built-in sources (Watch TV + HDMI ports).
+   * Use getSources() instead for dynamic source fetching.
+   */
+  getBuiltInSources(): TVSource[] {
     return [
       { id: WATCH_TV_URI, name: 'Watch TV' },
       ...Object.entries(HDMI_SOURCES).map(([id, name]) => ({ id, name })),

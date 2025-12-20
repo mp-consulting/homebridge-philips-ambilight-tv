@@ -110,6 +110,38 @@
                   }
                 }
               }
+            },
+            "sources": {
+              "title": "Source Configuration",
+              "type": "array",
+              "description": "Source order and visibility settings (managed via the Sources UI).",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "title": "Source ID",
+                    "type": "string",
+                    "description": "The unique identifier for this source."
+                  },
+                  "order": {
+                    "title": "Display Order",
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "The order in which this source appears in HomeKit."
+                  },
+                  "visible": {
+                    "title": "Visible",
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Whether this source is visible in HomeKit."
+                  },
+                  "customName": {
+                    "title": "Custom Name",
+                    "type": "string",
+                    "description": "Optional custom name to display instead of the default."
+                  }
+                }
+              }
             }
           }
         }
