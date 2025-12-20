@@ -541,14 +541,22 @@
   };
 
   const getSourceIcon = (source) => {
-    if (source.icon === 'hdmi') return '<i class="fas fa-plug source-icon hdmi"></i>';
-    if (source.icon === 'tv') return '<i class="fas fa-broadcast-tower source-icon tv"></i>';
+    if (source.icon === 'hdmi') {
+      return '<i class="fas fa-plug source-icon hdmi"></i>';
+    }
+    if (source.icon === 'tv') {
+      return '<i class="fas fa-broadcast-tower source-icon tv"></i>';
+    }
     return '<i class="fas fa-mobile-alt source-icon app"></i>';
   };
 
   const getSourceTypeName = (source) => {
-    if (source.icon === 'hdmi') return 'HDMI Input';
-    if (source.icon === 'tv') return 'TV Tuner';
+    if (source.icon === 'hdmi') {
+      return 'HDMI Input';
+    }
+    if (source.icon === 'tv') {
+      return 'TV Tuner';
+    }
     return 'Application';
   };
 
@@ -595,7 +603,9 @@
 
   const handleDragStart = (e) => {
     const item = e.target.closest('.source-item');
-    if (!item) return;
+    if (!item) {
+      return;
+    }
 
     state.draggedItem = item;
     state.dragStartIndex = parseInt(item.dataset.index);
@@ -612,7 +622,9 @@
   };
 
   const handleDragEnd = async () => {
-    if (!state.draggedItem) return;
+    if (!state.draggedItem) {
+      return;
+    }
 
     state.draggedItem.classList.remove('dragging');
 
@@ -651,10 +663,14 @@
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
 
-    if (!state.draggedItem) return;
+    if (!state.draggedItem) {
+      return;
+    }
 
     const target = e.target.closest('.source-item');
-    if (!target || target === state.draggedItem) return;
+    if (!target || target === state.draggedItem) {
+      return;
+    }
 
     const list = $('sourcesList');
     const rect = target.getBoundingClientRect();
@@ -805,10 +821,14 @@
 
   // MAC address buttons
   $('getMacBtn').addEventListener('click', function() {
-    if (!this.disabled) handleGetMac(this, 'editTvIp', 'editTvMac');
+    if (!this.disabled) {
+      handleGetMac(this, 'editTvIp', 'editTvMac');
+    }
   });
   $('confirmGetMacBtn').addEventListener('click', function() {
-    if (!this.disabled) handleGetMac(this, 'confirmTvIp', 'confirmTvMac');
+    if (!this.disabled) {
+      handleGetMac(this, 'confirmTvIp', 'confirmTvMac');
+    }
   });
 
   // Edit Sources screen buttons

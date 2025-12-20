@@ -7,7 +7,7 @@
  *   --raw    Test TV directly without using PhilipsTVClient
  */
 
-/* eslint-disable no-undef, no-use-before-define */
+ 
 
 import { PhilipsTVClient } from '../dist/api/PhilipsTVClient.js';
 import {
@@ -75,7 +75,7 @@ async function rawGet(endpoint, timeout = DEFAULT_TIMEOUT) {
   const initialResponse = await fetchWithTimeout(
     url,
     { method: 'GET', agent: httpsAgent },
-    timeout
+    timeout,
   );
 
   if (initialResponse.ok) {
@@ -92,7 +92,7 @@ async function rawGet(endpoint, timeout = DEFAULT_TIMEOUT) {
         tvConfig.password,
         wwwAuth,
         'GET',
-        uri
+        uri,
       );
 
       const authResponse = await fetchWithTimeout(
@@ -102,7 +102,7 @@ async function rawGet(endpoint, timeout = DEFAULT_TIMEOUT) {
           headers: { Authorization: authHeader },
           agent: httpsAgent,
         },
-        timeout
+        timeout,
       );
 
       if (authResponse.ok) {
@@ -116,7 +116,7 @@ async function rawGet(endpoint, timeout = DEFAULT_TIMEOUT) {
   throw new Error(`HTTP ${initialResponse.status}`);
 }
 
-async function rawPost(endpoint, body, timeout = DEFAULT_TIMEOUT) {
+async function _rawPost(endpoint, body, timeout = DEFAULT_TIMEOUT) {
   const url = buildUrl(tvConfig.ip, endpoint);
   const uri = `/${TV_API_VERSION}${endpoint}`;
 
@@ -129,7 +129,7 @@ async function rawPost(endpoint, body, timeout = DEFAULT_TIMEOUT) {
       body: JSON.stringify(body),
       agent: httpsAgent,
     },
-    timeout
+    timeout,
   );
 
   if (initialResponse.ok) {
@@ -146,7 +146,7 @@ async function rawPost(endpoint, body, timeout = DEFAULT_TIMEOUT) {
         tvConfig.password,
         wwwAuth,
         'POST',
-        uri
+        uri,
       );
 
       const authResponse = await fetchWithTimeout(
@@ -160,7 +160,7 @@ async function rawPost(endpoint, body, timeout = DEFAULT_TIMEOUT) {
           body: JSON.stringify(body),
           agent: httpsAgent,
         },
-        timeout
+        timeout,
       );
 
       if (authResponse.ok) {
@@ -239,7 +239,7 @@ async function runRawTests() {
   console.log('─────────────────────────────────────────────────────────────────');
 
   const channelsResponse = await testEndpoint('GET /channeldb/tv/channelLists/all', () =>
-    rawGet('/channeldb/tv/channelLists/all')
+    rawGet('/channeldb/tv/channelLists/all'),
   );
   if (channelsResponse?.Channel) {
     const channels = channelsResponse.Channel;
@@ -280,10 +280,10 @@ async function runRawTests() {
   console.log('─────────────────────────────────────────────────────────────────');
 
   const menuitemsSettings = await testEndpoint('GET /menuitems/settings/structure', () =>
-    rawGet('/menuitems/settings/structure')
+    rawGet('/menuitems/settings/structure'),
   );
   if (menuitemsSettings) {
-    console.log(`   └─ Settings structure retrieved`);
+    console.log('   └─ Settings structure retrieved');
   }
 
   const sources = await testEndpoint('GET /sources', () => rawGet('/sources'));

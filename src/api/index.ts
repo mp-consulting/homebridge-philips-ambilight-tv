@@ -26,5 +26,6 @@ export {
   httpsAgent,
 } from './utils.js';
 
-// API Client
-export { PhilipsTvApi, philipsTvApi } from './PhilipsTvApi.js';
+// TV Client
+export { PhilipsTVClient, HDMI_SOURCES, WATCH_TV_URI } from './PhilipsTVClient.js';
+export type { PhilipsTVClientConfig } from './PhilipsTVClient.js';

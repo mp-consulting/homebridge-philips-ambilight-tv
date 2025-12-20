@@ -3,7 +3,7 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['dist/**'],
+    ignores: ['dist/**', 'homebridge-ui/api/**'],
   },
   {
     rules: {
@@ -28,6 +28,56 @@ export default tseslint.config(
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'module',
+    },
+  },
+  // Browser globals for UI app
+  {
+    files: ['homebridge-ui/public/**/*.js'],
+    languageOptions: {
+      globals: {
+        document: 'readonly',
+        window: 'readonly',
+        homebridge: 'readonly',
+        setTimeout: 'readonly',
+        clearTimeout: 'readonly',
+        setInterval: 'readonly',
+        clearInterval: 'readonly',
+      },
+    },
+    rules: {
+      '@typescript-eslint/no-use-before-define': 'off',
+    },
+  },
+  // Node globals for server
+  {
+    files: ['homebridge-ui/server.js'],
+    languageOptions: {
+      globals: {
+        console: 'readonly',
+        setTimeout: 'readonly',
+        clearTimeout: 'readonly',
+        setInterval: 'readonly',
+        clearInterval: 'readonly',
+        process: 'readonly',
+      },
+    },
+  },
+  // Test files
+  {
+    files: ['test/**/*.js'],
+    languageOptions: {
+      globals: {
+        console: 'readonly',
+        setTimeout: 'readonly',
+        clearTimeout: 'readonly',
+        setInterval: 'readonly',
+        clearInterval: 'readonly',
+        process: 'readonly',
+      },
+    },
+    rules: {
+      '@typescript-eslint/no-use-before-define': 'off',
+      '@typescript-eslint/no-unused-vars': ['error', { 'caughtErrors': 'none', 'varsIgnorePattern': '^_' }],
     },
   },
   eslint.configs.recommended,
