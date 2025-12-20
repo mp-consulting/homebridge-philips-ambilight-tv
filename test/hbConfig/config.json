@@ -1,9 +1,9 @@
 {
     "bridge": {
         "name": "PhilipsTVBridge",
-        "username": "0E:33:44:55:66:77",
+        "username": "1E:4A:43:25:51:BA",
         "port": 51826,
-        "pin": "031-45-154"
+        "pin": "936-00-764"
     },
     "description": "HomeBridge HTTP Status Control",
     "plugins": [
@@ -23,11 +23,12 @@
             "platform": "PhilipsAmbilightTV",
             "devices": [
                 {
-                    "name": "Living Room TV",
-                    "mac": "3c:7a:aa:f3:d5:b0",
+                    "name": "TV Salon",
                     "ip": "192.168.2.108",
+                    "mac": "3c:7a:aa:f3:d5:b0",
                     "username": "your_username",
-                    "password": "your_password"
+                    "password": "your_password",
+                    "sources": []
                 }
             ]
         }

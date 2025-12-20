@@ -101,12 +101,14 @@ function sanitizeForHomeKit(name: string): string {
 
 export class PhilipsAmbilightTVAccessory {
   private readonly tvService: Service;
+  private readonly ambilightService: Service;
   private readonly tvClient: PhilipsTVClient;
   private readonly config: TVDeviceConfig;
 
   private inputSources: InputSource[] = [];
   private currentInputId = 1;
   private isPoweredOn = false;
+  private isAmbilightOn = false;
   private pollingTimer?: ReturnType<typeof setInterval>;
 
   constructor(
@@ -119,6 +121,7 @@ export class PhilipsAmbilightTVAccessory {
     this.configureAccessoryInfo();
     this.tvService = this.configureTelevisionService();
     this.configureSpeakerService();
+    this.ambilightService = this.configureAmbilightService();
     this.configureInputSourcesSync();
     this.startStatePolling();
 
@@ -189,6 +192,21 @@ export class PhilipsAmbilightTVAccessory {
       .onSet((value) => this.handleSetMute(value));
 
     this.tvService.addLinkedService(service);
+  }
+
+  private configureAmbilightService(): Service {
+    const service = this.accessory.getService(this.Service.Lightbulb)
+      ?? this.accessory.addService(this.Service.Lightbulb, 'Ambilight', 'ambilight');
+
+    service.setCharacteristic(this.Characteristic.Name, 'Ambilight');
+
+    service.getCharacteristic(this.Characteristic.On)
+      .onGet(() => this.handleGetAmbilight())
+      .onSet((value) => this.handleSetAmbilight(value));
+
+    this.tvService.addLinkedService(service);
+
+    return service;
   }
 
   /**
@@ -517,6 +535,34 @@ export class PhilipsAmbilightTVAccessory {
   }
 
   // ============================================================================
+  // AMBILIGHT HANDLERS
+  // ============================================================================
+
+  private async handleGetAmbilight(): Promise<CharacteristicValue> {
+    this.log('debug', 'Getting Ambilight state');
+
+    try {
+      this.isAmbilightOn = await this.tvClient.getAmbilightPower();
+    } catch {
+      this.log('debug', 'Failed to get Ambilight state');
+    }
+
+    return this.isAmbilightOn;
+  }
+
+  private async handleSetAmbilight(value: CharacteristicValue): Promise<void> {
+    const shouldBeOn = value as boolean;
+    this.log('info', `Setting Ambilight to ${shouldBeOn ? 'ON' : 'OFF'}`);
+
+    const success = await this.tvClient.setAmbilightPower(shouldBeOn);
+    if (success) {
+      this.isAmbilightOn = shouldBeOn;
+    } else {
+      this.log('warn', 'Failed to change Ambilight state');
+    }
+  }
+
+  // ============================================================================
   // STATE POLLING
   // ============================================================================
 
@@ -542,6 +588,16 @@ export class PhilipsAmbilightTVAccessory {
             : this.Characteristic.Active.INACTIVE,
         );
         this.log('debug', `Power state updated: ${isOn ? 'ON' : 'OFF'}`);
+      }
+
+      // Poll Ambilight state only if TV is on
+      if (isOn) {
+        const ambilightOn = await this.tvClient.getAmbilightPower();
+        if (ambilightOn !== this.isAmbilightOn) {
+          this.isAmbilightOn = ambilightOn;
+          this.ambilightService.updateCharacteristic(this.Characteristic.On, ambilightOn);
+          this.log('debug', `Ambilight state updated: ${ambilightOn ? 'ON' : 'OFF'}`);
+        }
       }
     } catch {
       // TV might be off or unreachable - this is expected
