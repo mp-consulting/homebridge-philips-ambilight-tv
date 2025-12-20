@@ -122,8 +122,8 @@ export class PhilipsAmbilightTVAccessory {
     this.configureInputSourcesSync();
     this.startStatePolling();
 
-    // Fetch apps from TV in background and update input sources
-    this.refreshInputSourcesFromTV();
+    // Fetch apps from TV in background (for future dynamic updates)
+    this.fetchAppsFromTV();
   }
 
   // ==========================================================================
@@ -213,10 +213,10 @@ export class PhilipsAmbilightTVAccessory {
   }
 
   /**
-   * Refresh input sources from TV asynchronously.
-   * Updates apps list if TV is reachable.
+   * Fetch applications from TV asynchronously.
+   * Currently logs the result but doesn't update input sources dynamically.
    */
-  private async refreshInputSourcesFromTV(): Promise<void> {
+  private async fetchAppsFromTV(): Promise<void> {
     try {
       const tvApps = await this.tvClient.getApplications();
       if (tvApps.length > 0) {
