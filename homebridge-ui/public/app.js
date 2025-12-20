@@ -246,7 +246,7 @@
     const badge = listItem?.querySelector('.select-badge');
     const originalBadgeText = badge?.textContent;
     if (badge) {
-      badge.textContent = 'Connecting...';
+      badge.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Connecting...';
       badge.classList.remove('badge-primary');
       badge.classList.add('badge-secondary');
     }
