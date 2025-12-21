@@ -215,7 +215,7 @@ class UiServer extends HomebridgePluginUiServer {
     try {
       console.log('[PairGrant] Processing PIN...');
 
-      const signature = hmacSignature(AUTH_SHARED_KEY, session.timestamp.toString(), pin);
+      const signature = hmacSignature(session.timestamp.toString(), pin);
 
       const grantRequest = {
         auth: {
