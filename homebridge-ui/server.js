@@ -8,7 +8,6 @@ import {
   TV_API_VERSION,
   DISCOVERY_TIMEOUT,
   CONNECTION_TIMEOUT,
-  AUTH_SHARED_KEY,
 } from './api/constants.js';
 import {
   hmacSignature,

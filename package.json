@@ -3,17 +3,16 @@
   "displayName": "Philips Ambilight TV",
   "type": "module",
   "version": "1.0.0",
-  "private": true,
   "description": "Homebridge plugin to control Philips Ambilight TV as a HomeKit Television accessory.",
   "author": "Mickael Palma",
   "license": "Apache-2.0",
   "homepage": "https://github.com/mp-consulting/homebridge-philips-ambilight-tv#readme",
   "repository": {
     "type": "git",
-    "url": "https://github.com/mickael/homebridge-philips-ambilight-tv.git"
+    "url": "git+https://github.com/mp-consulting/homebridge-philips-ambilight-tv.git"
   },
   "bugs": {
-    "url": "https://github.com/mickael/homebridge-philips-ambilight-tv/issues"
+    "url": "https://github.com/mp-consulting/homebridge-philips-ambilight-tv/issues"
   },
   "keywords": [
     "ambilight",
