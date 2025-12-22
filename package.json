@@ -1,5 +1,5 @@
 {
-  "name": "homebridge-philips-ambilight-tv",
+  "name": "@mp-consulting/homebridge-philips-ambilight-tv",
   "displayName": "Philips Ambilight TV",
   "type": "module",
   "version": "1.0.0",
