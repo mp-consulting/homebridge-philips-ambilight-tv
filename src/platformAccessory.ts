@@ -101,6 +101,7 @@ function sanitizeForHomeKit(name: string): string {
 
 export class PhilipsAmbilightTVAccessory {
   private readonly tvService: Service;
+  private readonly speakerService: Service;
   private readonly ambilightService: Service;
   private readonly tvClient: PhilipsTVClient;
   private readonly config: TVDeviceConfig;
@@ -109,6 +110,7 @@ export class PhilipsAmbilightTVAccessory {
   private currentInputId = 1;
   private isPoweredOn = false;
   private isAmbilightOn = false;
+  private isMuted = false;
   private pollingTimer?: ReturnType<typeof setInterval>;
 
   constructor(
@@ -120,7 +122,7 @@ export class PhilipsAmbilightTVAccessory {
 
     this.configureAccessoryInfo();
     this.tvService = this.configureTelevisionService();
-    this.configureSpeakerService();
+    this.speakerService = this.configureSpeakerService();
     this.ambilightService = this.configureAmbilightService();
     this.configureInputSourcesSync();
     this.startStatePolling();
@@ -176,7 +178,7 @@ export class PhilipsAmbilightTVAccessory {
     return service;
   }
 
-  private configureSpeakerService(): void {
+  private configureSpeakerService(): Service {
     const service = this.accessory.getService(this.Service.TelevisionSpeaker)
       ?? this.accessory.addService(this.Service.TelevisionSpeaker);
 
@@ -192,6 +194,8 @@ export class PhilipsAmbilightTVAccessory {
       .onSet((value) => this.handleSetMute(value));
 
     this.tvService.addLinkedService(service);
+
+    return service;
   }
 
   private configureAmbilightService(): Service {
@@ -407,15 +411,9 @@ export class PhilipsAmbilightTVAccessory {
   // POWER HANDLERS
   // ============================================================================
 
-  private async handleGetPower(): Promise<CharacteristicValue> {
-    this.log('debug', 'Getting power state');
-
-    try {
-      this.isPoweredOn = await this.tvClient.getPowerState();
-    } catch {
-      this.log('debug', 'Failed to get power state');
-    }
-
+  private handleGetPower(): CharacteristicValue {
+    // Return cached state immediately to avoid Homebridge timeout warnings
+    // Actual state is updated via polling
     return this.isPoweredOn
       ? this.Characteristic.Active.ACTIVE
       : this.Characteristic.Active.INACTIVE;
@@ -444,19 +442,9 @@ export class PhilipsAmbilightTVAccessory {
   // INPUT HANDLERS
   // ============================================================================
 
-  private async handleGetInput(): Promise<CharacteristicValue> {
-    this.log('debug', 'Getting active input');
-
-    try {
-      const currentApp = await this.tvClient.getCurrentActivity();
-      const inputSource = this.inputSources.find(i => i.id === currentApp);
-      if (inputSource) {
-        this.currentInputId = inputSource.identifier;
-      }
-    } catch {
-      this.log('debug', 'Failed to get current activity');
-    }
-
+  private handleGetInput(): CharacteristicValue {
+    // Return cached state immediately to avoid Homebridge timeout warnings
+    // Actual state is updated via polling
     return this.currentInputId;
   }
 
@@ -520,13 +508,10 @@ export class PhilipsAmbilightTVAccessory {
     await this.tvClient.sendKey(key);
   }
 
-  private async handleGetMute(): Promise<CharacteristicValue> {
-    try {
-      const volume = await this.tvClient.getVolume();
-      return volume?.muted ?? false;
-    } catch {
-      return false;
-    }
+  private handleGetMute(): CharacteristicValue {
+    // Return cached state immediately to avoid Homebridge timeout warnings
+    // Actual state is updated via polling
+    return this.isMuted;
   }
 
   private async handleSetMute(value: CharacteristicValue): Promise<void> {
@@ -538,15 +523,9 @@ export class PhilipsAmbilightTVAccessory {
   // AMBILIGHT HANDLERS
   // ============================================================================
 
-  private async handleGetAmbilight(): Promise<CharacteristicValue> {
-    this.log('debug', 'Getting Ambilight state');
-
-    try {
-      this.isAmbilightOn = await this.tvClient.getAmbilightPower();
-    } catch {
-      this.log('debug', 'Failed to get Ambilight state');
-    }
-
+  private handleGetAmbilight(): CharacteristicValue {
+    // Return cached state immediately to avoid Homebridge timeout warnings
+    // Actual state is updated via polling
     return this.isAmbilightOn;
   }
 
@@ -590,13 +569,36 @@ export class PhilipsAmbilightTVAccessory {
         this.log('debug', `Power state updated: ${isOn ? 'ON' : 'OFF'}`);
       }
 
-      // Poll Ambilight state only if TV is on
+      // Poll additional states only if TV is on
       if (isOn) {
+        // Ambilight state
         const ambilightOn = await this.tvClient.getAmbilightPower();
         if (ambilightOn !== this.isAmbilightOn) {
           this.isAmbilightOn = ambilightOn;
           this.ambilightService.updateCharacteristic(this.Characteristic.On, ambilightOn);
           this.log('debug', `Ambilight state updated: ${ambilightOn ? 'ON' : 'OFF'}`);
+        }
+
+        // Mute state
+        const volume = await this.tvClient.getVolume();
+        if (volume) {
+          const muted = volume.muted ?? false;
+          if (muted !== this.isMuted) {
+            this.isMuted = muted;
+            this.speakerService.updateCharacteristic(this.Characteristic.Mute, muted);
+            this.log('debug', `Mute state updated: ${muted ? 'muted' : 'unmuted'}`);
+          }
+        }
+
+        // Current input/activity
+        const currentApp = await this.tvClient.getCurrentActivity();
+        if (currentApp) {
+          const inputSource = this.inputSources.find(i => i.id === currentApp);
+          if (inputSource && inputSource.identifier !== this.currentInputId) {
+            this.currentInputId = inputSource.identifier;
+            this.tvService.updateCharacteristic(this.Characteristic.ActiveIdentifier, this.currentInputId);
+            this.log('debug', `Input updated: ${inputSource.name}`);
+          }
         }
       }
     } catch {

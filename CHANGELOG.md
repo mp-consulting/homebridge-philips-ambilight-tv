@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.1] - 2024-12-23
+
+### Fixed
+
+- Fixed Homebridge timeout warnings ("read handler didn't respond at all") by returning cached state immediately from all `onGet` handlers instead of making synchronous API calls
+- Enhanced state polling to also track mute state and current input/activity
+- Added `isMuted` cached state property for faster mute status responses
+
 ## [1.0.0] - 2024-12-20
 
 ### Added
