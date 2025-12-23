@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.2] - 2024-12-23
+
+### Fixed
+
+- Fixed plugin name in settings.ts to match scoped package name (`@mp-consulting/homebridge-philips-ambilight-tv`)
+- Updated dependencies to reduce security vulnerabilities
+
 ## [1.0.1] - 2024-12-23
 
 ### Fixed

@@ -6,4 +6,4 @@ export const PLATFORM_NAME = 'PhilipsAmbilightTV';
 /**
  * This must match the name of your plugin as defined the package.json `name` property
  */
-export const PLUGIN_NAME = 'homebridge-philips-ambilight-tv';
+export const PLUGIN_NAME = '@mp-consulting/homebridge-philips-ambilight-tv';
