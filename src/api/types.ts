@@ -163,9 +163,109 @@ export interface CurrentActivity {
 }
 
 export interface AmbilightState {
-  styleName?: string;
+  styleName?: AmbilightStyleName;
   isExpert?: boolean;
   menuSetting?: string;
+  style?: AmbilightStyleName;
+  algorithm?: string;
+}
+
+// Ambilight style names from iOS app analysis
+export type AmbilightStyleName = 'OFF' | 'FOLLOW_VIDEO' | 'FOLLOW_AUDIO' | 'FOLLOW_COLOR' | 'Lounge light' | 'FOLLOW_FLAG';
+
+// Follow Video sub-styles
+export type AmbilightVideoStyle =
+  | 'STANDARD'
+  | 'NATURAL'
+  | 'FOOTBALL'
+  | 'VIVID'
+  | 'GAME'
+  | 'COMFORT'
+  | 'RELAX';
+
+// Follow Audio sub-styles (algorithms)
+export type AmbilightAudioStyle =
+  | 'ENERGY_ADAPTIVE_BRIGHTNESS'
+  | 'ENERGY_ADAPTIVE_COLORS'
+  | 'VU_METER'
+  | 'SPECTRUM_ANALYZER'
+  | 'KNIGHT_RIDER_CLOCKWISE'
+  | 'KNIGHT_RIDER_ALTERNATING'
+  | 'RANDOM_PIXEL_FLASH'
+  | 'STROBE'
+  | 'PARTY';
+
+// Follow Audio style names (user-friendly)
+export type AmbilightAudioStyleName =
+  | 'Lumina'
+  | 'Colora'
+  | 'Retro'
+  | 'Spectrum'
+  | 'Scanner'
+  | 'Rhythm'
+  | 'Party';
+
+// Follow Color sub-styles
+export type AmbilightColorStyle =
+  | 'HOT_LAVA'
+  | 'DEEP_WATER'
+  | 'FRESH_NATURE'
+  | 'WARM_WHITE'
+  | 'COOL_WHITE';
+
+// Lounge light color presets
+export type AmbilightLoungeStyle =
+  | 'Hot lava'
+  | 'Deep water'
+  | 'Fresh nature'
+  | 'Warm White'
+  | 'Cool white';
+
+// Full Ambilight configuration for setting styles
+export interface AmbilightConfig {
+  styleName: AmbilightStyleName;
+  isExpert?: boolean;
+  algorithm?: string;
+  speed?: number;       // 0-255 for FOLLOW_COLOR
+  colorDelta?: number;
+  color?: AmbilightColor;
+  colorSettings?: {
+    color: AmbilightColor;
+    colorDelta: AmbilightColor;
+    speed: number;
+  };
+}
+
+export interface AmbilightColor {
+  hue: number;        // 0-255
+  saturation: number; // 0-255
+  brightness: number; // 0-255
+}
+
+// Ambilight topology (number of LEDs on each side)
+export interface AmbilightTopology {
+  layers: number;
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
+// Current ambilight mode response
+export interface AmbilightCurrentMode {
+  current: AmbilightStyleName;
+}
+
+// Ambilight cached response
+export interface AmbilightCached {
+  styleName: AmbilightStyleName;
+  isExpert: boolean;
+  algorithm?: string;
+  colorSettings?: {
+    color: AmbilightColor;
+    colorDelta: AmbilightColor;
+    speed: number;
+  };
 }
 
 export type RemoteKey =

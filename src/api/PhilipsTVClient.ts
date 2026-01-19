@@ -22,6 +22,11 @@ import type {
   TVChannelList,
   RemoteKey,
   SystemInfo,
+  AmbilightStyleName,
+  AmbilightConfig,
+  AmbilightTopology,
+  AmbilightCached,
+  AmbilightColor,
 } from './types.js';
 
 // ============================================================================
@@ -30,6 +35,14 @@ import type {
 
 const WOL_WAKE_DELAY_MS = 2000;
 const DEFAULT_TIMEOUT_MS = 15000;
+
+/** Ambilight menu settings node IDs (from iOS app analysis) */
+const AMBILIGHT_BRIGHTNESS_NODE_ID = 2131230769;
+const AMBILIGHT_SATURATION_NODE_ID = 2131230771;
+
+/** Ambilight menu settings range */
+const AMBILIGHT_SETTING_MIN = 0;
+const AMBILIGHT_SETTING_MAX = 10;
 
 /** HDMI passthrough URI prefix for Android TV */
 const HDMI_PASSTHROUGH_PREFIX = 'content://android.media.tv/passthrough/com.mediatek.tvinput%2F.hdmi.HDMIInputService%2F';
@@ -330,6 +343,148 @@ export class PhilipsTVClient {
 
   async setAmbilightPower(on: boolean): Promise<boolean> {
     const result = await this.post('/ambilight/power', { power: on ? 'On' : 'Off' });
+    return result !== null;
+  }
+
+  /**
+   * Get the current Ambilight style/mode
+   */
+  async getAmbilightStyle(): Promise<AmbilightCached | null> {
+    return this.get<AmbilightCached>('/ambilight/currentconfiguration');
+  }
+
+  /**
+   * Set Ambilight to a specific style
+   * @param style - The style name: OFF, FOLLOW_VIDEO, FOLLOW_AUDIO, FOLLOW_COLOR, etc.
+   * @param algorithm - Optional algorithm for FOLLOW_AUDIO (e.g., 'ENERGY_ADAPTIVE_BRIGHTNESS')
+   */
+  async setAmbilightStyle(style: AmbilightStyleName, algorithm?: string): Promise<boolean> {
+    const config: AmbilightConfig = {
+      styleName: style,
+      isExpert: false,
+    };
+
+    if (algorithm) {
+      config.algorithm = algorithm;
+      config.isExpert = true;
+    }
+
+    const result = await this.post('/ambilight/currentconfiguration', config);
+    return result !== null;
+  }
+
+  /**
+   * Set Ambilight to Follow Video mode
+   * @param style - Video style: STANDARD, NATURAL, FOOTBALL, VIVID, GAME, COMFORT, RELAX
+   */
+  async setAmbilightFollowVideo(style: string = 'STANDARD'): Promise<boolean> {
+    const config: AmbilightConfig = {
+      styleName: 'FOLLOW_VIDEO',
+      isExpert: true,
+      algorithm: style,
+    };
+    const result = await this.post('/ambilight/currentconfiguration', config);
+    return result !== null;
+  }
+
+  /**
+   * Set Ambilight to Follow Audio mode
+   * @param algorithm - Audio algorithm: ENERGY_ADAPTIVE_BRIGHTNESS, VU_METER, SPECTRUM_ANALYZER, etc.
+   */
+  async setAmbilightFollowAudio(algorithm: string = 'ENERGY_ADAPTIVE_BRIGHTNESS'): Promise<boolean> {
+    const config: AmbilightConfig = {
+      styleName: 'FOLLOW_AUDIO',
+      isExpert: true,
+      algorithm,
+    };
+    const result = await this.post('/ambilight/currentconfiguration', config);
+    return result !== null;
+  }
+
+  /**
+   * Set Ambilight to Follow Color (static color) mode
+   * @param color - The color to display (hue, saturation, brightness each 0-255)
+   * @param speed - Animation speed (0-255), 0 = static
+   */
+  async setAmbilightFollowColor(color: AmbilightColor, speed: number = 0): Promise<boolean> {
+    const config: AmbilightConfig = {
+      styleName: 'FOLLOW_COLOR',
+      isExpert: true,
+      algorithm: speed > 0 ? 'AUTOMATIC_HUE' : 'MANUAL_HUE',
+      speed,
+      colorSettings: {
+        color,
+        colorDelta: { hue: 0, saturation: 0, brightness: 0 },
+        speed,
+      },
+    };
+    const result = await this.post('/ambilight/currentconfiguration', config);
+    return result !== null;
+  }
+
+  /**
+   * Set Ambilight to Lounge Light mode (preset colors)
+   * @param preset - Preset name: 'Hot lava', 'Deep water', 'Fresh nature', 'Warm White', 'Cool white'
+   */
+  async setAmbilightLounge(preset: string = 'Warm White'): Promise<boolean> {
+    // Lounge light presets map to specific colors
+    const presets: Record<string, AmbilightColor> = {
+      'Hot lava': { hue: 0, saturation: 255, brightness: 255 },
+      'Deep water': { hue: 170, saturation: 255, brightness: 255 },
+      'Fresh nature': { hue: 85, saturation: 255, brightness: 255 },
+      'Warm White': { hue: 30, saturation: 80, brightness: 255 },
+      'Cool white': { hue: 200, saturation: 40, brightness: 255 },
+    };
+
+    const color = presets[preset] ?? presets['Warm White'];
+    return this.setAmbilightFollowColor(color, 0);
+  }
+
+  /**
+   * Turn Ambilight off
+   */
+  async setAmbilightOff(): Promise<boolean> {
+    return this.setAmbilightStyle('OFF');
+  }
+
+  /**
+   * Get Ambilight topology (number of LEDs on each side)
+   */
+  async getAmbilightTopology(): Promise<AmbilightTopology | null> {
+    return this.get<AmbilightTopology>('/ambilight/topology');
+  }
+
+  /**
+   * Set Ambilight brightness
+   * @param brightness - Brightness level (0-10)
+   */
+  async setAmbilightBrightness(brightness: number): Promise<boolean> {
+    const clampedBrightness = Math.max(AMBILIGHT_SETTING_MIN, Math.min(AMBILIGHT_SETTING_MAX, brightness));
+    const result = await this.post('/menuitems/settings/update', {
+      values: [{
+        value: {
+          Nodeid: AMBILIGHT_BRIGHTNESS_NODE_ID,
+          data: { value: clampedBrightness },
+        },
+      }],
+    });
+    return result !== null;
+  }
+
+  /**
+   * Set Ambilight saturation
+   * @param saturation - Saturation level (0-10)
+   */
+  async setAmbilightSaturation(saturation: number): Promise<boolean> {
+    const clampedSaturation = Math.max(AMBILIGHT_SETTING_MIN, Math.min(AMBILIGHT_SETTING_MAX, saturation));
+    const result = await this.post('/menuitems/settings/update', {
+      values: [{
+        value: {
+          Nodeid: AMBILIGHT_SATURATION_NODE_ID,
+          data: { value: clampedSaturation },
+        },
+      }],
+    });
     return result !== null;
   }
 

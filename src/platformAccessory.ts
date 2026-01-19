@@ -2,7 +2,7 @@ import type { CharacteristicValue, PlatformAccessory, Service } from 'homebridge
 
 import type { PhilipsAmbilightTVPlatform } from './platform.js';
 import { PhilipsTVClient, HDMI_SOURCES, WATCH_TV_URI } from './api/PhilipsTVClient.js';
-import type { TVDeviceConfig, RemoteKey } from './api/types.js';
+import type { TVDeviceConfig, RemoteKey, AmbilightColor } from './api/types.js';
 
 // ============================================================================
 // CONSTANTS
@@ -13,6 +13,14 @@ const DEFAULT_POLLING_INTERVAL_MS = 10000;
 
 /** Maximum number of input sources allowed by HomeKit */
 const MAX_INPUT_SOURCES = 15;
+
+/** HomeKit color ranges */
+const HOMEKIT_HUE_MAX = 360;
+const HOMEKIT_SATURATION_MAX = 100;
+const HOMEKIT_BRIGHTNESS_MAX = 100;
+
+/** Philips Ambilight color ranges */
+const PHILIPS_COLOR_MAX = 255;
 
 /** Fallback apps when TV is unreachable */
 const FALLBACK_APPS: ReadonlyArray<{ id: string; name: string }> = [
@@ -110,6 +118,9 @@ export class PhilipsAmbilightTVAccessory {
   private currentInputId = 1;
   private isPoweredOn = false;
   private isAmbilightOn = false;
+  private ambilightBrightness = 100; // 0-100 for HomeKit
+  private ambilightHue = 0;          // 0-360 for HomeKit
+  private ambilightSaturation = 0;   // 0-100 for HomeKit
   private isMuted = false;
   private pollingTimer?: ReturnType<typeof setInterval>;
 
@@ -204,9 +215,25 @@ export class PhilipsAmbilightTVAccessory {
 
     service.setCharacteristic(this.Characteristic.Name, 'Ambilight');
 
+    // On/Off control
     service.getCharacteristic(this.Characteristic.On)
       .onGet(() => this.handleGetAmbilight())
       .onSet((value) => this.handleSetAmbilight(value));
+
+    // Brightness control (0-100)
+    service.getCharacteristic(this.Characteristic.Brightness)
+      .onGet(() => this.handleGetAmbilightBrightness())
+      .onSet((value) => this.handleSetAmbilightBrightness(value));
+
+    // Hue control (0-360)
+    service.getCharacteristic(this.Characteristic.Hue)
+      .onGet(() => this.handleGetAmbilightHue())
+      .onSet((value) => this.handleSetAmbilightHue(value));
+
+    // Saturation control (0-100)
+    service.getCharacteristic(this.Characteristic.Saturation)
+      .onGet(() => this.handleGetAmbilightSaturation())
+      .onSet((value) => this.handleSetAmbilightSaturation(value));
 
     this.tvService.addLinkedService(service);
 
@@ -533,12 +560,97 @@ export class PhilipsAmbilightTVAccessory {
     const shouldBeOn = value as boolean;
     this.log('info', `Setting Ambilight to ${shouldBeOn ? 'ON' : 'OFF'}`);
 
-    const success = await this.tvClient.setAmbilightPower(shouldBeOn);
+    let success: boolean;
+    if (shouldBeOn) {
+      // When turning on, set to Follow Color mode with current color
+      const color = this.homekitToPhilipsColor(this.ambilightHue, this.ambilightSaturation, this.ambilightBrightness);
+      success = await this.tvClient.setAmbilightFollowColor(color);
+    } else {
+      success = await this.tvClient.setAmbilightOff();
+    }
+
     if (success) {
       this.isAmbilightOn = shouldBeOn;
     } else {
       this.log('warn', 'Failed to change Ambilight state');
     }
+  }
+
+  private handleGetAmbilightBrightness(): CharacteristicValue {
+    return this.ambilightBrightness;
+  }
+
+  private async handleSetAmbilightBrightness(value: CharacteristicValue): Promise<void> {
+    const brightness = value as number;
+    this.log('debug', `Setting Ambilight brightness to ${brightness}%`);
+
+    this.ambilightBrightness = brightness;
+
+    // Update the color with new brightness
+    if (this.isAmbilightOn) {
+      const color = this.homekitToPhilipsColor(this.ambilightHue, this.ambilightSaturation, brightness);
+      await this.tvClient.setAmbilightFollowColor(color);
+    }
+  }
+
+  private handleGetAmbilightHue(): CharacteristicValue {
+    return this.ambilightHue;
+  }
+
+  private async handleSetAmbilightHue(value: CharacteristicValue): Promise<void> {
+    const hue = value as number;
+    this.log('debug', `Setting Ambilight hue to ${hue}`);
+
+    this.ambilightHue = hue;
+
+    // Update the color with new hue
+    if (this.isAmbilightOn) {
+      const color = this.homekitToPhilipsColor(hue, this.ambilightSaturation, this.ambilightBrightness);
+      await this.tvClient.setAmbilightFollowColor(color);
+    }
+  }
+
+  private handleGetAmbilightSaturation(): CharacteristicValue {
+    return this.ambilightSaturation;
+  }
+
+  private async handleSetAmbilightSaturation(value: CharacteristicValue): Promise<void> {
+    const saturation = value as number;
+    this.log('debug', `Setting Ambilight saturation to ${saturation}%`);
+
+    this.ambilightSaturation = saturation;
+
+    // Update the color with new saturation
+    if (this.isAmbilightOn) {
+      const color = this.homekitToPhilipsColor(this.ambilightHue, saturation, this.ambilightBrightness);
+      await this.tvClient.setAmbilightFollowColor(color);
+    }
+  }
+
+  /**
+   * Convert HomeKit HSB values to Philips Ambilight color format
+   * HomeKit: Hue 0-360, Saturation 0-100, Brightness 0-100
+   * Philips: Hue 0-255, Saturation 0-255, Brightness 0-255
+   */
+  private homekitToPhilipsColor(hue: number, saturation: number, brightness: number): AmbilightColor {
+    return {
+      hue: Math.round((hue / HOMEKIT_HUE_MAX) * PHILIPS_COLOR_MAX),
+      saturation: Math.round((saturation / HOMEKIT_SATURATION_MAX) * PHILIPS_COLOR_MAX),
+      brightness: Math.round((brightness / HOMEKIT_BRIGHTNESS_MAX) * PHILIPS_COLOR_MAX),
+    };
+  }
+
+  /**
+   * Convert Philips Ambilight color format to HomeKit HSB values
+   * Philips: Hue 0-255, Saturation 0-255, Brightness 0-255
+   * HomeKit: Hue 0-360, Saturation 0-100, Brightness 0-100
+   */
+  private philipsToHomekitColor(color: AmbilightColor): { hue: number; saturation: number; brightness: number } {
+    return {
+      hue: Math.round((color.hue / PHILIPS_COLOR_MAX) * HOMEKIT_HUE_MAX),
+      saturation: Math.round((color.saturation / PHILIPS_COLOR_MAX) * HOMEKIT_SATURATION_MAX),
+      brightness: Math.round((color.brightness / PHILIPS_COLOR_MAX) * HOMEKIT_BRIGHTNESS_MAX),
+    };
   }
 
   // ============================================================================
@@ -571,12 +683,42 @@ export class PhilipsAmbilightTVAccessory {
 
       // Poll additional states only if TV is on
       if (isOn) {
-        // Ambilight state
-        const ambilightOn = await this.tvClient.getAmbilightPower();
-        if (ambilightOn !== this.isAmbilightOn) {
-          this.isAmbilightOn = ambilightOn;
-          this.ambilightService.updateCharacteristic(this.Characteristic.On, ambilightOn);
-          this.log('debug', `Ambilight state updated: ${ambilightOn ? 'ON' : 'OFF'}`);
+        // Ambilight state and style
+        const ambilightStyle = await this.tvClient.getAmbilightStyle();
+        if (ambilightStyle) {
+          const ambilightOn = ambilightStyle.styleName !== 'OFF';
+
+          if (ambilightOn !== this.isAmbilightOn) {
+            this.isAmbilightOn = ambilightOn;
+            this.ambilightService.updateCharacteristic(this.Characteristic.On, ambilightOn);
+            this.log('debug', `Ambilight state updated: ${ambilightOn ? 'ON' : 'OFF'}`);
+          }
+
+          // Update color if in FOLLOW_COLOR mode
+          if (ambilightStyle.styleName === 'FOLLOW_COLOR' && ambilightStyle.colorSettings?.color) {
+            const homeKitColor = this.philipsToHomekitColor(ambilightStyle.colorSettings.color);
+
+            if (homeKitColor.hue !== this.ambilightHue) {
+              this.ambilightHue = homeKitColor.hue;
+              this.ambilightService.updateCharacteristic(this.Characteristic.Hue, homeKitColor.hue);
+            }
+            if (homeKitColor.saturation !== this.ambilightSaturation) {
+              this.ambilightSaturation = homeKitColor.saturation;
+              this.ambilightService.updateCharacteristic(this.Characteristic.Saturation, homeKitColor.saturation);
+            }
+            if (homeKitColor.brightness !== this.ambilightBrightness) {
+              this.ambilightBrightness = homeKitColor.brightness;
+              this.ambilightService.updateCharacteristic(this.Characteristic.Brightness, homeKitColor.brightness);
+            }
+          }
+        } else {
+          // Fallback to simple power check if style endpoint fails
+          const ambilightOn = await this.tvClient.getAmbilightPower();
+          if (ambilightOn !== this.isAmbilightOn) {
+            this.isAmbilightOn = ambilightOn;
+            this.ambilightService.updateCharacteristic(this.Characteristic.On, ambilightOn);
+            this.log('debug', `Ambilight state updated: ${ambilightOn ? 'ON' : 'OFF'}`);
+          }
         }
 
         // Mute state

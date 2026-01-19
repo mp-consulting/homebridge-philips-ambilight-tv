@@ -12,9 +12,19 @@ A Homebridge plugin to control Philips Android TVs with Ambilight as HomeKit Tel
 - Input source selection (HDMI, TV tuner, apps)
 - Volume control and mute
 - Remote control (D-Pad, Back, Menu, Play/Pause, etc.)
-- Ambilight power control
+- **Ambilight color control** with brightness and color picker
 - Multi-TV support
 - Custom UI for easy setup and configuration
+
+### Ambilight Control
+
+The Ambilight appears as a color lightbulb in HomeKit with:
+
+- **On/Off toggle** - Turn Ambilight on or off
+- **Brightness slider** - Control light intensity (0-100%)
+- **Color wheel** - Pick any color using the HSB color picker
+
+When you select a color in HomeKit, the TV switches to "Follow Color" mode with your chosen color. The plugin also syncs the current color state from the TV back to HomeKit.
 
 ## Requirements
 
