@@ -36,6 +36,9 @@ import type {
 const WOL_WAKE_DELAY_MS = 1000;
 const DEFAULT_TIMEOUT_MS = 5000;
 
+/** Minimum delay between consecutive API requests to avoid overwhelming the TV */
+const INTER_REQUEST_DELAY_MS = 100;
+
 /** Ambilight menu settings node IDs (from iOS app analysis) */
 const AMBILIGHT_BRIGHTNESS_NODE_ID = 2131230769;
 const AMBILIGHT_SATURATION_NODE_ID = 2131230771;
@@ -91,6 +94,9 @@ interface ApplicationIntent {
 export class PhilipsTVClient {
   private readonly config: PhilipsTVClientConfig;
 
+  /** Promise chain that serializes all requests to the TV */
+  private requestQueue: Promise<void> = Promise.resolve();
+
   constructor(config: PhilipsTVClientConfig) {
     this.config = config;
   }
@@ -99,7 +105,32 @@ export class PhilipsTVClient {
   // HTTP LAYER
   // ==========================================================================
 
-  private async request<T>(
+  /**
+   * Queued request wrapper. Serializes all API calls so only one HTTP
+   * exchange is in-flight at a time, with a small delay between requests
+   * to avoid overwhelming the TV's lightweight JointSpace API server.
+   */
+  private request<T>(
+    method: 'GET' | 'POST',
+    endpoint: string,
+    body?: unknown,
+    timeout = DEFAULT_TIMEOUT_MS,
+  ): Promise<T | null> {
+    return new Promise<T | null>((resolve) => {
+      this.requestQueue = this.requestQueue.then(async () => {
+        try {
+          resolve(await this.executeRequest<T>(method, endpoint, body, timeout));
+        } catch {
+          resolve(null);
+        } finally {
+          await this.sleep(INTER_REQUEST_DELAY_MS);
+        }
+      });
+    });
+  }
+
+  /** Performs the actual HTTP request with digest auth handling. */
+  private async executeRequest<T>(
     method: 'GET' | 'POST',
     endpoint: string,
     body?: unknown,

@@ -11,6 +11,9 @@ import type { TVDeviceConfig, RemoteKey, AmbilightColor } from './api/types.js';
 /** Default polling interval in milliseconds */
 const DEFAULT_POLLING_INTERVAL_MS = 10000;
 
+/** Delay before first poll after accessory creation (ms) */
+const INITIAL_POLL_DELAY_MS = 5000;
+
 /** Maximum number of input sources allowed by HomeKit */
 const MAX_INPUT_SOURCES = 15;
 
@@ -122,6 +125,7 @@ export class PhilipsAmbilightTVAccessory {
   private ambilightHue = 0;          // 0-360 for HomeKit
   private ambilightSaturation = 0;   // 0-100 for HomeKit
   private isMuted = false;
+  private startupTimer?: ReturnType<typeof setTimeout>;
   private pollingTimer?: ReturnType<typeof setInterval>;
 
   constructor(
@@ -137,9 +141,6 @@ export class PhilipsAmbilightTVAccessory {
     this.ambilightService = this.configureAmbilightService();
     this.configureInputSourcesSync();
     this.startStatePolling();
-
-    // Fetch apps from TV in background (for future dynamic updates)
-    this.fetchAppsFromTV();
   }
 
   // ==========================================================================
@@ -705,11 +706,14 @@ export class PhilipsAmbilightTVAccessory {
   private startStatePolling(): void {
     const interval = this.config.pollingInterval ?? DEFAULT_POLLING_INTERVAL_MS;
 
-    this.pollingTimer = setInterval(() => this.pollState(), interval);
-    this.log('debug', `Started polling every ${interval}ms`);
+    // Delay the first poll to let the TV API stabilize after plugin load
+    this.startupTimer = setTimeout(async () => {
+      await this.pollState();
+      this.fetchAppsFromTV();
+      this.pollingTimer = setInterval(() => this.pollState(), interval);
+    }, INITIAL_POLL_DELAY_MS);
 
-    // Initial poll
-    this.pollState();
+    this.log('debug', `Polling will start in ${INITIAL_POLL_DELAY_MS}ms, then every ${interval}ms`);
   }
 
   private async pollState(): Promise<void> {
@@ -802,6 +806,10 @@ export class PhilipsAmbilightTVAccessory {
   }
 
   public cleanup(): void {
+    if (this.startupTimer) {
+      clearTimeout(this.startupTimer);
+      this.startupTimer = undefined;
+    }
     if (this.pollingTimer) {
       clearInterval(this.pollingTimer);
       this.pollingTimer = undefined;
