@@ -133,7 +133,7 @@ export class PhilipsAmbilightTVAccessory {
     private readonly accessory: PlatformAccessory,
   ) {
     this.config = accessory.context.device as TVDeviceConfig;
-    this.tvClient = new PhilipsTVClient(this.config);
+    this.tvClient = new PhilipsTVClient(this.config, (msg) => this.log('debug', msg));
 
     this.configureAccessoryInfo();
     this.tvService = this.configureTelevisionService();

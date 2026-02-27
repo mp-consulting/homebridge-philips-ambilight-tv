@@ -93,12 +93,14 @@ interface ApplicationIntent {
 
 export class PhilipsTVClient {
   private readonly config: PhilipsTVClientConfig;
+  private readonly debug: (message: string) => void;
 
   /** Promise chain that serializes all requests to the TV */
   private requestQueue: Promise<void> = Promise.resolve();
 
-  constructor(config: PhilipsTVClientConfig) {
+  constructor(config: PhilipsTVClientConfig, debug?: (message: string) => void) {
     this.config = config;
+    this.debug = debug ?? (() => {});
   }
 
   // ==========================================================================
@@ -118,9 +120,14 @@ export class PhilipsTVClient {
   ): Promise<T | null> {
     return new Promise<T | null>((resolve) => {
       this.requestQueue = this.requestQueue.then(async () => {
+        const start = Date.now();
+        this.debug(`API ${method} ${endpoint}`);
         try {
-          resolve(await this.executeRequest<T>(method, endpoint, body, timeout));
+          const result = await this.executeRequest<T>(method, endpoint, body, timeout);
+          this.debug(`API ${method} ${endpoint} → ${result !== null ? 'OK' : 'FAIL'} (${Date.now() - start}ms)`);
+          resolve(result);
         } catch {
+          this.debug(`API ${method} ${endpoint} → ERROR (${Date.now() - start}ms)`);
           resolve(null);
         } finally {
           await this.sleep(INTER_REQUEST_DELAY_MS);
