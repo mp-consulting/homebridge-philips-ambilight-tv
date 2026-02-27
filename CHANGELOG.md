@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.8] - 2026-02-27
+
+### Added
+
+- Unit test suite with 72 tests covering API utilities, TV client, and Ambilight color conversion
+- Config validation for device entries (IP format, MAC format, required fields, polling interval range)
+- Node.js version check at startup with warning for unsupported versions
+- Vitest configuration and CI test step
+
+### Changed
+
+- **Digest auth caching**: Credentials are now sent proactively after the first 401 handshake, halving HTTP round-trips to the TV during steady-state polling
+- Replaced `node-fetch` with native `fetch` via `undici` — fewer dependencies, same API
+- Split 818-line `platformAccessory.ts` into focused modules: `AmbilightService`, `InputSourceManager`, `StatePollManager`
+- Eliminated duplicated API code in `homebridge-ui/` — UI server now imports directly from `dist/api/`
+- Simplified build script (removed file copy step)
+- CI now uses `npm ci` with caching for faster, deterministic builds
+- Removed unused `homebridge-lib` and `ts-node` dependencies
+
 ## [1.0.6] - 2026-02-27
 
 ### Added

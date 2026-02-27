@@ -1,0 +1,232 @@
+import type { CharacteristicValue, HapStatusError, PlatformAccessory, Service } from 'homebridge';
+
+import type { PhilipsTVClient } from '../api/PhilipsTVClient.js';
+import type { AmbilightCached, AmbilightColor } from '../api/types.js';
+
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+
+/** HomeKit color ranges */
+const HOMEKIT_HUE_MAX = 360;
+const HOMEKIT_SATURATION_MAX = 100;
+const HOMEKIT_BRIGHTNESS_MAX = 100;
+
+/** Philips Ambilight color ranges */
+const PHILIPS_COLOR_MAX = 255;
+
+// ============================================================================
+// TYPES
+// ============================================================================
+
+export interface AmbilightServiceDeps {
+  readonly Service: typeof Service;
+  readonly Characteristic: typeof import('homebridge').Characteristic;
+  readonly tvClient: PhilipsTVClient;
+  readonly communicationError: () => HapStatusError;
+  readonly log: (level: 'debug' | 'info' | 'warn' | 'error', message: string) => void;
+}
+
+// ============================================================================
+// AMBILIGHT SERVICE
+// ============================================================================
+
+export class AmbilightService {
+  private service!: Service;
+
+  private isOn = false;
+  private brightness = 100; // 0-100 for HomeKit
+  private hue = 0;          // 0-360 for HomeKit
+  private saturation = 0;   // 0-100 for HomeKit
+
+  constructor(private readonly deps: AmbilightServiceDeps) {}
+
+  // ==========================================================================
+  // ACCESSORS
+  // ==========================================================================
+
+  get isAmbilightOn(): boolean {
+    return this.isOn;
+  }
+
+  getService(): Service {
+    return this.service;
+  }
+
+  // ==========================================================================
+  // CONFIGURATION
+  // ==========================================================================
+
+  configureService(accessory: PlatformAccessory, tvService: Service): Service {
+    const { Service: Svc, Characteristic: Char } = this.deps;
+
+    this.service = accessory.getService(Svc.Lightbulb)
+      ?? accessory.addService(Svc.Lightbulb, 'Ambilight', 'ambilight');
+
+    this.service.setCharacteristic(Char.Name, 'Ambilight');
+
+    this.service.getCharacteristic(Char.On)
+      .onGet(() => this.isOn)
+      .onSet((value) => this.handleSetOn(value));
+
+    this.service.getCharacteristic(Char.Brightness)
+      .onGet(() => this.brightness)
+      .onSet((value) => this.handleSetBrightness(value));
+
+    this.service.getCharacteristic(Char.Hue)
+      .onGet(() => this.hue)
+      .onSet((value) => this.handleSetHue(value));
+
+    this.service.getCharacteristic(Char.Saturation)
+      .onGet(() => this.saturation)
+      .onSet((value) => this.handleSetSaturation(value));
+
+    tvService.addLinkedService(this.service);
+
+    return this.service;
+  }
+
+  // ==========================================================================
+  // HANDLERS
+  // ==========================================================================
+
+  private async handleSetOn(value: CharacteristicValue): Promise<void> {
+    const shouldBeOn = value as boolean;
+    this.deps.log('info', `Setting Ambilight to ${shouldBeOn ? 'ON' : 'OFF'}`);
+
+    try {
+      let success: boolean;
+      if (shouldBeOn) {
+        const color = this.homekitToPhilipsColor(this.hue, this.saturation, this.brightness);
+        success = await this.deps.tvClient.setAmbilightFollowColor(color);
+      } else {
+        success = await this.deps.tvClient.setAmbilightOff();
+      }
+
+      if (success) {
+        this.isOn = shouldBeOn;
+      } else {
+        throw this.deps.communicationError();
+      }
+    } catch (error) {
+      this.deps.log('warn', 'Failed to change Ambilight state');
+      throw error instanceof Error && 'hapStatus' in error ? error : this.deps.communicationError();
+    }
+  }
+
+  private async handleSetBrightness(value: CharacteristicValue): Promise<void> {
+    const newBrightness = value as number;
+    this.deps.log('debug', `Setting Ambilight brightness to ${newBrightness}%`);
+    this.brightness = newBrightness;
+
+    if (this.isOn) {
+      try {
+        const color = this.homekitToPhilipsColor(this.hue, this.saturation, newBrightness);
+        await this.deps.tvClient.setAmbilightFollowColor(color);
+      } catch {
+        this.deps.log('warn', 'Failed to update Ambilight brightness');
+      }
+    }
+  }
+
+  private async handleSetHue(value: CharacteristicValue): Promise<void> {
+    const newHue = value as number;
+    this.deps.log('debug', `Setting Ambilight hue to ${newHue}`);
+    this.hue = newHue;
+
+    if (this.isOn) {
+      try {
+        const color = this.homekitToPhilipsColor(newHue, this.saturation, this.brightness);
+        await this.deps.tvClient.setAmbilightFollowColor(color);
+      } catch {
+        this.deps.log('warn', 'Failed to update Ambilight hue');
+      }
+    }
+  }
+
+  private async handleSetSaturation(value: CharacteristicValue): Promise<void> {
+    const newSaturation = value as number;
+    this.deps.log('debug', `Setting Ambilight saturation to ${newSaturation}%`);
+    this.saturation = newSaturation;
+
+    if (this.isOn) {
+      try {
+        const color = this.homekitToPhilipsColor(this.hue, newSaturation, this.brightness);
+        await this.deps.tvClient.setAmbilightFollowColor(color);
+      } catch {
+        this.deps.log('warn', 'Failed to update Ambilight saturation');
+      }
+    }
+  }
+
+  // ==========================================================================
+  // POLLING UPDATE
+  // ==========================================================================
+
+  updateFromPoll(ambilightStyle: AmbilightCached | null, ambilightPowerFallback: boolean): void {
+    const { Characteristic: Char } = this.deps;
+
+    if (ambilightStyle) {
+      const ambilightOn = ambilightStyle.styleName !== 'OFF';
+
+      if (ambilightOn !== this.isOn) {
+        this.isOn = ambilightOn;
+        this.service.updateCharacteristic(Char.On, ambilightOn);
+        this.deps.log('debug', `Ambilight state updated: ${ambilightOn ? 'ON' : 'OFF'}`);
+      }
+
+      if (ambilightStyle.styleName === 'FOLLOW_COLOR' && ambilightStyle.colorSettings?.color) {
+        const homeKitColor = this.philipsToHomekitColor(ambilightStyle.colorSettings.color);
+
+        if (homeKitColor.hue !== this.hue) {
+          this.hue = homeKitColor.hue;
+          this.service.updateCharacteristic(Char.Hue, homeKitColor.hue);
+        }
+        if (homeKitColor.saturation !== this.saturation) {
+          this.saturation = homeKitColor.saturation;
+          this.service.updateCharacteristic(Char.Saturation, homeKitColor.saturation);
+        }
+        if (homeKitColor.brightness !== this.brightness) {
+          this.brightness = homeKitColor.brightness;
+          this.service.updateCharacteristic(Char.Brightness, homeKitColor.brightness);
+        }
+      }
+    } else {
+      if (ambilightPowerFallback !== this.isOn) {
+        this.isOn = ambilightPowerFallback;
+        this.service.updateCharacteristic(Char.On, ambilightPowerFallback);
+        this.deps.log('debug', `Ambilight state updated: ${ambilightPowerFallback ? 'ON' : 'OFF'}`);
+      }
+    }
+  }
+
+  // ==========================================================================
+  // COLOR CONVERSION
+  // ==========================================================================
+
+  /**
+   * Convert HomeKit HSB values to Philips Ambilight color format
+   * HomeKit: Hue 0-360, Saturation 0-100, Brightness 0-100
+   * Philips: Hue 0-255, Saturation 0-255, Brightness 0-255
+   */
+  homekitToPhilipsColor(hue: number, saturation: number, brightness: number): AmbilightColor {
+    return {
+      hue: Math.round((hue / HOMEKIT_HUE_MAX) * PHILIPS_COLOR_MAX),
+      saturation: Math.round((saturation / HOMEKIT_SATURATION_MAX) * PHILIPS_COLOR_MAX),
+      brightness: Math.round((brightness / HOMEKIT_BRIGHTNESS_MAX) * PHILIPS_COLOR_MAX),
+    };
+  }
+
+  /**
+   * Convert Philips Ambilight color format to HomeKit HSB values
+   * Philips: Hue 0-255, Saturation 0-255, Brightness 0-255
+   * HomeKit: Hue 0-360, Saturation 0-100, Brightness 0-100
+   */
+  philipsToHomekitColor(color: AmbilightColor): { hue: number; saturation: number; brightness: number } {
+    return {
+      hue: Math.round((color.hue / PHILIPS_COLOR_MAX) * HOMEKIT_HUE_MAX),
+      saturation: Math.round((color.saturation / PHILIPS_COLOR_MAX) * HOMEKIT_SATURATION_MAX),
+      brightness: Math.round((color.brightness / PHILIPS_COLOR_MAX) * HOMEKIT_BRIGHTNESS_MAX),
+    };
+  }
+}

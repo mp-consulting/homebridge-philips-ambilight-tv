@@ -74,7 +74,7 @@ async function rawGet(endpoint, timeout = DEFAULT_TIMEOUT) {
   // First request (may get 401)
   const initialResponse = await fetchWithTimeout(
     url,
-    { method: 'GET', agent: httpsAgent },
+    { method: 'GET', dispatcher: httpsAgent },
     timeout,
   );
 
@@ -100,7 +100,7 @@ async function rawGet(endpoint, timeout = DEFAULT_TIMEOUT) {
         {
           method: 'GET',
           headers: { Authorization: authHeader },
-          agent: httpsAgent,
+          dispatcher: httpsAgent,
         },
         timeout,
       );
@@ -127,7 +127,7 @@ async function _rawPost(endpoint, body, timeout = DEFAULT_TIMEOUT) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
-      agent: httpsAgent,
+      dispatcher: httpsAgent,
     },
     timeout,
   );
@@ -158,7 +158,7 @@ async function _rawPost(endpoint, body, timeout = DEFAULT_TIMEOUT) {
             Authorization: authHeader,
           },
           body: JSON.stringify(body),
-          agent: httpsAgent,
+          dispatcher: httpsAgent,
         },
         timeout,
       );

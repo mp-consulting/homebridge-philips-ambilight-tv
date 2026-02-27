@@ -24,6 +24,7 @@ export {
   createDeviceInfo,
   handleErrorResponse,
   httpsAgent,
+  sanitizeForHomeKit,
 } from './utils.js';
 
 // TV Client

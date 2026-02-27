@@ -3,12 +3,14 @@
  * Handles all communication with the Philips TV JointSpace API (v6)
  */
 
+import crypto from 'crypto';
 import { TV_API_VERSION } from './constants.js';
 import {
   buildUrl,
   fetchWithTimeout,
   httpsAgent,
-  createDigestAuth,
+  parseWwwAuthenticate,
+  md5,
   sendWakeOnLan,
 } from './utils.js';
 import type {
@@ -98,6 +100,16 @@ export class PhilipsTVClient {
   /** Promise chain that serializes all requests to the TV */
   private requestQueue: Promise<void> = Promise.resolve();
 
+  /** Cached digest auth state — avoids a 401 round-trip on every request */
+  private cachedAuth: {
+    realm: string;
+    nonce: string;
+    qop: string;
+    opaque?: string;
+    ha1: string;
+    nc: number;
+  } | null = null;
+
   constructor(config: PhilipsTVClientConfig, debug?: (message: string) => void) {
     this.config = config;
     this.debug = debug ?? (() => {});
@@ -149,10 +161,32 @@ export class PhilipsTVClient {
     const requestBody = body ? JSON.stringify(body) : undefined;
 
     try {
-      // Initial request (may trigger 401 for digest auth)
+      // If we have cached auth, send credentials proactively (single round-trip)
+      if (this.cachedAuth) {
+        const authHeader = this.buildCachedDigestHeader(method, uri);
+        const response = await fetchWithTimeout(
+          url,
+          { method, headers: { ...headers, Authorization: authHeader }, body: requestBody, dispatcher: httpsAgent },
+          timeout,
+        );
+
+        if (response.ok) {
+          return this.parseJsonResponse<T>(response);
+        }
+
+        // Nonce expired — clear cache and fall through to fresh auth
+        if (response.status === 401) {
+          this.cachedAuth = null;
+          return this.freshDigestAuth<T>(response, method, url, uri, headers, requestBody, timeout);
+        }
+
+        return null;
+      }
+
+      // No cached auth — initial request (may trigger 401)
       const initialResponse = await fetchWithTimeout(
         url,
-        { method, headers, body: requestBody, agent: httpsAgent },
+        { method, headers, body: requestBody, dispatcher: httpsAgent },
         timeout,
       );
 
@@ -160,9 +194,8 @@ export class PhilipsTVClient {
         return this.parseJsonResponse<T>(initialResponse);
       }
 
-      // Handle digest authentication challenge
       if (initialResponse.status === 401) {
-        return this.handleDigestAuth<T>(initialResponse, method, url, uri, headers, requestBody, timeout);
+        return this.freshDigestAuth<T>(initialResponse, method, url, uri, headers, requestBody, timeout);
       }
 
       return null;
@@ -171,7 +204,38 @@ export class PhilipsTVClient {
     }
   }
 
-  private async handleDigestAuth<T>(
+  /**
+   * Build a digest Authorization header using cached auth parameters.
+   * Increments the nonce count for each use.
+   */
+  private buildCachedDigestHeader(method: string, uri: string): string {
+    const auth = this.cachedAuth!;
+    auth.nc++;
+    const nc = auth.nc.toString(16).padStart(8, '0');
+    const cnonce = crypto.randomBytes(16).toString('hex');
+
+    const ha2 = md5(`${method}:${uri}`);
+    const response = auth.qop
+      ? md5(`${auth.ha1}:${auth.nonce}:${nc}:${cnonce}:${auth.qop}:${ha2}`)
+      : md5(`${auth.ha1}:${auth.nonce}:${ha2}`);
+
+    let header = `Digest username="${this.config.username}", realm="${auth.realm}", nonce="${auth.nonce}", uri="${uri}", response="${response}"`;
+
+    if (auth.qop) {
+      header += `, qop=${auth.qop}, nc=${nc}, cnonce="${cnonce}"`;
+    }
+    if (auth.opaque) {
+      header += `, opaque="${auth.opaque}"`;
+    }
+
+    return header;
+  }
+
+  /**
+   * Perform a fresh digest auth handshake from a 401 response,
+   * caching the parameters for subsequent requests.
+   */
+  private async freshDigestAuth<T>(
     response: Awaited<ReturnType<typeof fetchWithTimeout>>,
     method: 'GET' | 'POST',
     url: string,
@@ -185,13 +249,16 @@ export class PhilipsTVClient {
       return null;
     }
 
-    const authHeader = createDigestAuth(
-      this.config.username,
-      this.config.password,
-      wwwAuth,
-      method,
-      uri,
-    );
+    // Cache the auth parameters for future requests
+    const params = parseWwwAuthenticate(wwwAuth);
+    this.cachedAuth = {
+      ...params,
+      ha1: md5(`${this.config.username}:${params.realm}:${this.config.password}`),
+      nc: 0,
+    };
+
+    // Use the cached header builder for the retry
+    const authHeader = this.buildCachedDigestHeader(method, uri);
 
     const authResponse = await fetchWithTimeout(
       url,
@@ -199,7 +266,7 @@ export class PhilipsTVClient {
         method,
         headers: { ...headers, Authorization: authHeader },
         body,
-        agent: httpsAgent,
+        dispatcher: httpsAgent,
       },
       timeout,
     );

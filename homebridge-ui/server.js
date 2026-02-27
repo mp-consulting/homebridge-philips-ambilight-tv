@@ -8,7 +8,7 @@ import {
   TV_API_VERSION,
   DISCOVERY_TIMEOUT,
   CONNECTION_TIMEOUT,
-} from './api/constants.js';
+} from '../dist/api/constants.js';
 import {
   hmacSignature,
   postToTv,
@@ -19,8 +19,8 @@ import {
   extractIpv4,
   createPairingSuccess,
   sendWakeOnLan,
-} from './api/utils.js';
-import { PhilipsTVClient, WATCH_TV_URI } from './api/PhilipsTVClient.js';
+} from '../dist/api/utils.js';
+import { PhilipsTVClient, WATCH_TV_URI } from '../dist/api/PhilipsTVClient.js';
 
 const getMAC = promisify(arp.getMAC);
 

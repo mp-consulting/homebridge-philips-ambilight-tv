@@ -62,7 +62,27 @@ export default tseslint.config(
       },
     },
   },
-  // Test files
+  // Vitest test files
+  {
+    files: ['src/__tests__/**/*.ts'],
+    languageOptions: {
+      globals: {
+        describe: 'readonly',
+        it: 'readonly',
+        expect: 'readonly',
+        vi: 'readonly',
+        beforeEach: 'readonly',
+        afterEach: 'readonly',
+        beforeAll: 'readonly',
+        afterAll: 'readonly',
+      },
+    },
+    rules: {
+      '@typescript-eslint/no-use-before-define': 'off',
+      '@typescript-eslint/no-explicit-any': 'off',
+    },
+  },
+  // Manual test files
   {
     files: ['test/**/*.js'],
     languageOptions: {

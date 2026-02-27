@@ -1,7 +1,17 @@
 import type { API, Characteristic, DynamicPlatformPlugin, Logging, PlatformAccessory, PlatformConfig, Service } from 'homebridge';
 
 import { PhilipsAmbilightTVAccessory } from './platformAccessory.js';
+import type { TVDeviceConfig } from './api/types.js';
 import { PLATFORM_NAME, PLUGIN_NAME } from './settings.js';
+
+// ============================================================================
+// VALIDATION
+// ============================================================================
+
+const IPV4_REGEX = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
+const MAC_REGEX = /^([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}$/;
+const MIN_POLLING_INTERVAL_MS = 1000;
+const MAX_POLLING_INTERVAL_MS = 60000;
 
 /**
  * HomebridgePlatform
@@ -45,6 +55,41 @@ export class PhilipsAmbilightTVPlatform implements DynamicPlatformPlugin {
     this.accessories.set(accessory.UUID, accessory);
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private validateDeviceConfig(device: any, index: number): device is TVDeviceConfig {
+    const requiredFields = ['name', 'ip', 'mac', 'username', 'password'] as const;
+
+    for (const field of requiredFields) {
+      if (!device[field] || typeof device[field] !== 'string') {
+        this.log.error(`Device #${index + 1}: Missing or invalid required field "${field}". Skipping.`);
+        return false;
+      }
+    }
+
+    if (!IPV4_REGEX.test(device.ip as string)) {
+      this.log.error(`Device "${device.name}": Invalid IP address format "${device.ip}". Skipping.`);
+      return false;
+    }
+
+    if (!MAC_REGEX.test(device.mac as string)) {
+      this.log.error(`Device "${device.name}": Invalid MAC address format "${device.mac}". Skipping.`);
+      return false;
+    }
+
+    if (device.pollingInterval !== undefined) {
+      const interval = device.pollingInterval as number;
+      if (typeof interval !== 'number' || interval < MIN_POLLING_INTERVAL_MS || interval > MAX_POLLING_INTERVAL_MS) {
+        this.log.warn(
+          `Device "${device.name}": pollingInterval ${interval}ms is out of range ` +
+          `(${MIN_POLLING_INTERVAL_MS}-${MAX_POLLING_INTERVAL_MS}). Using default.`,
+        );
+        delete device.pollingInterval;
+      }
+    }
+
+    return true;
+  }
+
   discoverDevices() {
     const devices = this.config.devices || [];
 
@@ -55,7 +100,12 @@ export class PhilipsAmbilightTVPlatform implements DynamicPlatformPlugin {
     // Track which UUIDs are still in the config
     const configuredUUIDs = new Set<string>();
 
-    for (const tv of devices) {
+    for (let i = 0; i < devices.length; i++) {
+      const tv = devices[i];
+      if (!this.validateDeviceConfig(tv, i)) {
+        continue;
+      }
+
       const uuid = this.api.hap.uuid.generate(PLATFORM_NAME + '-' + tv.mac);
       configuredUUIDs.add(uuid);
 

@@ -4,8 +4,7 @@
 
 import crypto from 'crypto';
 import dgram from 'dgram';
-import https from 'https';
-import fetch, { type RequestInit } from 'node-fetch';
+import { Agent, type Dispatcher, fetch } from 'undici';
 import { TV_API_PORT, TV_API_VERSION, ERROR_MESSAGES, AUTH_SHARED_KEY, WOL_PORT, WOL_BROADCAST_IP } from './constants.js';
 import type { DeviceInfo, DigestAuthParams, FetchOptions, PairingSession, DiscoveredDevice } from './types.js';
 
@@ -13,10 +12,10 @@ import type { DeviceInfo, DigestAuthParams, FetchOptions, PairingSession, Discov
 // HTTPS AGENT
 // ============================================================================
 
-export const httpsAgent = new https.Agent({
-  rejectUnauthorized: false,
-  keepAlive: true,
-  keepAliveMsecs: 30000,
+export const httpsAgent: Dispatcher = new Agent({
+  connect: { rejectUnauthorized: false },
+  keepAliveTimeout: 30_000,
+  keepAliveMaxTimeout: 30_000,
 });
 
 // ============================================================================
@@ -42,7 +41,7 @@ export const buildUrl = (ip: string, endpoint: string): string =>
 
 export const fetchWithTimeout = async (
   url: string,
-  options: RequestInit & { agent?: https.Agent },
+  options: { method: string; headers?: Record<string, string>; body?: string; dispatcher?: Dispatcher },
   timeout: number,
 ) => {
   const controller = new AbortController();
@@ -52,7 +51,7 @@ export const fetchWithTimeout = async (
     return await fetch(url, {
       ...options,
       signal: controller.signal,
-      agent: options.agent || httpsAgent,
+      dispatcher: options.dispatcher || httpsAgent,
     });
   } finally {
     clearTimeout(timeoutId);
@@ -71,7 +70,7 @@ export const postToTv = (
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...options.headers },
       body: JSON.stringify(body),
-      agent: httpsAgent,
+      dispatcher: httpsAgent,
     },
     options.timeout || 10000,
   );
@@ -86,7 +85,7 @@ export const getFromTv = (
     {
       method: 'GET',
       headers: options.headers || {},
-      agent: httpsAgent,
+      dispatcher: httpsAgent,
     },
     options.timeout || 5000,
   );
@@ -211,6 +210,27 @@ export const extractIpv4 = (service: DiscoveredDevice): string => {
   const ipv4 = service.addresses?.find(addr => addr.includes('.') && !addr.includes(':'));
   return ipv4 || service.addresses?.[0] || service.host;
 };
+
+// ============================================================================
+// STRING UTILITIES
+// ============================================================================
+
+/**
+ * Sanitize a name for HomeKit compatibility.
+ * HomeKit only allows alphanumeric, space, and apostrophe characters.
+ */
+export const sanitizeForHomeKit = (name: string): string =>
+  name
+    .replace(/\+/g, ' Plus')
+    .replace(/&/g, ' and ')
+    .replace(/@/g, ' at ')
+    .replace(/#/g, ' ')
+    .replace(/[^a-zA-Z0-9 ']/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/^[^a-zA-Z0-9]+/, '')
+    .replace(/[^a-zA-Z0-9]+$/, '')
+    || 'Unknown';
 
 // ============================================================================
 // WAKE-ON-LAN
