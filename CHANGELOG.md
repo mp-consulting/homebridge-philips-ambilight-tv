@@ -10,6 +10,8 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Reduced default API timeout from 5s to 2s to match pylips behavior — faster failure detection when TV is unreachable
+- Enabled HTTP keep-alive on the HTTPS agent for connection reuse, matching pylips' session pooling behavior
 - Merged v1.0.5 request serialization improvements
 
 ## [1.0.5] - 2026-02-27

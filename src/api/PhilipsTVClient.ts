@@ -34,7 +34,7 @@ import type {
 // ============================================================================
 
 const WOL_WAKE_DELAY_MS = 1000;
-const DEFAULT_TIMEOUT_MS = 5000;
+const DEFAULT_TIMEOUT_MS = 2000;
 
 /** Minimum delay between consecutive API requests to avoid overwhelming the TV */
 const INTER_REQUEST_DELAY_MS = 100;

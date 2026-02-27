@@ -13,7 +13,11 @@ import type { DeviceInfo, DigestAuthParams, FetchOptions, PairingSession, Discov
 // HTTPS AGENT
 // ============================================================================
 
-export const httpsAgent = new https.Agent({ rejectUnauthorized: false });
+export const httpsAgent = new https.Agent({
+  rejectUnauthorized: false,
+  keepAlive: true,
+  keepAliveMsecs: 30000,
+});
 
 // ============================================================================
 // CRYPTO UTILITIES
