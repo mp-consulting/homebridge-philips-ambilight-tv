@@ -139,6 +139,19 @@ Note: HomeKit limits input sources to 45 total.
 
 If you see these warnings in the Homebridge logs, make sure you are running v1.0.4 or later. Earlier versions used a 15-second API timeout that exceeded Homebridge's handler deadline, causing the plugin to slow down the entire instance when the TV was unreachable.
 
+### Debug logging
+
+Run Homebridge with the `-D` flag to enable debug mode. The plugin will log every API request with method, endpoint, result, and duration:
+
+```
+[Living Room TV] API GET /powerstate
+[Living Room TV] API GET /powerstate → OK (150ms)
+[Living Room TV] API GET /ambilight/currentconfiguration
+[Living Room TV] API GET /ambilight/currentconfiguration → OK (120ms)
+```
+
+This is useful for diagnosing TV API connectivity issues.
+
 ### Input sources not updating in Home app
 
 This is a known tvOS 18 bug. The plugin includes a workaround that may require removing and re-adding the TV in the Home app.

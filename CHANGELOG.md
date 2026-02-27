@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.6] - 2026-02-27
+
+### Added
+
+- Debug logging for all API requests (method, endpoint, result, duration) visible in Homebridge debug mode (`-D`)
+
+### Changed
+
+- Merged v1.0.5 request serialization improvements
+
 ## [1.0.5] - 2026-02-27
 
 ### Fixed

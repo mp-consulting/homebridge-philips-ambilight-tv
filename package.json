@@ -2,7 +2,7 @@
   "name": "@mp-consulting/homebridge-philips-ambilight-tv",
   "displayName": "Philips Ambilight TV",
   "type": "module",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "Homebridge plugin to control Philips Ambilight TV as a HomeKit Television accessory.",
   "author": "Mickael Palma",
   "license": "MIT",
