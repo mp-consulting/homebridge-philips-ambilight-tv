@@ -1,4 +1,4 @@
-import type { CharacteristicValue, PlatformAccessory, Service } from 'homebridge';
+import type { CharacteristicValue, HapStatusError, PlatformAccessory, Service } from 'homebridge';
 
 import type { PhilipsAmbilightTVPlatform } from './platform.js';
 import { PhilipsTVClient, HDMI_SOURCES, WATCH_TV_URI } from './api/PhilipsTVClient.js';
@@ -152,6 +152,12 @@ export class PhilipsAmbilightTVAccessory {
 
   private get Characteristic() {
     return this.platform.Characteristic;
+  }
+
+  /** Create a HapStatusError for service communication failure */
+  private communicationError(): HapStatusError {
+    const { HapStatusError: HapError, HAPStatus } = this.platform.api.hap;
+    return new HapError(HAPStatus.SERVICE_COMMUNICATION_FAILURE);
   }
 
   // ============================================================================
@@ -456,12 +462,17 @@ export class PhilipsAmbilightTVAccessory {
       return;
     }
 
-    const success = await this.tvClient.setPowerState(shouldBeOn);
-    if (success) {
-      this.isPoweredOn = shouldBeOn;
-      this.log('debug', `Power state changed to ${shouldBeOn ? 'ON' : 'OFF'}`);
-    } else {
+    try {
+      const success = await this.tvClient.setPowerState(shouldBeOn);
+      if (success) {
+        this.isPoweredOn = shouldBeOn;
+        this.log('debug', `Power state changed to ${shouldBeOn ? 'ON' : 'OFF'}`);
+      } else {
+        throw this.communicationError();
+      }
+    } catch (error) {
       this.log('warn', 'Failed to change power state');
+      throw error instanceof this.platform.api.hap.HapStatusError ? error : this.communicationError();
     }
   }
 
@@ -481,16 +492,21 @@ export class PhilipsAmbilightTVAccessory {
 
     if (!inputSource) {
       this.log('warn', `Unknown input identifier: ${identifier}`);
-      return;
+      throw this.communicationError();
     }
 
     this.log('info', `Switching to: ${inputSource.name}`);
 
-    const success = await this.switchInput(inputSource);
-    if (success) {
-      this.currentInputId = identifier;
-    } else {
+    try {
+      const success = await this.switchInput(inputSource);
+      if (success) {
+        this.currentInputId = identifier;
+      } else {
+        throw this.communicationError();
+      }
+    } catch (error) {
       this.log('warn', 'Failed to switch input');
+      throw error instanceof this.platform.api.hap.HapStatusError ? error : this.communicationError();
     }
   }
 
@@ -519,8 +535,12 @@ export class PhilipsAmbilightTVAccessory {
 
     this.log('debug', `Remote key: ${tvKey}`);
 
-    const success = await this.tvClient.sendKey(tvKey);
-    if (!success) {
+    try {
+      const success = await this.tvClient.sendKey(tvKey);
+      if (!success) {
+        this.log('warn', 'Failed to send remote key');
+      }
+    } catch {
       this.log('warn', 'Failed to send remote key');
     }
   }
@@ -532,7 +552,11 @@ export class PhilipsAmbilightTVAccessory {
   private async handleVolumeChange(value: CharacteristicValue): Promise<void> {
     const key: RemoteKey = value === 0 ? 'VolumeUp' : 'VolumeDown';
     this.log('debug', `Volume ${value === 0 ? 'up' : 'down'}`);
-    await this.tvClient.sendKey(key);
+    try {
+      await this.tvClient.sendKey(key);
+    } catch {
+      this.log('warn', 'Failed to change volume');
+    }
   }
 
   private handleGetMute(): CharacteristicValue {
@@ -543,7 +567,11 @@ export class PhilipsAmbilightTVAccessory {
 
   private async handleSetMute(value: CharacteristicValue): Promise<void> {
     this.log('debug', `Setting mute to ${value}`);
-    await this.tvClient.setMuted(value as boolean);
+    try {
+      await this.tvClient.setMuted(value as boolean);
+    } catch {
+      this.log('warn', 'Failed to set mute state');
+    }
   }
 
   // ============================================================================
@@ -560,19 +588,24 @@ export class PhilipsAmbilightTVAccessory {
     const shouldBeOn = value as boolean;
     this.log('info', `Setting Ambilight to ${shouldBeOn ? 'ON' : 'OFF'}`);
 
-    let success: boolean;
-    if (shouldBeOn) {
-      // When turning on, set to Follow Color mode with current color
-      const color = this.homekitToPhilipsColor(this.ambilightHue, this.ambilightSaturation, this.ambilightBrightness);
-      success = await this.tvClient.setAmbilightFollowColor(color);
-    } else {
-      success = await this.tvClient.setAmbilightOff();
-    }
+    try {
+      let success: boolean;
+      if (shouldBeOn) {
+        // When turning on, set to Follow Color mode with current color
+        const color = this.homekitToPhilipsColor(this.ambilightHue, this.ambilightSaturation, this.ambilightBrightness);
+        success = await this.tvClient.setAmbilightFollowColor(color);
+      } else {
+        success = await this.tvClient.setAmbilightOff();
+      }
 
-    if (success) {
-      this.isAmbilightOn = shouldBeOn;
-    } else {
+      if (success) {
+        this.isAmbilightOn = shouldBeOn;
+      } else {
+        throw this.communicationError();
+      }
+    } catch (error) {
       this.log('warn', 'Failed to change Ambilight state');
+      throw error instanceof this.platform.api.hap.HapStatusError ? error : this.communicationError();
     }
   }
 
@@ -588,8 +621,12 @@ export class PhilipsAmbilightTVAccessory {
 
     // Update the color with new brightness
     if (this.isAmbilightOn) {
-      const color = this.homekitToPhilipsColor(this.ambilightHue, this.ambilightSaturation, brightness);
-      await this.tvClient.setAmbilightFollowColor(color);
+      try {
+        const color = this.homekitToPhilipsColor(this.ambilightHue, this.ambilightSaturation, brightness);
+        await this.tvClient.setAmbilightFollowColor(color);
+      } catch {
+        this.log('warn', 'Failed to update Ambilight brightness');
+      }
     }
   }
 
@@ -605,8 +642,12 @@ export class PhilipsAmbilightTVAccessory {
 
     // Update the color with new hue
     if (this.isAmbilightOn) {
-      const color = this.homekitToPhilipsColor(hue, this.ambilightSaturation, this.ambilightBrightness);
-      await this.tvClient.setAmbilightFollowColor(color);
+      try {
+        const color = this.homekitToPhilipsColor(hue, this.ambilightSaturation, this.ambilightBrightness);
+        await this.tvClient.setAmbilightFollowColor(color);
+      } catch {
+        this.log('warn', 'Failed to update Ambilight hue');
+      }
     }
   }
 
@@ -622,8 +663,12 @@ export class PhilipsAmbilightTVAccessory {
 
     // Update the color with new saturation
     if (this.isAmbilightOn) {
-      const color = this.homekitToPhilipsColor(this.ambilightHue, saturation, this.ambilightBrightness);
-      await this.tvClient.setAmbilightFollowColor(color);
+      try {
+        const color = this.homekitToPhilipsColor(this.ambilightHue, saturation, this.ambilightBrightness);
+        await this.tvClient.setAmbilightFollowColor(color);
+      } catch {
+        this.log('warn', 'Failed to update Ambilight saturation');
+      }
     }
   }
 

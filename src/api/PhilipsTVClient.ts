@@ -33,8 +33,8 @@ import type {
 // CONSTANTS
 // ============================================================================
 
-const WOL_WAKE_DELAY_MS = 2000;
-const DEFAULT_TIMEOUT_MS = 15000;
+const WOL_WAKE_DELAY_MS = 1000;
+const DEFAULT_TIMEOUT_MS = 5000;
 
 /** Ambilight menu settings node IDs (from iOS app analysis) */
 const AMBILIGHT_BRIGHTNESS_NODE_ID = 2131230769;
