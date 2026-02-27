@@ -2,6 +2,7 @@ import type { API, Characteristic, DynamicPlatformPlugin, Logging, PlatformAcces
 
 import { PhilipsAmbilightTVAccessory } from './platformAccessory.js';
 import type { TVDeviceConfig } from './api/types.js';
+import { sanitizeForHomeKit } from './api/utils.js';
 import { PLATFORM_NAME, PLUGIN_NAME } from './settings.js';
 
 // ============================================================================
@@ -21,9 +22,6 @@ const MAX_POLLING_INTERVAL_MS = 60000;
 export class PhilipsAmbilightTVPlatform implements DynamicPlatformPlugin {
   public readonly Service: typeof Service;
   public readonly Characteristic: typeof Characteristic;
-
-  // this is used to track restored cached accessories
-  public readonly accessories: Map<string, PlatformAccessory> = new Map();
 
   constructor(
     public readonly log: Logging,
@@ -47,12 +45,16 @@ export class PhilipsAmbilightTVPlatform implements DynamicPlatformPlugin {
   }
 
   /**
-   * This function is invoked when homebridge restores cached accessories from disk at startup.
-   * It should be used to set up event handlers for characteristics and update respective values.
+   * Called when Homebridge restores cached accessories from disk at startup.
+   * TV accessories are published as external accessories (own HAP server),
+   * so we unregister any stale cached platform accessories here.
    */
   configureAccessory(accessory: PlatformAccessory) {
-    this.log.info('Loading accessory from cache:', accessory.displayName);
-    this.accessories.set(accessory.UUID, accessory);
+    this.log.info('Removing stale cached accessory:', accessory.displayName);
+    // Defer unregister to after Homebridge finishes restoring all accessories
+    this.api.on('didFinishLaunching', () => {
+      this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
+    });
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -97,43 +99,22 @@ export class PhilipsAmbilightTVPlatform implements DynamicPlatformPlugin {
       this.log.warn('No devices configured');
     }
 
-    // Track which UUIDs are still in the config
-    const configuredUUIDs = new Set<string>();
-
     for (let i = 0; i < devices.length; i++) {
       const tv = devices[i];
       if (!this.validateDeviceConfig(tv, i)) {
         continue;
       }
 
+      const displayName = sanitizeForHomeKit(tv.name);
       const uuid = this.api.hap.uuid.generate(PLATFORM_NAME + '-' + tv.mac);
-      configuredUUIDs.add(uuid);
 
-      const existingAccessory = this.accessories.get(uuid);
-
-      if (existingAccessory) {
-        // Accessory already exists, update context and re-initialize
-        this.log.info('Restoring existing accessory from cache:', tv.name);
-        existingAccessory.context.device = tv;
-        new PhilipsAmbilightTVAccessory(this, existingAccessory);
-      } else {
-        // Create new accessory
-        this.log.info('Adding new accessory:', tv.name);
-        const accessory = new this.api.platformAccessory(tv.name, uuid, this.api.hap.Categories.TELEVISION);
-        accessory.context.device = tv;
-        new PhilipsAmbilightTVAccessory(this, accessory);
-        this.api.publishExternalAccessories(PLUGIN_NAME, [accessory]);
-        this.accessories.set(uuid, accessory);
-      }
-    }
-
-    // Remove accessories that are no longer in the config
-    for (const [uuid, accessory] of this.accessories) {
-      if (!configuredUUIDs.has(uuid)) {
-        this.log.info('Removing accessory no longer in config:', accessory.displayName);
-        this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
-        this.accessories.delete(uuid);
-      }
+      // Always create fresh and publish as external accessory (own HAP server).
+      // Pairing is preserved across restarts via the persist/ directory.
+      this.log.info('Publishing external accessory:', displayName);
+      const accessory = new this.api.platformAccessory(displayName, uuid, this.api.hap.Categories.TELEVISION);
+      accessory.context.device = tv;
+      new PhilipsAmbilightTVAccessory(this, accessory);
+      this.api.publishExternalAccessories(PLUGIN_NAME, [accessory]);
     }
   }
 }

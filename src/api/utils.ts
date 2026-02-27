@@ -5,7 +5,10 @@
 import crypto from 'crypto';
 import dgram from 'dgram';
 import { Agent, type Dispatcher, fetch } from 'undici';
-import { TV_API_PORT, TV_API_VERSION, ERROR_MESSAGES, AUTH_SHARED_KEY, WOL_PORT, WOL_BROADCAST_IP } from './constants.js';
+import {
+  TV_API_PORT, TV_API_VERSION, ERROR_MESSAGES, AUTH_SHARED_KEY,
+  WOL_PORT, WOL_BROADCAST_IP, WOL_BURST_COUNT, WOL_PACKETS_PER_BURST, WOL_BURST_INTERVAL_MS,
+} from './constants.js';
 import type { DeviceInfo, DigestAuthParams, FetchOptions, PairingSession, DiscoveredDevice } from './types.js';
 
 // ============================================================================
@@ -43,9 +46,14 @@ export const fetchWithTimeout = async (
   url: string,
   options: { method: string; headers?: Record<string, string>; body?: string; dispatcher?: Dispatcher },
   timeout: number,
+  externalSignal?: AbortSignal,
 ) => {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+  // If an external signal is provided, abort our controller when it fires
+  const onExternalAbort = () => controller.abort();
+  externalSignal?.addEventListener('abort', onExternalAbort, { once: true });
 
   try {
     return await fetch(url, {
@@ -55,6 +63,7 @@ export const fetchWithTimeout = async (
     });
   } finally {
     clearTimeout(timeoutId);
+    externalSignal?.removeEventListener('abort', onExternalAbort);
   }
 };
 
@@ -246,6 +255,21 @@ const createMagicPacket = (mac: string): Buffer => {
   return packet;
 };
 
+const wolSendPacket = (socket: dgram.Socket, packet: Buffer): Promise<void> =>
+  new Promise((resolve, reject) => {
+    socket.send(packet, 0, packet.length, WOL_PORT, WOL_BROADCAST_IP, (err) =>
+      err ? reject(err) : resolve(),
+    );
+  });
+
+const wolSleep = (ms: number): Promise<void> =>
+  new Promise(resolve => setTimeout(resolve, ms));
+
+/**
+ * Send Wake-on-LAN magic packets in bursts (matching official Philips app).
+ * Sends WOL_BURST_COUNT bursts of WOL_PACKETS_PER_BURST packets each,
+ * with WOL_BURST_INTERVAL_MS between bursts.
+ */
 export const sendWakeOnLan = (macAddress: string): Promise<void> =>
   new Promise((resolve, reject) => {
     const mac = macAddress.replace(/[:-]/g, '').toLowerCase();
@@ -262,15 +286,22 @@ export const sendWakeOnLan = (macAddress: string): Promise<void> =>
       reject(err);
     });
 
-    socket.bind(() => {
+    socket.bind(async () => {
       socket.setBroadcast(true);
-      socket.send(packet, 0, packet.length, WOL_PORT, WOL_BROADCAST_IP, (err) => {
-        socket.close();
-        if (err) {
-          reject(err);
-        } else {
-          resolve();
+      try {
+        for (let burst = 0; burst < WOL_BURST_COUNT; burst++) {
+          for (let i = 0; i < WOL_PACKETS_PER_BURST; i++) {
+            await wolSendPacket(socket, packet);
+          }
+          if (burst < WOL_BURST_COUNT - 1) {
+            await wolSleep(WOL_BURST_INTERVAL_MS);
+          }
         }
-      });
+        socket.close();
+        resolve();
+      } catch (err) {
+        socket.close();
+        reject(err);
+      }
     });
   });

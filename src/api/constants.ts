@@ -3,6 +3,7 @@
  */
 
 export const TV_API_PORT = 1926;
+export const TV_API_HTTP_PORT = 1925;
 export const TV_API_VERSION = 6;
 
 // Timeouts (in milliseconds)
@@ -13,6 +14,11 @@ export const PAIRING_TIMEOUT = 15000;
 // Wake-on-LAN
 export const WOL_PORT = 9;
 export const WOL_BROADCAST_IP = '255.255.255.255';
+
+/** WoL burst configuration (matching official Philips app behavior) */
+export const WOL_BURST_COUNT = 3;
+export const WOL_PACKETS_PER_BURST = 5;
+export const WOL_BURST_INTERVAL_MS = 100;
 
 // Philips TV shared secret key for signature verification
 export const AUTH_SHARED_KEY = Buffer.from(

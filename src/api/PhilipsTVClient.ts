@@ -52,6 +52,10 @@ const AMBILIGHT_SETTING_MAX = 10;
 /** HDMI passthrough URI prefix for Android TV */
 const HDMI_PASSTHROUGH_PREFIX = 'content://android.media.tv/passthrough/com.mediatek.tvinput%2F.hdmi.HDMIInputService%2F';
 
+/** Channel list IDs from official Philips app (cable, terrestrial, satellite) */
+const CHANNEL_LIST_IDS = ['allcab', 'allter', 'allsat'] as const;
+const DEFAULT_CHANNEL_LIST_ID = 'allcab';
+
 /** Built-in HDMI sources for Android TV (Philips) */
 export const HDMI_SOURCES: Readonly<Record<string, string>> = {
   [`${HDMI_PASSTHROUGH_PREFIX}HW5`]: 'HDMI 1',
@@ -100,6 +104,9 @@ export class PhilipsTVClient {
   /** Promise chain that serializes all requests to the TV */
   private requestQueue: Promise<void> = Promise.resolve();
 
+  /** Cached app intents — maps packageName to the intent returned by the TV */
+  private appIntents = new Map<string, ApplicationIntent>();
+
   /** Cached digest auth state — avoids a 401 round-trip on every request */
   private cachedAuth: {
     realm: string;
@@ -133,10 +140,17 @@ export class PhilipsTVClient {
     return new Promise<T | null>((resolve) => {
       this.requestQueue = this.requestQueue.then(async () => {
         const start = Date.now();
-        this.debug(`API ${method} ${endpoint}`);
+        // Only log POST requests (user actions) — GET polling is silent unless it fails
+        if (method === 'POST') {
+          this.debug(`API POST ${endpoint} ← ${JSON.stringify(body)}`);
+        }
         try {
           const result = await this.executeRequest<T>(method, endpoint, body, timeout);
-          this.debug(`API ${method} ${endpoint} → ${result !== null ? 'OK' : 'FAIL'} (${Date.now() - start}ms)`);
+          if (method === 'POST') {
+            const elapsed = Date.now() - start;
+            const ok = result !== null;
+            this.debug(`API POST ${endpoint} → ${ok ? 'OK' : 'FAIL'} (${elapsed}ms)`);
+          }
           resolve(result);
         } catch {
           this.debug(`API ${method} ${endpoint} → ERROR (${Date.now() - start}ms)`);
@@ -180,6 +194,7 @@ export class PhilipsTVClient {
           return this.freshDigestAuth<T>(response, method, url, uri, headers, requestBody, timeout);
         }
 
+        this.debug(`API ${method} ${endpoint} HTTP ${response.status}`);
         return null;
       }
 
@@ -198,6 +213,7 @@ export class PhilipsTVClient {
         return this.freshDigestAuth<T>(initialResponse, method, url, uri, headers, requestBody, timeout);
       }
 
+      this.debug(`API ${method} ${endpoint} HTTP ${initialResponse.status}`);
       return null;
     } catch {
       return null;
@@ -276,7 +292,10 @@ export class PhilipsTVClient {
 
   private async parseJsonResponse<T>(response: Awaited<ReturnType<typeof fetchWithTimeout>>): Promise<T | null> {
     const text = await response.text();
-    return text ? (JSON.parse(text) as T) : null;
+    if (!text) {
+      return {} as T; // Empty body on 2xx is a success (common for POST)
+    }
+    return JSON.parse(text) as T;
   }
 
   private get<T>(endpoint: string, timeout?: number): Promise<T | null> {
@@ -376,13 +395,28 @@ export class PhilipsTVClient {
 
   async getApplications(): Promise<TVApplication[]> {
     const result = await this.get<TVApplicationList>('/applications');
-    return result?.applications ?? [];
+    const apps = result?.applications ?? [];
+
+    // Cache intents so launchApplication can use the correct className/action
+    for (const app of apps) {
+      const comp = app.intent?.component;
+      if (comp?.packageName && comp?.className && app.intent?.action) {
+        this.appIntents.set(comp.packageName, {
+          component: { packageName: comp.packageName, className: comp.className },
+          action: app.intent.action,
+        });
+      }
+    }
+
+    return apps;
   }
 
   async launchApplication(packageName: string): Promise<boolean> {
-    const intent: ApplicationIntent = {
+    // Use cached intent from getApplications() if available
+    const cached = this.appIntents.get(packageName);
+    const intent: ApplicationIntent = cached ?? {
       component: { packageName, className: 'MainActivity' },
-      action: 'Intent.ACTION_MAIN',
+      action: 'android.intent.action.MAIN',
     };
 
     return this.launchIntent(intent);
@@ -403,14 +437,32 @@ export class PhilipsTVClient {
   // ==========================================================================
 
   async getChannels(): Promise<TVChannel[]> {
-    const result = await this.get<TVChannelList>('/channeldb/tv/channelLists/all');
-    return result?.Channel ?? [];
+    const allChannels: TVChannel[] = [];
+
+    for (const listId of CHANNEL_LIST_IDS) {
+      const result = await this.get<TVChannelList>(`/channeldb/tv/channelLists/${listId}`);
+      if (result?.Channel) {
+        for (const ch of result.Channel) {
+          allChannels.push({ ...ch, channelListId: listId });
+        }
+      }
+    }
+
+    if (allChannels.length === 0) {
+      const result = await this.get<TVChannelList>('/channeldb/tv/channelLists/all');
+      return (result?.Channel ?? []).map(ch => ({
+        ...ch,
+        channelListId: DEFAULT_CHANNEL_LIST_ID,
+      }));
+    }
+
+    return allChannels;
   }
 
-  async setChannel(ccid: number): Promise<boolean> {
+  async setChannel(ccid: number, channelListId: string = DEFAULT_CHANNEL_LIST_ID): Promise<boolean> {
     const result = await this.post('/activities/tv', {
       channel: { ccid },
-      channelList: { id: 'allcab' },
+      channelList: { id: channelListId },
     });
     return result !== null;
   }
@@ -546,10 +598,15 @@ export class PhilipsTVClient {
   }
 
   /**
-   * Turn Ambilight off
+   * Turn Ambilight off.
+   * Tries styleName OFF first, falls back to /ambilight/power.
    */
   async setAmbilightOff(): Promise<boolean> {
-    return this.setAmbilightStyle('OFF');
+    const styleOff = await this.setAmbilightStyle('OFF');
+    if (styleOff) {
+      return true;
+    }
+    return this.setAmbilightPower(false);
   }
 
   /**

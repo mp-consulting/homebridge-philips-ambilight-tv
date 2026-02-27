@@ -2,6 +2,35 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.9] - 2026-02-27
+
+### Added
+
+- **Long-poll support** (`NotifyChangeClient`): Connects to the TV's `/notifychange` endpoint for near-instant state change detection, with automatic fallback to interval polling
+- **State sensors** (`StateSensorService`): Optional MotionSensor services for power, ambilight, and mute states — enables HomeKit automations triggered by TV state changes
+- **Dynamic app discovery**: Automatically discovers all installed apps from the TV and adds them as input sources (up to 30 total), replacing the previous hard-coded app list
+- **Source config support**: Applies visibility, order, and custom names from the Homebridge UI sources configuration
+- **DisplayOrder TLV8 encoding**: Input sources are properly ordered in HomeKit using the TLV8 DisplayOrder characteristic
+- Sample test config (`config.sample.json`) for development setup
+
+### Changed
+
+- **External accessory publishing**: TV accessories are now always published fresh as external accessories on each startup, fixing "Not Responding" issues caused by stale cached platform accessories
+- **Quiet polling logs**: GET request/response debug logging removed from steady-state polling; only POST requests (user actions), errors, and actual state changes are logged
+- **Change-detection logging**: StatePollManager now tracks previous values and only logs when power, volume, ambilight, or active app actually changes
+- **Input source initialization**: `Active`, `ActiveIdentifier`, and `CurrentMediaState` characteristics are now set before handlers are registered, matching HAP best practices
+- **Input source naming**: Uses `setCharacteristic()` to properly set ConfiguredName, fixing generic "Input Source #" names in HomeKit
+- Increased max input sources from 15 to 30
+- Input source names are sanitized for HomeKit compatibility
+- Filters out system/launcher packages from auto-discovered apps
+
+### Fixed
+
+- Fixed "Not Responding" in HomeKit caused by cached platform accessories not being re-published as external accessories on restart
+- Fixed input sources showing generic names ("Input Source", "Input Source 2") instead of real app/source names
+- Fixed `CurrentVisibilityState.NOT_VISIBLE` TypeScript error — corrected to `HIDDEN`
+- Fixed NotifyChange tight loop when TV pushes `activities/tv` every ~1 second — added minimum delay and filtered noise notifications
+
 ## [1.0.8] - 2026-02-27
 
 ### Added

@@ -111,6 +111,20 @@
                 }
               }
             },
+            "stateSensors": {
+              "title": "State Sensors",
+              "type": "array",
+              "uniqueItems": true,
+              "description": "Expose TV states as MotionSensor services for HomeKit automations. Motion is detected when the state is active.",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "power",
+                  "ambilight",
+                  "mute"
+                ]
+              }
+            },
             "sources": {
               "title": "Source Configuration",
               "type": "array",
@@ -171,6 +185,17 @@
               "description": "Polling interval in milliseconds (default: 10000)"
             },
             "devices[].wakeOnLanEnabled",
+            {
+              "key": "devices[].stateSensors",
+              "type": "checkboxes",
+              "title": "State Sensors (for HomeKit automations)",
+              "description": "Select which states to expose as MotionSensor services. Motion is detected when the state is active (e.g., TV is on, Ambilight is active).",
+              "titleMap": {
+                "power": "Power (TV On/Off)",
+                "ambilight": "Ambilight (Active/Inactive)",
+                "mute": "Muted (Yes/No)"
+              }
+            },
             {
               "key": "devices[].inputs",
               "type": "array",

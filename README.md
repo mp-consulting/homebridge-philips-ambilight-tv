@@ -10,9 +10,12 @@ A Homebridge plugin to control Philips Android TVs with Ambilight as HomeKit Tel
 
 - Power ON/OFF with Wake-on-LAN support
 - Input source selection (HDMI, TV tuner, apps)
+- **Dynamic app discovery** — automatically finds all installed apps on the TV
 - Volume control and mute
 - Remote control (D-Pad, Back, Menu, Play/Pause, etc.)
 - **Ambilight color control** with brightness and color picker
+- **Long-poll state detection** — near-instant updates when TV state changes, with interval polling fallback
+- **State sensors** — optional MotionSensor services for power, ambilight, and mute (for HomeKit automations)
 - Multi-TV support
 - Custom UI for easy setup and configuration
 
@@ -25,6 +28,18 @@ The Ambilight appears as a color lightbulb in HomeKit with:
 - **Color wheel** - Pick any color using the HSB color picker
 
 When you select a color in HomeKit, the TV switches to "Follow Color" mode with your chosen color. The plugin also syncs the current color state from the TV back to HomeKit.
+
+### State Sensors
+
+You can enable optional MotionSensor services that expose TV state for HomeKit automations:
+
+```json
+{
+  "stateSensors": ["power", "ambilight", "mute"]
+}
+```
+
+Each sensor appears as a MotionSensor — "motion detected" means the state is active (TV on, ambilight on, or muted). This allows creating automations like "When TV turns on, turn on the lights".
 
 ## Requirements
 
@@ -92,6 +107,8 @@ Add the following to your `config.json`:
 | `devices[].username` | Device ID from pairing | Yes |
 | `devices[].password` | Auth key from pairing | Yes |
 | `devices[].sources` | Custom source configuration | No |
+| `devices[].stateSensors` | Array of state sensors: `"power"`, `"ambilight"`, `"mute"` | No |
+| `devices[].pollingInterval` | Polling interval in ms (1000-60000, default: 10000) | No |
 
 ### Getting Credentials
 
@@ -113,7 +130,7 @@ The plugin supports customizing which sources appear in HomeKit:
 4. Toggle visibility for each source
 5. Click "Done" to save
 
-Note: HomeKit limits input sources to 45 total.
+The plugin supports up to 30 input sources (5 static + 25 apps).
 
 ## Troubleshooting
 
@@ -141,16 +158,16 @@ If you see these warnings in the Homebridge logs, make sure you are running v1.0
 
 ### Debug logging
 
-Run Homebridge with the `-D` flag to enable debug mode. The plugin will log every API request with method, endpoint, result, and duration:
+Run Homebridge with the `-D` flag to enable debug mode. The plugin logs state changes as they happen:
 
 ```
-[Living Room TV] API GET /powerstate
-[Living Room TV] API GET /powerstate → OK (150ms)
-[Living Room TV] API GET /ambilight/currentconfiguration
-[Living Room TV] API GET /ambilight/currentconfiguration → OK (120ms)
+[Living Room TV] Power: On
+[Living Room TV] Volume: 17
+[Living Room TV] Ambilight: FOLLOW_VIDEO (STANDARD)
+[Living Room TV] Active app: com.netflix.ninja
 ```
 
-This is useful for diagnosing TV API connectivity issues.
+POST requests (user actions) are always logged. GET polling is silent unless a state change is detected.
 
 ### Input sources not updating in Home app
 
@@ -160,7 +177,7 @@ This is a known tvOS 18 bug. The plugin includes a workaround that may require r
 
 ```bash
 # Clone the repository
-git clone https://github.com/mickael/homebridge-philips-ambilight-tv.git
+git clone https://github.com/mp-consulting/homebridge-philips-ambilight-tv.git
 
 # Install dependencies
 npm install

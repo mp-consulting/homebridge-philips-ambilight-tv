@@ -167,7 +167,7 @@ export class AmbilightService {
     const { Characteristic: Char } = this.deps;
 
     if (ambilightStyle) {
-      const ambilightOn = ambilightStyle.styleName !== 'OFF';
+      const ambilightOn = ambilightStyle.styleName?.toUpperCase() !== 'OFF';
 
       if (ambilightOn !== this.isOn) {
         this.isOn = ambilightOn;
@@ -175,7 +175,7 @@ export class AmbilightService {
         this.deps.log('debug', `Ambilight state updated: ${ambilightOn ? 'ON' : 'OFF'}`);
       }
 
-      if (ambilightStyle.styleName === 'FOLLOW_COLOR' && ambilightStyle.colorSettings?.color) {
+      if (ambilightStyle.styleName?.toUpperCase() === 'FOLLOW_COLOR' && ambilightStyle.colorSettings?.color) {
         const homeKitColor = this.philipsToHomekitColor(ambilightStyle.colorSettings.color);
 
         if (homeKitColor.hue !== this.hue) {

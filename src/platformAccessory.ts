@@ -2,10 +2,12 @@ import type { CharacteristicValue, HapStatusError, PlatformAccessory, Service } 
 
 import type { PhilipsAmbilightTVPlatform } from './platform.js';
 import { PhilipsTVClient } from './api/PhilipsTVClient.js';
-import type { TVDeviceConfig, RemoteKey } from './api/types.js';
+import { sanitizeForHomeKit } from './api/utils.js';
+import type { TVDeviceConfig, AmbilightCached, RemoteKey } from './api/types.js';
 import { AmbilightService } from './services/AmbilightService.js';
 import { InputSourceManager } from './services/InputSourceManager.js';
 import { StatePollManager } from './services/StatePollManager.js';
+import { StateSensorService } from './services/StateSensorService.js';
 
 // ============================================================================
 // PHILIPS AMBILIGHT TV ACCESSORY
@@ -20,6 +22,7 @@ export class PhilipsAmbilightTVAccessory {
   private readonly ambilightService: AmbilightService;
   private readonly inputSourceManager: InputSourceManager;
   private readonly statePollManager: StatePollManager;
+  private readonly stateSensorService: StateSensorService;
 
   private isPoweredOn = false;
   private isMuted = false;
@@ -45,7 +48,15 @@ export class PhilipsAmbilightTVAccessory {
       Characteristic: this.Characteristic,
       tvClient: this.tvClient,
       accessory: this.accessory,
+      userInputs: this.config.inputs,
+      sourceConfigs: this.config.sources,
       communicationError: () => this.communicationError(),
+      log: (level, msg) => this.log(level, msg),
+    });
+
+    this.stateSensorService = new StateSensorService({
+      Service: this.Service,
+      Characteristic: this.Characteristic,
       log: (level, msg) => this.log(level, msg),
     });
 
@@ -54,7 +65,7 @@ export class PhilipsAmbilightTVAccessory {
       this.config,
       {
         onPowerChange: (isOn) => this.onPowerChange(isOn),
-        onAmbilightUpdate: (style, fallback) => this.ambilightService.updateFromPoll(style, fallback),
+        onAmbilightUpdate: (style, fallback) => this.onAmbilightUpdate(style, fallback),
         onVolumeUpdate: (muted) => this.onMuteChange(muted),
         onInputUpdate: (app) => this.inputSourceManager.updateFromPoll(app, this.tvService),
         onAppsReady: () => this.inputSourceManager.fetchAppsFromTV(),
@@ -68,6 +79,11 @@ export class PhilipsAmbilightTVAccessory {
     this.speakerService = this.configureSpeakerService();
     this.ambilightService.configureService(this.accessory, this.tvService);
     this.inputSourceManager.configureInputSources(this.tvService);
+
+    // Configure state sensors (MotionSensor services for HomeKit automations)
+    const sensorTypes = this.config.stateSensors ?? [];
+    this.stateSensorService.configureSensors(this.accessory, sensorTypes, sanitizeForHomeKit(this.config.name));
+
     this.statePollManager.start();
   }
 
@@ -103,11 +119,14 @@ export class PhilipsAmbilightTVAccessory {
     const service = this.accessory.getService(this.Service.Television)
       ?? this.accessory.addService(this.Service.Television);
 
+    const displayName = sanitizeForHomeKit(this.config.name);
     service
-      .setCharacteristic(this.Characteristic.Name, this.config.name)
-      .setCharacteristic(this.Characteristic.ConfiguredName, this.config.name)
+      .setCharacteristic(this.Characteristic.Active, this.Characteristic.Active.INACTIVE)
+      .setCharacteristic(this.Characteristic.ActiveIdentifier, 1)
+      .setCharacteristic(this.Characteristic.Name, displayName)
+      .setCharacteristic(this.Characteristic.ConfiguredName, displayName)
       .setCharacteristic(this.Characteristic.SleepDiscoveryMode, this.Characteristic.SleepDiscoveryMode.ALWAYS_DISCOVERABLE)
-      .setCharacteristic(this.Characteristic.CurrentMediaState, this.Characteristic.CurrentMediaState.STOP);
+      .setCharacteristic(this.Characteristic.CurrentMediaState, this.Characteristic.CurrentMediaState.INTERRUPTED);
 
     service.getCharacteristic(this.Characteristic.Active)
       .onGet(() => this.handleGetPower())
@@ -209,13 +228,29 @@ export class PhilipsAmbilightTVAccessory {
       this.Characteristic.Active,
       isOn ? this.Characteristic.Active.ACTIVE : this.Characteristic.Active.INACTIVE,
     );
+    this.stateSensorService.update('power', isOn);
+    if (!isOn) {
+      this.stateSensorService.update('ambilight', false);
+      this.stateSensorService.update('mute', false);
+    }
     this.log('debug', `Power state updated: ${isOn ? 'ON' : 'OFF'}`);
+  }
+
+  private onAmbilightUpdate(style: AmbilightCached | null, fallback: boolean): void {
+    this.ambilightService.updateFromPoll(style, fallback);
+
+    // Update ambilight state sensor
+    const ambilightOn = style
+      ? style.styleName !== 'OFF'
+      : fallback;
+    this.stateSensorService.update('ambilight', ambilightOn);
   }
 
   private onMuteChange(muted: boolean): void {
     if (muted !== this.isMuted) {
       this.isMuted = muted;
       this.speakerService.updateCharacteristic(this.Characteristic.Mute, muted);
+      this.stateSensorService.update('mute', muted);
       this.log('debug', `Mute state updated: ${muted ? 'muted' : 'unmuted'}`);
     }
   }

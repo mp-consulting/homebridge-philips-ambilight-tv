@@ -381,7 +381,7 @@ class UiServer extends HomebridgePluginUiServer {
       }
 
       // Convert apps to source format
-      const appSources = apps.slice(0, 10).map(app => ({
+      const appSources = apps.map(app => ({
         id: app.intent?.component?.packageName || app.id || app.label,
         name: app.label || app.name || 'Unknown App',
         type: 'app',

@@ -144,6 +144,7 @@ export interface TVChannel {
   onid?: number;
   tsid?: number;
   sid?: number;
+  channelListId?: string;
 }
 
 export interface TVChannelList {
@@ -326,6 +327,8 @@ export interface TVDeviceConfig {
   pollingInterval?: number;
   wakeOnLanEnabled?: boolean;
   inputs?: InputConfig[];
+  sources?: SourceConfig[];
+  stateSensors?: ('power' | 'ambilight' | 'mute')[];
 }
 
 export interface InputConfig {
@@ -333,4 +336,12 @@ export interface InputConfig {
   type: 'app' | 'source' | 'channel';
   identifier: string;
   displayOrder?: number;
+}
+
+/** Source visibility/order config managed by the Homebridge custom UI */
+export interface SourceConfig {
+  id: string;
+  order?: number;
+  visible?: boolean;
+  customName?: string;
 }

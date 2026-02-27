@@ -273,7 +273,7 @@ describe('PhilipsTVClient', () => {
   });
 
   describe('setAmbilightOff', () => {
-    it('should POST OFF style', async () => {
+    it('should try styleName OFF first', async () => {
       mockFetch.mockReturnValue(mockResponse({}));
 
       const promise = client.setAmbilightOff();
@@ -285,6 +285,27 @@ describe('PhilipsTVClient', () => {
         expect.stringContaining('/ambilight/currentconfiguration'),
         expect.objectContaining({
           body: JSON.stringify({ styleName: 'OFF', isExpert: false }),
+        }),
+        expect.any(Number),
+      );
+    });
+
+    it('should fall back to ambilight/power if style OFF fails', async () => {
+      // First call (styleName OFF) fails, second call (power Off) succeeds
+      mockFetch
+        .mockReturnValueOnce(mockResponse(null, 500))
+        .mockReturnValueOnce(mockResponse({}));
+
+      const promise = client.setAmbilightOff();
+      await vi.runAllTimersAsync();
+      const result = await promise;
+
+      expect(result).toBe(true);
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+      expect(mockFetch).toHaveBeenLastCalledWith(
+        expect.stringContaining('/ambilight/power'),
+        expect.objectContaining({
+          body: JSON.stringify({ power: 'Off' }),
         }),
         expect.any(Number),
       );
@@ -539,7 +560,7 @@ describe('PhilipsTVClient', () => {
   });
 
   describe('launchApplication', () => {
-    it('should POST intent to launch app', async () => {
+    it('should POST intent with correct action', async () => {
       mockFetch.mockReturnValue(mockResponse({}));
 
       const promise = client.launchApplication('com.netflix.ninja');
@@ -550,7 +571,40 @@ describe('PhilipsTVClient', () => {
       expect(mockFetch).toHaveBeenCalledWith(
         expect.stringContaining('/activities/launch'),
         expect.objectContaining({
-          body: expect.stringContaining('com.netflix.ninja'),
+          body: expect.stringContaining('android.intent.action.MAIN'),
+        }),
+        expect.any(Number),
+      );
+    });
+
+    it('should use cached intent from getApplications', async () => {
+      // First call: getApplications caches the intent
+      mockFetch.mockReturnValue(mockResponse({
+        applications: [{
+          id: 'test',
+          label: 'Netflix',
+          intent: {
+            component: { packageName: 'com.netflix.ninja', className: 'com.netflix.ninja.MainActivity' },
+            action: 'android.intent.action.MAIN',
+          },
+        }],
+      }));
+
+      const appsPromise = client.getApplications();
+      await vi.runAllTimersAsync();
+      await appsPromise;
+
+      // Second call: launchApplication uses cached className
+      mockFetch.mockReturnValue(mockResponse({}));
+
+      const launchPromise = client.launchApplication('com.netflix.ninja');
+      await vi.runAllTimersAsync();
+      await launchPromise;
+
+      expect(mockFetch).toHaveBeenLastCalledWith(
+        expect.stringContaining('/activities/launch'),
+        expect.objectContaining({
+          body: expect.stringContaining('com.netflix.ninja.MainActivity'),
         }),
         expect.any(Number),
       );
