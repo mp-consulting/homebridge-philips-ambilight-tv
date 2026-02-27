@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.5] - 2026-02-27
+
+### Fixed
+
+- Serialized all API requests to the TV using a request queue to prevent overwhelming the JointSpace API server, which could crash under concurrent load ([#1](https://github.com/mp-consulting/homebridge-philips-ambilight-tv/issues/1))
+- Added 100ms inter-request delay between consecutive API calls to give the TV time to process each request
+- Delayed initial state polling by 5 seconds after accessory creation to let the TV API stabilize on startup
+- Moved background app fetch after the first poll to avoid concurrent requests on startup
+
 ## [1.0.4] - 2026-02-27
 
 ### Fixed
