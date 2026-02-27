@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.4] - 2026-02-27
+
+### Fixed
+
+- Fixed write handlers (`onSet`) for Active and On characteristics not responding within Homebridge's timeout window, causing "didn't respond at all!" warnings and slowing down the entire Homebridge instance ([#1](https://github.com/mp-consulting/homebridge-philips-ambilight-tv/issues/1))
+- Reduced default API request timeout from 15s to 5s to fit within Homebridge's ~10s handler deadline
+- Reduced Wake-on-LAN delay from 2s to 1s for faster power-on response
+- All `onSet` handlers now properly catch errors and throw `HapStatusError(SERVICE_COMMUNICATION_FAILURE)` so HomeKit shows a clear "Not Responding" status instead of hanging indefinitely
+
 ## [1.0.3] - 2025-01-19
 
 ### Added

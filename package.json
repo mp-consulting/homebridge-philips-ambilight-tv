@@ -2,10 +2,10 @@
   "name": "@mp-consulting/homebridge-philips-ambilight-tv",
   "displayName": "Philips Ambilight TV",
   "type": "module",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Homebridge plugin to control Philips Ambilight TV as a HomeKit Television accessory.",
   "author": "Mickael Palma",
-  "license": "Apache-2.0",
+  "license": "MIT",
   "homepage": "https://github.com/mp-consulting/homebridge-philips-ambilight-tv#readme",
   "repository": {
     "type": "git",
@@ -24,7 +24,7 @@
   ],
   "main": "dist/index.js",
   "engines": {
-    "node": "^20.18.0 || ^22.10.0 || ^24.0.0",
+    "node": "^20.18.0 || ^22.10.0",
     "homebridge": "^1.8.0 || ^2.0.0-beta.0"
   },
   "scripts": {

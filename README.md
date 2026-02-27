@@ -135,6 +135,10 @@ Note: HomeKit limits input sources to 45 total.
 - Check if Wake-on-LAN is enabled in TV settings
 - Ensure the TV's API is accessible (port 1926)
 
+### "Write handler didn't respond at all" warnings
+
+If you see these warnings in the Homebridge logs, make sure you are running v1.0.4 or later. Earlier versions used a 15-second API timeout that exceeded Homebridge's handler deadline, causing the plugin to slow down the entire instance when the TV was unreachable.
+
 ### Input sources not updating in Home app
 
 This is a known tvOS 18 bug. The plugin includes a workaround that may require removing and re-adding the TV in the Home app.
@@ -160,7 +164,7 @@ npm run test:tv
 
 ## License
 
-Apache-2.0
+MIT
 
 ## Credits
 
