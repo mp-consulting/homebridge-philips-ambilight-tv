@@ -227,6 +227,7 @@ export interface AmbilightConfig {
   styleName: AmbilightStyleName;
   isExpert?: boolean;
   algorithm?: string;
+  menuSetting?: string;
   speed?: number;       // 0-255 for FOLLOW_COLOR
   colorDelta?: number;
   color?: AmbilightColor;
@@ -326,6 +327,7 @@ export interface TVDeviceConfig {
   password: string;
   pollingInterval?: number;
   wakeOnLanEnabled?: boolean;
+  ambilightMode?: string;
   inputs?: InputConfig[];
   sources?: SourceConfig[];
   stateSensors?: ('power' | 'ambilight' | 'mute')[];

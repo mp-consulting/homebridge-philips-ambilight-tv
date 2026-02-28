@@ -444,7 +444,7 @@ function printSummary() {
 
 function saveReport() {
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const reportPath = path.join(__dirname, `debug-report-${timestamp}.json`);
+  const reportPath = path.join(__dirname, '..', 'tmp', `debug-report-${timestamp}.json`);
 
   const report = {
     generatedAt: new Date().toISOString(),

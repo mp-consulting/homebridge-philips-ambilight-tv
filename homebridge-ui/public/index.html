@@ -104,6 +104,33 @@
               <small class="form-text text-muted">Required for Wake-on-LAN functionality.</small>
             </div>
           </div>
+          <div class="mb-3 row">
+            <label for="confirmAmbilightMode" class="col-sm-3 col-form-label">Ambilight Mode</label>
+            <div class="col-sm-9">
+              <select class="form-select" id="confirmAmbilightMode">
+                <optgroup label="Follow Video">
+                  <option value="FOLLOW_VIDEO/STANDARD">Standard</option>
+                  <option value="FOLLOW_VIDEO/NATURAL" selected>Natural</option>
+                  <option value="FOLLOW_VIDEO/VIVID">Vivid</option>
+                  <option value="FOLLOW_VIDEO/GAME">Game</option>
+                  <option value="FOLLOW_VIDEO/COMFORT">Comfort</option>
+                  <option value="FOLLOW_VIDEO/RELAX">Relax</option>
+                  <option value="FOLLOW_VIDEO/FOOTBALL">Football</option>
+                </optgroup>
+                <optgroup label="Follow Audio">
+                  <option value="FOLLOW_AUDIO/ENERGY_ADAPTIVE_BRIGHTNESS">Energy Brightness</option>
+                  <option value="FOLLOW_AUDIO/ENERGY_ADAPTIVE_COLORS">Energy Colors</option>
+                  <option value="FOLLOW_AUDIO/VU_METER">VU Meter</option>
+                  <option value="FOLLOW_AUDIO/SPECTRUM_ANALYZER">Spectrum</option>
+                  <option value="FOLLOW_AUDIO/PARTY">Party</option>
+                </optgroup>
+                <optgroup label="Other">
+                  <option value="Lounge light">Lounge Light</option>
+                </optgroup>
+              </select>
+              <small class="form-text text-muted">The ambilight mode to activate when turning on via HomeKit.</small>
+            </div>
+          </div>
           <hr>
           <div class="col-12">
             <button id="saveTvBtn" class="btn btn-success" type="submit">
@@ -158,6 +185,33 @@
             </button>
             <div class="invalid-feedback">Please provide a MAC address.</div>
           </div>
+        </div>
+      </div>
+      <div class="mb-3 row">
+        <label for="editAmbilightMode" class="col-sm-3 col-form-label">Ambilight Mode</label>
+        <div class="col-sm-9">
+          <select class="form-select" id="editAmbilightMode">
+            <optgroup label="Follow Video">
+              <option value="FOLLOW_VIDEO/STANDARD">Standard</option>
+              <option value="FOLLOW_VIDEO/NATURAL">Natural</option>
+              <option value="FOLLOW_VIDEO/VIVID">Vivid</option>
+              <option value="FOLLOW_VIDEO/GAME">Game</option>
+              <option value="FOLLOW_VIDEO/COMFORT">Comfort</option>
+              <option value="FOLLOW_VIDEO/RELAX">Relax</option>
+              <option value="FOLLOW_VIDEO/FOOTBALL">Football</option>
+            </optgroup>
+            <optgroup label="Follow Audio">
+              <option value="FOLLOW_AUDIO/ENERGY_ADAPTIVE_BRIGHTNESS">Energy Brightness</option>
+              <option value="FOLLOW_AUDIO/ENERGY_ADAPTIVE_COLORS">Energy Colors</option>
+              <option value="FOLLOW_AUDIO/VU_METER">VU Meter</option>
+              <option value="FOLLOW_AUDIO/SPECTRUM_ANALYZER">Spectrum</option>
+              <option value="FOLLOW_AUDIO/PARTY">Party</option>
+            </optgroup>
+            <optgroup label="Other">
+              <option value="Lounge light">Lounge Light</option>
+            </optgroup>
+          </select>
+          <small class="form-text text-muted">The ambilight mode to activate when turning on via HomeKit.</small>
         </div>
       </div>
       <hr>

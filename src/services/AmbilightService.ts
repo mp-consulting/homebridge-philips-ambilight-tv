@@ -1,7 +1,7 @@
 import type { CharacteristicValue, HapStatusError, PlatformAccessory, Service } from 'homebridge';
 
 import type { PhilipsTVClient } from '../api/PhilipsTVClient.js';
-import type { AmbilightCached, AmbilightColor } from '../api/types.js';
+import type { AmbilightCached, AmbilightColor, AmbilightStyleName } from '../api/types.js';
 
 // ============================================================================
 // CONSTANTS
@@ -15,6 +15,12 @@ const HOMEKIT_BRIGHTNESS_MAX = 100;
 /** Philips Ambilight color ranges */
 const PHILIPS_COLOR_MAX = 255;
 
+/** Default ambilight mode when turning on */
+const DEFAULT_AMBILIGHT_MODE = 'FOLLOW_VIDEO/NATURAL';
+
+/** Ignore poll updates for this long after a user action (ms) */
+const USER_ACTION_COOLDOWN_MS = 10_000;
+
 // ============================================================================
 // TYPES
 // ============================================================================
@@ -23,6 +29,7 @@ export interface AmbilightServiceDeps {
   readonly Service: typeof Service;
   readonly Characteristic: typeof import('homebridge').Characteristic;
   readonly tvClient: PhilipsTVClient;
+  readonly ambilightMode?: string;
   readonly communicationError: () => HapStatusError;
   readonly log: (level: 'debug' | 'info' | 'warn' | 'error', message: string) => void;
 }
@@ -38,6 +45,8 @@ export class AmbilightService {
   private brightness = 100; // 0-100 for HomeKit
   private hue = 0;          // 0-360 for HomeKit
   private saturation = 0;   // 0-100 for HomeKit
+  private lastUserAction = 0; // Timestamp of last user-initiated change
+  private styleRetryTimer?: ReturnType<typeof setTimeout>;
 
   constructor(private readonly deps: AmbilightServiceDeps) {}
 
@@ -90,21 +99,37 @@ export class AmbilightService {
   // HANDLERS
   // ==========================================================================
 
+  private parseAmbilightMode(): { style: string; algorithm: string } {
+    const mode = this.deps.ambilightMode || DEFAULT_AMBILIGHT_MODE;
+    const [style, algorithm = ''] = mode.split('/');
+    return { style: style.toUpperCase(), algorithm: algorithm.toUpperCase() };
+  }
+
   private async handleSetOn(value: CharacteristicValue): Promise<void> {
     const shouldBeOn = value as boolean;
     this.deps.log('info', `Setting Ambilight to ${shouldBeOn ? 'ON' : 'OFF'}`);
 
+    this.lastUserAction = Date.now();
+
     try {
       let success: boolean;
       if (shouldBeOn) {
-        const color = this.homekitToPhilipsColor(this.hue, this.saturation, this.brightness);
-        success = await this.deps.tvClient.setAmbilightFollowColor(color);
+        const { style, algorithm } = this.parseAmbilightMode();
+        await this.deps.tvClient.setAmbilightPower(true);
+        success = await this.deps.tvClient.setAmbilightStyle(style as AmbilightStyleName, algorithm || undefined);
+        if (success) {
+          this.isOn = true;
+          this.lastUserAction = Date.now();
+        }
+        // TV restores its own default mode async after power ON; re-apply in background
+        this.scheduleStyleRetry(style as AmbilightStyleName, algorithm || undefined);
       } else {
         success = await this.deps.tvClient.setAmbilightOff();
       }
 
       if (success) {
         this.isOn = shouldBeOn;
+        this.lastUserAction = Date.now();
       } else {
         throw this.deps.communicationError();
       }
@@ -123,6 +148,7 @@ export class AmbilightService {
       try {
         const color = this.homekitToPhilipsColor(this.hue, this.saturation, newBrightness);
         await this.deps.tvClient.setAmbilightFollowColor(color);
+        this.lastUserAction = Date.now();
       } catch {
         this.deps.log('warn', 'Failed to update Ambilight brightness');
       }
@@ -138,6 +164,7 @@ export class AmbilightService {
       try {
         const color = this.homekitToPhilipsColor(newHue, this.saturation, this.brightness);
         await this.deps.tvClient.setAmbilightFollowColor(color);
+        this.lastUserAction = Date.now();
       } catch {
         this.deps.log('warn', 'Failed to update Ambilight hue');
       }
@@ -153,10 +180,45 @@ export class AmbilightService {
       try {
         const color = this.homekitToPhilipsColor(this.hue, newSaturation, this.brightness);
         await this.deps.tvClient.setAmbilightFollowColor(color);
+        this.lastUserAction = Date.now();
       } catch {
         this.deps.log('warn', 'Failed to update Ambilight saturation');
       }
     }
+  }
+
+  /**
+   * TV restores its own default ambilight mode asynchronously after power ON.
+   * Re-send the desired style after delays to override it.
+   */
+  private scheduleStyleRetry(style: AmbilightStyleName, algorithm?: string): void {
+    if (this.styleRetryTimer) {
+      clearTimeout(this.styleRetryTimer);
+    }
+
+    const delays = [3000, 6000];
+    let attempt = 0;
+
+    const retry = (): void => {
+      if (attempt >= delays.length || !this.isOn) return;
+
+      this.styleRetryTimer = setTimeout(async () => {
+        try {
+          const current = await this.deps.tvClient.getAmbilightStyle();
+          if (current?.styleName?.toUpperCase() !== style.toUpperCase()) {
+            this.deps.log('debug', `Ambilight style drift detected (${current?.styleName}), re-applying ${style}`);
+            await this.deps.tvClient.setAmbilightStyle(style, algorithm);
+            this.lastUserAction = Date.now();
+          }
+        } catch {
+          this.deps.log('debug', 'Failed to re-apply ambilight style');
+        }
+        attempt++;
+        retry();
+      }, delays[attempt]);
+    };
+
+    retry();
   }
 
   // ==========================================================================
@@ -165,6 +227,11 @@ export class AmbilightService {
 
   updateFromPoll(ambilightStyle: AmbilightCached | null, ambilightPowerFallback: boolean): void {
     const { Characteristic: Char } = this.deps;
+
+    // Skip poll updates during cooldown after user action to prevent race conditions
+    if (Date.now() - this.lastUserAction < USER_ACTION_COOLDOWN_MS) {
+      return;
+    }
 
     if (ambilightStyle) {
       const ambilightOn = ambilightStyle.styleName?.toUpperCase() !== 'OFF';

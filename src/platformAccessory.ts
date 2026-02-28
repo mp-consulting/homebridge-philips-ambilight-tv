@@ -39,6 +39,7 @@ export class PhilipsAmbilightTVAccessory {
       Service: this.Service,
       Characteristic: this.Characteristic,
       tvClient: this.tvClient,
+      ambilightMode: this.config.ambilightMode,
       communicationError: () => this.communicationError(),
       log: (level, msg) => this.log(level, msg),
     });
@@ -48,6 +49,8 @@ export class PhilipsAmbilightTVAccessory {
       Characteristic: this.Characteristic,
       tvClient: this.tvClient,
       accessory: this.accessory,
+      storagePath: platform.api.user.storagePath(),
+      deviceId: this.config.mac,
       userInputs: this.config.inputs,
       sourceConfigs: this.config.sources,
       communicationError: () => this.communicationError(),

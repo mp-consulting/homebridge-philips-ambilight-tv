@@ -1,4 +1,6 @@
 import type { CharacteristicValue, HapStatusError, PlatformAccessory, Service } from 'homebridge';
+import fs from 'fs';
+import path from 'path';
 
 import type { PhilipsTVClient } from '../api/PhilipsTVClient.js';
 import { HDMI_SOURCES, WATCH_TV_URI } from '../api/PhilipsTVClient.js';
@@ -19,15 +21,6 @@ const TLV_ELEMENT_END = 0x00;
 
 /** Number of static sources (Watch TV + HDMI 1-4) */
 const STATIC_SOURCE_COUNT = 1 + Object.keys(HDMI_SOURCES).length;
-
-/** Fallback apps when TV is unreachable and no cache exists */
-const FALLBACK_APPS: ReadonlyArray<{ id: string; name: string }> = [
-  { id: 'com.google.android.tvlauncher', name: 'Home' },
-  { id: 'com.google.android.youtube.tv', name: 'YouTube' },
-  { id: 'com.netflix.ninja', name: 'Netflix' },
-  { id: 'com.disney.disneyplus', name: 'Disney Plus' },
-  { id: 'com.amazon.amazonvideo.livingroom', name: 'Prime Video' },
-];
 
 /** System/launcher packages to exclude from auto-discovered apps */
 const EXCLUDED_PACKAGES = new Set([
@@ -104,6 +97,8 @@ export interface InputSourceManagerDeps {
   readonly Characteristic: typeof import('homebridge').Characteristic;
   readonly tvClient: PhilipsTVClient;
   readonly accessory: PlatformAccessory;
+  readonly storagePath: string;
+  readonly deviceId: string;
   readonly userInputs?: InputConfig[];
   readonly sourceConfigs?: SourceConfig[];
   readonly communicationError: () => HapStatusError;
@@ -122,10 +117,15 @@ export class InputSourceManager {
   /** Source configs indexed by id for fast lookup */
   private sourceConfigMap: Map<string, SourceConfig>;
 
+  /** File path for persisted input configs (survives restarts for external accessories) */
+  private readonly inputCachePath: string;
+
   constructor(private readonly deps: InputSourceManagerDeps) {
     this.sourceConfigMap = new Map(
       (deps.sourceConfigs ?? []).map(s => [s.id, s]),
     );
+    const safeId = deps.deviceId.replace(/[:-]/g, '').toLowerCase();
+    this.inputCachePath = path.join(deps.storagePath, `philips-tv-inputs-${safeId}.json`);
   }
 
   // ==========================================================================
@@ -146,11 +146,14 @@ export class InputSourceManager {
 
   /**
    * Synchronously configure input sources with static sources (HDMI) and
-   * initial app sources (user-configured, cached from previous session, or fallback).
+   * initial app sources (user-configured, cached from previous session, or empty).
    * Applies visibility and order from the sources config (Homebridge UI).
    */
   configureInputSources(tvService: Service): void {
     this.tvService = tvService;
+
+    // Restore input configs from file (external accessories don't persist context)
+    this.loadInputConfigsFromFile();
 
     const staticInputs = this.getStaticSources();
     const appInputs = this.getInitialAppInputs();
@@ -213,14 +216,8 @@ export class InputSourceManager {
         return;
       }
 
-      // Remove fallback apps that were placeholder — they'll be replaced by real TV apps
-      this.removeFallbackApps();
-
-      // Recalculate how many slots are available
       const available = MAX_INPUT_SOURCES - this.inputSources.length;
-      const appsToAdd = tvAppInputs
-        .filter(app => !new Set(this.inputSources.map(s => s.id)).has(app.id))
-        .slice(0, available);
+      const appsToAdd = newApps.slice(0, available);
 
       if (appsToAdd.length === 0) {
         this.deps.log('debug', `Input source limit reached (${MAX_INPUT_SOURCES})`);
@@ -397,7 +394,7 @@ export class InputSourceManager {
    * Returns the initial set of app inputs for startup:
    * 1. If user configured inputs[] → use those
    * 2. Else if we have cached apps from a previous TV fetch → use those
-   * 3. Else → use fallback apps
+   * 3. Else → empty (apps will be discovered when TV becomes reachable)
    */
   private getInitialAppInputs(): InputData[] {
     // User-configured inputs take priority
@@ -420,8 +417,8 @@ export class InputSourceManager {
       }));
     }
 
-    // No cache — use fallback apps
-    return FALLBACK_APPS.map(app => ({ ...app, type: 'app' as const }));
+    // No cache — start with static sources only; apps added once TV is reachable
+    return [];
   }
 
   // ==========================================================================
@@ -503,13 +500,27 @@ export class InputSourceManager {
   // PRIVATE — SERVICE MANAGEMENT
   // ==========================================================================
 
+  /** Load input configs from disk into accessory context (for external accessories) */
+  private loadInputConfigsFromFile(): void {
+    if (this.deps.accessory.context.inputConfigs) {
+      return;
+    }
+    try {
+      const data = fs.readFileSync(this.inputCachePath, 'utf-8');
+      this.deps.accessory.context.inputConfigs = JSON.parse(data);
+      this.deps.log('debug', 'Restored input configs from cache file');
+    } catch {
+      // No cache file yet — normal on first run
+    }
+  }
+
   private getCachedInputConfigs(): InputSourceConfig[] {
     return this.deps.accessory.context.inputConfigs || [];
   }
 
   private saveInputConfigs(): void {
     const { Characteristic: Char } = this.deps;
-    this.deps.accessory.context.inputConfigs = this.inputSources.map(input => ({
+    const configs = this.inputSources.map(input => ({
       id: input.id,
       name: input.name,
       configuredName: input.service.getCharacteristic(Char.ConfiguredName).value as string,
@@ -518,6 +529,15 @@ export class InputSourceManager {
       visibility: input.service.getCharacteristic(Char.CurrentVisibilityState).value as number,
       channelListId: input.channelListId,
     }));
+
+    this.deps.accessory.context.inputConfigs = configs;
+
+    // Persist to file for next restart (external accessories don't persist context)
+    try {
+      fs.writeFileSync(this.inputCachePath, JSON.stringify(configs), 'utf-8');
+    } catch {
+      this.deps.log('warn', 'Failed to persist input configs to disk');
+    }
   }
 
   /** Remove InputSource services that are no longer in the current input list */
@@ -536,20 +556,6 @@ export class InputSourceManager {
       });
 
     this.inputSources = [];
-  }
-
-  /** Remove fallback apps that are placeholders, before adding real TV apps */
-  private removeFallbackApps(): void {
-    const fallbackIds = new Set(FALLBACK_APPS.map(a => a.id));
-
-    this.inputSources = this.inputSources.filter(source => {
-      if (source.type === 'app' && fallbackIds.has(source.id)) {
-        this.deps.accessory.removeService(source.service);
-        this.deps.log('debug', `Removed fallback app: ${source.name}`);
-        return false;
-      }
-      return true;
-    });
   }
 
   private restoreOrCreateInputSource(

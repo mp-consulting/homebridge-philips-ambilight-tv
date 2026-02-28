@@ -522,8 +522,7 @@ export class PhilipsTVClient {
     };
 
     if (algorithm) {
-      config.algorithm = algorithm;
-      config.isExpert = true;
+      config.menuSetting = algorithm;
     }
 
     const result = await this.post('/ambilight/currentconfiguration', config);

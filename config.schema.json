@@ -70,6 +70,27 @@
               "default": true,
               "description": "Enable Wake-on-LAN to turn on the TV from standby."
             },
+            "ambilightMode": {
+              "title": "Ambilight Mode",
+              "type": "string",
+              "default": "FOLLOW_VIDEO/NATURAL",
+              "description": "The ambilight mode to activate when turning on via HomeKit.",
+              "oneOf": [
+                { "title": "Follow Video - Standard", "enum": ["FOLLOW_VIDEO/STANDARD"] },
+                { "title": "Follow Video - Natural", "enum": ["FOLLOW_VIDEO/NATURAL"] },
+                { "title": "Follow Video - Vivid", "enum": ["FOLLOW_VIDEO/VIVID"] },
+                { "title": "Follow Video - Game", "enum": ["FOLLOW_VIDEO/GAME"] },
+                { "title": "Follow Video - Comfort", "enum": ["FOLLOW_VIDEO/COMFORT"] },
+                { "title": "Follow Video - Relax", "enum": ["FOLLOW_VIDEO/RELAX"] },
+                { "title": "Follow Video - Football", "enum": ["FOLLOW_VIDEO/FOOTBALL"] },
+                { "title": "Follow Audio - Energy Brightness", "enum": ["FOLLOW_AUDIO/ENERGY_ADAPTIVE_BRIGHTNESS"] },
+                { "title": "Follow Audio - Energy Colors", "enum": ["FOLLOW_AUDIO/ENERGY_ADAPTIVE_COLORS"] },
+                { "title": "Follow Audio - VU Meter", "enum": ["FOLLOW_AUDIO/VU_METER"] },
+                { "title": "Follow Audio - Spectrum", "enum": ["FOLLOW_AUDIO/SPECTRUM_ANALYZER"] },
+                { "title": "Follow Audio - Party", "enum": ["FOLLOW_AUDIO/PARTY"] },
+                { "title": "Lounge Light", "enum": ["Lounge light"] }
+              ]
+            },
             "inputs": {
               "title": "Custom Input Sources",
               "type": "array",
@@ -185,6 +206,7 @@
               "description": "Polling interval in milliseconds (default: 10000)"
             },
             "devices[].wakeOnLanEnabled",
+            "devices[].ambilightMode",
             {
               "key": "devices[].stateSensors",
               "type": "checkboxes",

@@ -104,6 +104,7 @@
       platform: PLATFORM_NAME,
       devices: state.configuredTvs,
     }]);
+    await homebridge.savePluginConfig();
   };
 
   const addTv = async () => {
@@ -375,6 +376,7 @@
     $('editTvName').value = tv.name || '';
     $('editTvIp').value = tv.ip || '';
     $('editTvMac').value = tv.mac || '';
+    $('editAmbilightMode').value = tv.ambilightMode || 'FOLLOW_VIDEO/NATURAL';
     showScreen('editScreen');
   };
 
@@ -393,6 +395,7 @@
         name: $('editTvName').value.trim(),
         ip: $('editTvIp').value.trim(),
         mac: $('editTvMac').value.trim(),
+        ambilightMode: $('editAmbilightMode').value,
       });
       homebridge.toast.success('TV configuration updated');
       form.classList.remove('was-validated');
@@ -434,6 +437,7 @@
     $('confirmTvName').value = state.currentConfig.name || 'Philips TV';
     $('confirmTvIp').value = state.currentConfig.ip || '';
     $('confirmTvMac').value = state.currentConfig.mac || '';
+    $('confirmAmbilightMode').value = state.currentConfig.ambilightMode || 'FOLLOW_VIDEO/NATURAL';
     showScreen('wizardStep3');
     $('confirmTvName').focus();
     $('confirmTvName').select();
@@ -451,6 +455,7 @@
 
     state.currentConfig.name = $('confirmTvName').value.trim();
     state.currentConfig.mac = $('confirmTvMac').value.trim();
+    state.currentConfig.ambilightMode = $('confirmAmbilightMode').value;
 
     try {
       await addTv();
