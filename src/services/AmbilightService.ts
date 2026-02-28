@@ -200,7 +200,9 @@ export class AmbilightService {
     let attempt = 0;
 
     const retry = (): void => {
-      if (attempt >= delays.length || !this.isOn) return;
+      if (attempt >= delays.length || !this.isOn) {
+        return;
+      }
 
       this.styleRetryTimer = setTimeout(async () => {
         try {
