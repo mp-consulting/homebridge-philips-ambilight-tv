@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.10] - 2026-02-28
+
+### Added
+
+- **Configurable ambilight mode**: Choose which ambilight mode activates when turning on via HomeKit (Follow Video, Follow Audio, or Lounge Light) — configurable in both the standard schema and the custom Homebridge UI
+- **Ambilight style drift recovery**: Background retries detect and re-apply the desired ambilight style if the TV overrides it after power on
+- **Poll cooldown after user actions**: Suppresses poll updates for 10 seconds after user-initiated changes to prevent race conditions with stale TV state
+- **Input config file persistence**: Input source configs (names, visibility, order) are now persisted to disk, surviving restarts for external accessories
+
+### Fixed
+
+- **Ambilight API format**: Use `menuSetting` instead of `algorithm`/`isExpert` when setting ambilight styles, matching the format the TV actually expects — fixes styles being silently ignored by the TV
+- **Config save in custom UI**: `savePluginConfig()` is now called after `updatePluginConfig()` so settings are actually written to disk
+- **Nodemon flag order**: Fixed `-P -I .` to `-I -P .` so the plugin path is parsed correctly during development
+
+### Changed
+
+- Removed fallback app list in favor of dynamic-only app discovery
+- Debug report output moved to `tmp/` directory
+
 ## [1.0.9] - 2026-02-27
 
 ### Added
