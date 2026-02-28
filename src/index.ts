@@ -14,7 +14,7 @@ const checkNodeVersion = (): boolean => {
   }
   const major = parseInt(match[1], 10);
   const minor = parseInt(match[2], 10);
-  return (major === 20 && minor >= 18) || (major === 22 && minor >= 10) || major >= 23;
+  return (major === 20 && minor >= 18) || (major === 22 && minor >= 10);
 };
 
 /**

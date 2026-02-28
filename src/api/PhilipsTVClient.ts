@@ -3,16 +3,14 @@
  * Handles all communication with the Philips TV JointSpace API (v6)
  */
 
-import crypto from 'crypto';
 import { TV_API_VERSION } from './constants.js';
 import {
   buildUrl,
   fetchWithTimeout,
   httpsAgent,
-  parseWwwAuthenticate,
-  md5,
   sendWakeOnLan,
 } from './utils.js';
+import { DigestAuthSession } from './DigestAuthSession.js';
 import type {
   PowerState,
   VolumeState,
@@ -36,7 +34,8 @@ import type {
 // ============================================================================
 
 const WOL_WAKE_DELAY_MS = 1000;
-const DEFAULT_TIMEOUT_MS = 2000;
+const DEFAULT_GET_TIMEOUT_MS = 2000;
+const DEFAULT_POST_TIMEOUT_MS = 5000;
 
 /** Minimum delay between consecutive API requests to avoid overwhelming the TV */
 const INTER_REQUEST_DELAY_MS = 100;
@@ -107,19 +106,13 @@ export class PhilipsTVClient {
   /** Cached app intents — maps packageName to the intent returned by the TV */
   private appIntents = new Map<string, ApplicationIntent>();
 
-  /** Cached digest auth state — avoids a 401 round-trip on every request */
-  private cachedAuth: {
-    realm: string;
-    nonce: string;
-    qop: string;
-    opaque?: string;
-    ha1: string;
-    nc: number;
-  } | null = null;
+  /** Shared digest auth session — avoids a 401 round-trip on every request */
+  private readonly authSession: DigestAuthSession;
 
   constructor(config: PhilipsTVClientConfig, debug?: (message: string) => void) {
     this.config = config;
     this.debug = debug ?? (() => {});
+    this.authSession = new DigestAuthSession(config.username, config.password);
   }
 
   // ==========================================================================
@@ -135,7 +128,7 @@ export class PhilipsTVClient {
     method: 'GET' | 'POST',
     endpoint: string,
     body?: unknown,
-    timeout = DEFAULT_TIMEOUT_MS,
+    timeout = method === 'POST' ? DEFAULT_POST_TIMEOUT_MS : DEFAULT_GET_TIMEOUT_MS,
   ): Promise<T | null> {
     return new Promise<T | null>((resolve) => {
       this.requestQueue = this.requestQueue.then(async () => {
@@ -167,7 +160,7 @@ export class PhilipsTVClient {
     method: 'GET' | 'POST',
     endpoint: string,
     body?: unknown,
-    timeout = DEFAULT_TIMEOUT_MS,
+    timeout = method === 'POST' ? DEFAULT_POST_TIMEOUT_MS : DEFAULT_GET_TIMEOUT_MS,
   ): Promise<T | null> {
     const url = buildUrl(this.config.ip, endpoint);
     const uri = `/${TV_API_VERSION}${endpoint}`;
@@ -176,8 +169,8 @@ export class PhilipsTVClient {
 
     try {
       // If we have cached auth, send credentials proactively (single round-trip)
-      if (this.cachedAuth) {
-        const authHeader = this.buildCachedDigestHeader(method, uri);
+      if (this.authSession.hasCachedAuth) {
+        const authHeader = this.authSession.buildHeader(method, uri)!;
         const response = await fetchWithTimeout(
           url,
           { method, headers: { ...headers, Authorization: authHeader }, body: requestBody, dispatcher: httpsAgent },
@@ -190,7 +183,7 @@ export class PhilipsTVClient {
 
         // Nonce expired — clear cache and fall through to fresh auth
         if (response.status === 401) {
-          this.cachedAuth = null;
+          this.authSession.clear();
           return this.freshDigestAuth<T>(response, method, url, uri, headers, requestBody, timeout);
         }
 
@@ -221,33 +214,6 @@ export class PhilipsTVClient {
   }
 
   /**
-   * Build a digest Authorization header using cached auth parameters.
-   * Increments the nonce count for each use.
-   */
-  private buildCachedDigestHeader(method: string, uri: string): string {
-    const auth = this.cachedAuth!;
-    auth.nc++;
-    const nc = auth.nc.toString(16).padStart(8, '0');
-    const cnonce = crypto.randomBytes(16).toString('hex');
-
-    const ha2 = md5(`${method}:${uri}`);
-    const response = auth.qop
-      ? md5(`${auth.ha1}:${auth.nonce}:${nc}:${cnonce}:${auth.qop}:${ha2}`)
-      : md5(`${auth.ha1}:${auth.nonce}:${ha2}`);
-
-    let header = `Digest username="${this.config.username}", realm="${auth.realm}", nonce="${auth.nonce}", uri="${uri}", response="${response}"`;
-
-    if (auth.qop) {
-      header += `, qop=${auth.qop}, nc=${nc}, cnonce="${cnonce}"`;
-    }
-    if (auth.opaque) {
-      header += `, opaque="${auth.opaque}"`;
-    }
-
-    return header;
-  }
-
-  /**
    * Perform a fresh digest auth handshake from a 401 response,
    * caching the parameters for subsequent requests.
    */
@@ -261,20 +227,11 @@ export class PhilipsTVClient {
     timeout: number,
   ): Promise<T | null> {
     const wwwAuth = response.headers.get('www-authenticate');
-    if (!wwwAuth?.toLowerCase().startsWith('digest')) {
+    if (!wwwAuth || !this.authSession.cacheFromChallenge(wwwAuth)) {
       return null;
     }
 
-    // Cache the auth parameters for future requests
-    const params = parseWwwAuthenticate(wwwAuth);
-    this.cachedAuth = {
-      ...params,
-      ha1: md5(`${this.config.username}:${params.realm}:${this.config.password}`),
-      nc: 0,
-    };
-
-    // Use the cached header builder for the retry
-    const authHeader = this.buildCachedDigestHeader(method, uri);
+    const authHeader = this.authSession.buildHeader(method, uri)!;
 
     const authResponse = await fetchWithTimeout(
       url,
@@ -290,12 +247,21 @@ export class PhilipsTVClient {
     return authResponse.ok ? this.parseJsonResponse<T>(authResponse) : null;
   }
 
+  /**
+   * Parse a JSON response body. Returns null only on parse failure.
+   * Empty bodies on 2xx responses return an empty object (common for POST success).
+   */
   private async parseJsonResponse<T>(response: Awaited<ReturnType<typeof fetchWithTimeout>>): Promise<T | null> {
     const text = await response.text();
     if (!text) {
-      return {} as T; // Empty body on 2xx is a success (common for POST)
+      return {} as T;
     }
-    return JSON.parse(text) as T;
+    try {
+      return JSON.parse(text) as T;
+    } catch {
+      this.debug(`Failed to parse JSON response: ${text.slice(0, 200)}`);
+      return null;
+    }
   }
 
   private get<T>(endpoint: string, timeout?: number): Promise<T | null> {

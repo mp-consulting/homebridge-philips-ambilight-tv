@@ -1,5 +1,6 @@
 import type { CharacteristicValue, HapStatusError, PlatformAccessory, Service } from 'homebridge';
 import fs from 'fs';
+import { writeFile } from 'fs/promises';
 import path from 'path';
 
 import type { PhilipsTVClient } from '../api/PhilipsTVClient.js';
@@ -533,11 +534,8 @@ export class InputSourceManager {
     this.deps.accessory.context.inputConfigs = configs;
 
     // Persist to file for next restart (external accessories don't persist context)
-    try {
-      fs.writeFileSync(this.inputCachePath, JSON.stringify(configs), 'utf-8');
-    } catch {
-      this.deps.log('warn', 'Failed to persist input configs to disk');
-    }
+    writeFile(this.inputCachePath, JSON.stringify(configs), 'utf-8')
+      .catch(() => this.deps.log('warn', 'Failed to persist input configs to disk'));
   }
 
   /** Remove InputSource services that are no longer in the current input list */

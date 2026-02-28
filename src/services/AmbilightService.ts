@@ -324,9 +324,9 @@ export class AmbilightService {
    */
   homekitToPhilipsColor(hue: number, saturation: number, brightness: number): AmbilightColor {
     return {
-      hue: Math.round((hue / HOMEKIT_HUE_MAX) * PHILIPS_COLOR_MAX),
-      saturation: Math.round((saturation / HOMEKIT_SATURATION_MAX) * PHILIPS_COLOR_MAX),
-      brightness: Math.round((brightness / HOMEKIT_BRIGHTNESS_MAX) * PHILIPS_COLOR_MAX),
+      hue: Math.min(PHILIPS_COLOR_MAX, Math.round((hue / HOMEKIT_HUE_MAX) * PHILIPS_COLOR_MAX)),
+      saturation: Math.min(PHILIPS_COLOR_MAX, Math.round((saturation / HOMEKIT_SATURATION_MAX) * PHILIPS_COLOR_MAX)),
+      brightness: Math.min(PHILIPS_COLOR_MAX, Math.round((brightness / HOMEKIT_BRIGHTNESS_MAX) * PHILIPS_COLOR_MAX)),
     };
   }
 
@@ -337,9 +337,9 @@ export class AmbilightService {
    */
   philipsToHomekitColor(color: AmbilightColor): { hue: number; saturation: number; brightness: number } {
     return {
-      hue: Math.round((color.hue / PHILIPS_COLOR_MAX) * HOMEKIT_HUE_MAX),
-      saturation: Math.round((color.saturation / PHILIPS_COLOR_MAX) * HOMEKIT_SATURATION_MAX),
-      brightness: Math.round((color.brightness / PHILIPS_COLOR_MAX) * HOMEKIT_BRIGHTNESS_MAX),
+      hue: Math.min(HOMEKIT_HUE_MAX, Math.round((color.hue / PHILIPS_COLOR_MAX) * HOMEKIT_HUE_MAX)),
+      saturation: Math.min(HOMEKIT_SATURATION_MAX, Math.round((color.saturation / PHILIPS_COLOR_MAX) * HOMEKIT_SATURATION_MAX)),
+      brightness: Math.min(HOMEKIT_BRIGHTNESS_MAX, Math.round((color.brightness / PHILIPS_COLOR_MAX) * HOMEKIT_BRIGHTNESS_MAX)),
     };
   }
 }

@@ -8,9 +8,9 @@
  */
 
 import { EventEmitter } from 'events';
-import crypto from 'crypto';
 import { TV_API_PORT, TV_API_HTTP_PORT, TV_API_VERSION } from '../api/constants.js';
-import { fetchWithTimeout, httpsAgent, parseWwwAuthenticate, md5 } from '../api/utils.js';
+import { fetchWithTimeout, httpsAgent } from '../api/utils.js';
+import { DigestAuthSession } from '../api/DigestAuthSession.js';
 
 // ============================================================================
 // CONSTANTS
@@ -59,21 +59,15 @@ export class NotifyChangeClient extends EventEmitter {
   /** Protocol that last worked (null = unknown, probe both) */
   private workingProtocol: 'https' | 'http' | null = null;
 
-  /** Independent digest auth cache (separate from PhilipsTVClient) */
-  private cachedAuth: {
-    realm: string;
-    nonce: string;
-    qop: string;
-    opaque?: string;
-    ha1: string;
-    nc: number;
-  } | null = null;
+  /** Independent digest auth session (separate from PhilipsTVClient) */
+  private readonly authSession: DigestAuthSession;
 
   constructor(
     private readonly config: NotifyChangeClientConfig,
     private readonly debug: (message: string) => void,
   ) {
     super();
+    this.authSession = new DigestAuthSession(config.username, config.password);
   }
 
   // ==========================================================================
@@ -177,7 +171,7 @@ export class NotifyChangeClient extends EventEmitter {
     if (this.workingProtocol) {
       this.debug('NotifyChange: known protocol failed, will re-probe');
       this.workingProtocol = null;
-      this.cachedAuth = null;
+      this.authSession.clear();
     }
 
     throw new Error('All notifychange attempts failed');
@@ -194,8 +188,9 @@ export class NotifyChangeClient extends EventEmitter {
 
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
 
-    if (this.cachedAuth) {
-      headers.Authorization = this.buildDigestHeader('POST', uri);
+    const authHeader = this.authSession.buildHeader('POST', uri);
+    if (authHeader) {
+      headers.Authorization = authHeader;
     }
 
     const options = {
@@ -208,24 +203,19 @@ export class NotifyChangeClient extends EventEmitter {
     const response = await fetchWithTimeout(url, options, timeout, this.abortController?.signal);
 
     if (response.status === 401) {
-      this.cachedAuth = null;
+      this.authSession.clear();
       return this.handleDigestChallenge(response, url, uri, body, useAgent);
     }
 
     if (response.ok) {
-      const text = await response.text();
-      if (text) {
-        // Don't log every response — activities/tv fires every ~2s and is noise
-        return JSON.parse(text);
-      }
-      return null;
+      return this.safeParseJson(await response.text());
     }
 
     return null;
   }
 
   // ==========================================================================
-  // DIGEST AUTH (independent from PhilipsTVClient)
+  // DIGEST AUTH
   // ==========================================================================
 
   private async handleDigestChallenge(
@@ -236,20 +226,13 @@ export class NotifyChangeClient extends EventEmitter {
     useAgent: boolean,
   ): Promise<Record<string, unknown> | null> {
     const wwwAuth = response.headers.get('www-authenticate');
-    if (!wwwAuth?.toLowerCase().startsWith('digest')) {
+    if (!wwwAuth || !this.authSession.cacheFromChallenge(wwwAuth)) {
       return null;
     }
 
-    const params = parseWwwAuthenticate(wwwAuth);
-    this.cachedAuth = {
-      ...params,
-      ha1: md5(`${this.config.username}:${params.realm}:${this.config.password}`),
-      nc: 0,
-    };
-
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-      Authorization: this.buildDigestHeader('POST', uri),
+      Authorization: this.authSession.buildHeader('POST', uri)!,
     };
 
     const authResponse = await fetchWithTimeout(
@@ -265,39 +248,27 @@ export class NotifyChangeClient extends EventEmitter {
     );
 
     if (authResponse.ok) {
-      const text = await authResponse.text();
-      return text ? JSON.parse(text) : null;
+      return this.safeParseJson(await authResponse.text());
     }
 
     return null;
   }
 
-  private buildDigestHeader(method: string, uri: string): string {
-    const auth = this.cachedAuth!;
-    auth.nc++;
-    const nc = auth.nc.toString(16).padStart(8, '0');
-    const cnonce = crypto.randomBytes(16).toString('hex');
-
-    const ha2 = md5(`${method}:${uri}`);
-    const response = auth.qop
-      ? md5(`${auth.ha1}:${auth.nonce}:${nc}:${cnonce}:${auth.qop}:${ha2}`)
-      : md5(`${auth.ha1}:${auth.nonce}:${ha2}`);
-
-    let header = `Digest username="${this.config.username}", realm="${auth.realm}", nonce="${auth.nonce}", uri="${uri}", response="${response}"`;
-
-    if (auth.qop) {
-      header += `, qop=${auth.qop}, nc=${nc}, cnonce="${cnonce}"`;
-    }
-    if (auth.opaque) {
-      header += `, opaque="${auth.opaque}"`;
-    }
-
-    return header;
-  }
-
   // ==========================================================================
   // UTILITIES
   // ==========================================================================
+
+  private safeParseJson(text: string | null | undefined): Record<string, unknown> | null {
+    if (!text) {
+      return null;
+    }
+    try {
+      return JSON.parse(text) as Record<string, unknown>;
+    } catch {
+      this.debug(`NotifyChange: failed to parse JSON response: ${text.slice(0, 200)}`);
+      return null;
+    }
+  }
 
   private sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));

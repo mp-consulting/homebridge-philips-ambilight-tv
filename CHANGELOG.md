@@ -9,6 +9,21 @@ All notable changes to this project will be documented in this file.
 - **Adaptive Lighting**: Ambilight lightbulb now supports HomeKit Adaptive Lighting — color temperature adjusts automatically throughout the day (cooler during daytime, warmer at night)
 - **Color temperature control**: New color temperature slider (140–500 mireds) in HomeKit, with automatic hue/saturation sync
 - **State sensors UI**: Toggle switches in the Homebridge custom UI to enable/disable power, ambilight, and mute state sensors
+- **Shutdown cleanup**: Platform now listens for the Homebridge `shutdown` event and cleanly stops all poll timers and long-poll connections
+- **Test coverage**: Added tests for InputSourceManager (15), StatePollManager (13), NotifyChangeClient (10), and expanded AmbilightService tests (18 total) — 123 tests total
+
+### Changed
+
+- **Shared digest auth**: Extracted `DigestAuthSession` class to deduplicate digest authentication logic between `PhilipsTVClient` and `NotifyChangeClient`
+- **Differentiated timeouts**: GET requests use 2s timeout, POST requests use 5s timeout (ambilight changes and other writes need more time)
+- **Async file persistence**: `InputSourceManager` now writes input configs to disk asynchronously to avoid blocking the event loop
+- **Defensive color clamping**: Color conversion methods now clamp output values to valid ranges to prevent out-of-bounds values from reaching the TV API
+
+### Fixed
+
+- **Node version check**: Removed overly permissive `major >= 23` check to match `package.json` engines (`^20.18.0 || ^22.10.0`)
+- **Stale accessory log level**: Downgraded "Removing stale cached accessory" from `info` to `debug` to reduce log noise on every restart
+- **JSON parse safety**: Added try-catch around JSON parsing in both `PhilipsTVClient` and `NotifyChangeClient` to prevent crashes on malformed TV responses
 
 ## [1.0.10] - 2026-02-28
 

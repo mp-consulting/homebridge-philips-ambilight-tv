@@ -50,7 +50,7 @@ export class PhilipsAmbilightTVPlatform implements DynamicPlatformPlugin {
    * so we unregister any stale cached platform accessories here.
    */
   configureAccessory(accessory: PlatformAccessory) {
-    this.log.info('Removing stale cached accessory:', accessory.displayName);
+    this.log.debug('Removing stale cached accessory:', accessory.displayName);
     // Defer unregister to after Homebridge finishes restoring all accessories
     this.api.on('didFinishLaunching', () => {
       this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
@@ -99,6 +99,8 @@ export class PhilipsAmbilightTVPlatform implements DynamicPlatformPlugin {
       this.log.warn('No devices configured');
     }
 
+    const accessories: PhilipsAmbilightTVAccessory[] = [];
+
     for (let i = 0; i < devices.length; i++) {
       const tv = devices[i];
       if (!this.validateDeviceConfig(tv, i)) {
@@ -113,8 +115,15 @@ export class PhilipsAmbilightTVPlatform implements DynamicPlatformPlugin {
       this.log.info('Publishing external accessory:', displayName);
       const accessory = new this.api.platformAccessory(displayName, uuid, this.api.hap.Categories.TELEVISION);
       accessory.context.device = tv;
-      new PhilipsAmbilightTVAccessory(this, accessory);
+      accessories.push(new PhilipsAmbilightTVAccessory(this, accessory));
       this.api.publishExternalAccessories(PLUGIN_NAME, [accessory]);
     }
+
+    // Clean up all accessories when Homebridge shuts down
+    this.api.on('shutdown', () => {
+      for (const acc of accessories) {
+        acc.cleanup();
+      }
+    });
   }
 }
