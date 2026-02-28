@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.11] - 2026-02-28
+
+### Added
+
+- **Adaptive Lighting**: Ambilight lightbulb now supports HomeKit Adaptive Lighting — color temperature adjusts automatically throughout the day (cooler during daytime, warmer at night)
+- **Color temperature control**: New color temperature slider (140–500 mireds) in HomeKit, with automatic hue/saturation sync
+- **State sensors UI**: Toggle switches in the Homebridge custom UI to enable/disable power, ambilight, and mute state sensors
+
 ## [1.0.10] - 2026-02-28
 
 ### Added

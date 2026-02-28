@@ -13,7 +13,7 @@ A Homebridge plugin to control Philips Android TVs with Ambilight as HomeKit Tel
 - **Dynamic app discovery** — automatically finds all installed apps on the TV
 - Volume control and mute
 - Remote control (D-Pad, Back, Menu, Play/Pause, etc.)
-- **Ambilight color control** with brightness and color picker
+- **Ambilight color control** with brightness, color picker, and **Adaptive Lighting**
 - **Long-poll state detection** — near-instant updates when TV state changes, with interval polling fallback
 - **State sensors** — optional MotionSensor services for power, ambilight, and mute (for HomeKit automations)
 - Multi-TV support
@@ -26,6 +26,8 @@ The Ambilight appears as a color lightbulb in HomeKit with:
 - **On/Off toggle** - Turn Ambilight on or off
 - **Brightness slider** - Control light intensity (0-100%)
 - **Color wheel** - Pick any color using the HSB color picker
+- **Adaptive Lighting** - Color temperature adjusts automatically throughout the day
+- **Color temperature slider** - Manual control from 140 mireds (cool) to 500 mireds (warm)
 
 When you select a color in HomeKit, the TV switches to "Follow Color" mode with your chosen color. The plugin also syncs the current color state from the TV back to HomeKit.
 
@@ -107,6 +109,7 @@ Add the following to your `config.json`:
 | `devices[].username` | Device ID from pairing | Yes |
 | `devices[].password` | Auth key from pairing | Yes |
 | `devices[].sources` | Custom source configuration | No |
+| `devices[].ambilightMode` | Ambilight mode on turn-on (e.g. `"FOLLOW_VIDEO/NATURAL"`) | No |
 | `devices[].stateSensors` | Array of state sensors: `"power"`, `"ambilight"`, `"mute"` | No |
 | `devices[].pollingInterval` | Polling interval in ms (1000-60000, default: 10000) | No |
 
