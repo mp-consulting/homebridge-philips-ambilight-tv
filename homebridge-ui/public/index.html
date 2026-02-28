@@ -131,6 +131,24 @@
               <small class="form-text text-muted">The ambilight mode to activate when turning on via HomeKit.</small>
             </div>
           </div>
+          <div class="mb-3 row">
+            <label class="col-sm-3 col-form-label">State Sensors</label>
+            <div class="col-sm-9">
+              <div class="form-check form-switch mb-1">
+                <input class="form-check-input" type="checkbox" id="confirmSensorPower">
+                <label class="form-check-label" for="confirmSensorPower">Power (TV On/Off)</label>
+              </div>
+              <div class="form-check form-switch mb-1">
+                <input class="form-check-input" type="checkbox" id="confirmSensorAmbilight">
+                <label class="form-check-label" for="confirmSensorAmbilight">Ambilight (Active/Inactive)</label>
+              </div>
+              <div class="form-check form-switch mb-1">
+                <input class="form-check-input" type="checkbox" id="confirmSensorMute">
+                <label class="form-check-label" for="confirmSensorMute">Muted (Yes/No)</label>
+              </div>
+              <small class="form-text text-muted">Expose as MotionSensor services for HomeKit automations.</small>
+            </div>
+          </div>
           <hr>
           <div class="col-12">
             <button id="saveTvBtn" class="btn btn-success" type="submit">
@@ -212,6 +230,24 @@
             </optgroup>
           </select>
           <small class="form-text text-muted">The ambilight mode to activate when turning on via HomeKit.</small>
+        </div>
+      </div>
+      <div class="mb-3 row">
+        <label class="col-sm-3 col-form-label">State Sensors</label>
+        <div class="col-sm-9">
+          <div class="form-check form-switch mb-1">
+            <input class="form-check-input" type="checkbox" id="editSensorPower">
+            <label class="form-check-label" for="editSensorPower">Power (TV On/Off)</label>
+          </div>
+          <div class="form-check form-switch mb-1">
+            <input class="form-check-input" type="checkbox" id="editSensorAmbilight">
+            <label class="form-check-label" for="editSensorAmbilight">Ambilight (Active/Inactive)</label>
+          </div>
+          <div class="form-check form-switch mb-1">
+            <input class="form-check-input" type="checkbox" id="editSensorMute">
+            <label class="form-check-label" for="editSensorMute">Muted (Yes/No)</label>
+          </div>
+          <small class="form-text text-muted">Expose as MotionSensor services for HomeKit automations.</small>
         </div>
       </div>
       <hr>

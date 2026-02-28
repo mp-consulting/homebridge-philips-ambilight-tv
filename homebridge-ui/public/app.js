@@ -377,6 +377,10 @@
     $('editTvIp').value = tv.ip || '';
     $('editTvMac').value = tv.mac || '';
     $('editAmbilightMode').value = tv.ambilightMode || 'FOLLOW_VIDEO/NATURAL';
+    const editSensors = tv.stateSensors || [];
+    $('editSensorPower').checked = editSensors.includes('power');
+    $('editSensorAmbilight').checked = editSensors.includes('ambilight');
+    $('editSensorMute').checked = editSensors.includes('mute');
     showScreen('editScreen');
   };
 
@@ -391,11 +395,22 @@
     }
 
     try {
+      const editStateSensors = [];
+      if ($('editSensorPower').checked) {
+        editStateSensors.push('power');
+      }
+      if ($('editSensorAmbilight').checked) {
+        editStateSensors.push('ambilight');
+      }
+      if ($('editSensorMute').checked) {
+        editStateSensors.push('mute');
+      }
       await updateTv(state.editingTvIndex, {
         name: $('editTvName').value.trim(),
         ip: $('editTvIp').value.trim(),
         mac: $('editTvMac').value.trim(),
         ambilightMode: $('editAmbilightMode').value,
+        stateSensors: editStateSensors,
       });
       homebridge.toast.success('TV configuration updated');
       form.classList.remove('was-validated');
@@ -438,6 +453,10 @@
     $('confirmTvIp').value = state.currentConfig.ip || '';
     $('confirmTvMac').value = state.currentConfig.mac || '';
     $('confirmAmbilightMode').value = state.currentConfig.ambilightMode || 'FOLLOW_VIDEO/NATURAL';
+    const confirmSensors = state.currentConfig.stateSensors || [];
+    $('confirmSensorPower').checked = confirmSensors.includes('power');
+    $('confirmSensorAmbilight').checked = confirmSensors.includes('ambilight');
+    $('confirmSensorMute').checked = confirmSensors.includes('mute');
     showScreen('wizardStep3');
     $('confirmTvName').focus();
     $('confirmTvName').select();
@@ -456,6 +475,17 @@
     state.currentConfig.name = $('confirmTvName').value.trim();
     state.currentConfig.mac = $('confirmTvMac').value.trim();
     state.currentConfig.ambilightMode = $('confirmAmbilightMode').value;
+    const confirmStateSensors = [];
+    if ($('confirmSensorPower').checked) {
+      confirmStateSensors.push('power');
+    }
+    if ($('confirmSensorAmbilight').checked) {
+      confirmStateSensors.push('ambilight');
+    }
+    if ($('confirmSensorMute').checked) {
+      confirmStateSensors.push('mute');
+    }
+    state.currentConfig.stateSensors = confirmStateSensors;
 
     try {
       await addTv();

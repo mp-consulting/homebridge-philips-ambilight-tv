@@ -1,4 +1,4 @@
-import type { CharacteristicValue, HapStatusError, PlatformAccessory, Service } from 'homebridge';
+import type { AdaptiveLightingController, CharacteristicValue, ColorUtils, HapStatusError, PlatformAccessory, Service } from 'homebridge';
 
 import type { PhilipsTVClient } from '../api/PhilipsTVClient.js';
 import type { AmbilightCached, AmbilightColor, AmbilightStyleName } from '../api/types.js';
@@ -15,6 +15,11 @@ const HOMEKIT_BRIGHTNESS_MAX = 100;
 /** Philips Ambilight color ranges */
 const PHILIPS_COLOR_MAX = 255;
 
+/** Color temperature range in mireds */
+const COLOR_TEMP_MIN = 140;  // ≈7100K cool daylight
+const COLOR_TEMP_MAX = 500;  // ≈2000K warm candlelight
+const COLOR_TEMP_DEFAULT = 280; // ≈3570K neutral
+
 /** Default ambilight mode when turning on */
 const DEFAULT_AMBILIGHT_MODE = 'FOLLOW_VIDEO/NATURAL';
 
@@ -28,7 +33,10 @@ const USER_ACTION_COOLDOWN_MS = 10_000;
 export interface AmbilightServiceDeps {
   readonly Service: typeof Service;
   readonly Characteristic: typeof import('homebridge').Characteristic;
+  readonly AdaptiveLightingController: typeof AdaptiveLightingController;
+  readonly ColorUtils: typeof ColorUtils;
   readonly tvClient: PhilipsTVClient;
+  readonly accessory: PlatformAccessory;
   readonly ambilightMode?: string;
   readonly communicationError: () => HapStatusError;
   readonly log: (level: 'debug' | 'info' | 'warn' | 'error', message: string) => void;
@@ -45,6 +53,7 @@ export class AmbilightService {
   private brightness = 100; // 0-100 for HomeKit
   private hue = 0;          // 0-360 for HomeKit
   private saturation = 0;   // 0-100 for HomeKit
+  private colorTemperature = COLOR_TEMP_DEFAULT; // mireds
   private lastUserAction = 0; // Timestamp of last user-initiated change
   private styleRetryTimer?: ReturnType<typeof setTimeout>;
 
@@ -89,6 +98,15 @@ export class AmbilightService {
     this.service.getCharacteristic(Char.Saturation)
       .onGet(() => this.saturation)
       .onSet((value) => this.handleSetSaturation(value));
+
+    this.service.getCharacteristic(Char.ColorTemperature)
+      .setProps({ minValue: COLOR_TEMP_MIN, maxValue: COLOR_TEMP_MAX })
+      .onGet(() => this.colorTemperature)
+      .onSet((value) => this.handleSetColorTemperature(value));
+
+    // Enable Adaptive Lighting (automatic mode — controller manages transitions)
+    const adaptiveLightingController = new this.deps.AdaptiveLightingController(this.service);
+    accessory.configureController(adaptiveLightingController);
 
     tvService.addLinkedService(this.service);
 
@@ -183,6 +201,32 @@ export class AmbilightService {
         this.lastUserAction = Date.now();
       } catch {
         this.deps.log('warn', 'Failed to update Ambilight saturation');
+      }
+    }
+  }
+
+  private async handleSetColorTemperature(value: CharacteristicValue): Promise<void> {
+    const newTemp = value as number;
+    this.deps.log('debug', `Setting Ambilight color temperature to ${newTemp} mireds`);
+    this.colorTemperature = newTemp;
+
+    // Convert mireds to HomeKit hue/saturation using HAP-NodeJS utility
+    const { hue, saturation } = this.deps.ColorUtils.colorTemperatureToHueAndSaturation(newTemp);
+    this.hue = hue;
+    this.saturation = saturation;
+
+    // Sync Hue/Saturation characteristics without disabling Adaptive Lighting
+    const { Characteristic: Char } = this.deps;
+    this.service.getCharacteristic(Char.Hue).updateValue(hue);
+    this.service.getCharacteristic(Char.Saturation).updateValue(saturation);
+
+    if (this.isOn) {
+      try {
+        const color = this.homekitToPhilipsColor(hue, saturation, this.brightness);
+        await this.deps.tvClient.setAmbilightFollowColor(color);
+        this.lastUserAction = Date.now();
+      } catch {
+        this.deps.log('warn', 'Failed to update Ambilight color temperature');
       }
     }
   }

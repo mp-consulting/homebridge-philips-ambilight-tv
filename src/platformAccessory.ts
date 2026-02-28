@@ -38,7 +38,10 @@ export class PhilipsAmbilightTVAccessory {
     this.ambilightService = new AmbilightService({
       Service: this.Service,
       Characteristic: this.Characteristic,
+      AdaptiveLightingController: platform.api.hap.AdaptiveLightingController,
+      ColorUtils: platform.api.hap.ColorUtils,
       tvClient: this.tvClient,
+      accessory: this.accessory,
       ambilightMode: this.config.ambilightMode,
       communicationError: () => this.communicationError(),
       log: (level, msg) => this.log(level, msg),
