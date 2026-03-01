@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { InputSourceManager } from '../../services/InputSourceManager.js';
-import type { InputSourceManagerDeps } from '../../services/InputSourceManager.js';
+import { InputSourceManager } from '../../src/services/InputSourceManager.js';
+import type { InputSourceManagerDeps } from '../../src/services/InputSourceManager.js';
 
 // ============================================================================
 // MOCKS

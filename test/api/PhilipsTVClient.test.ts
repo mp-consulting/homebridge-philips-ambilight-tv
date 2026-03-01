@@ -1,12 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { PhilipsTVClient } from '../../api/PhilipsTVClient.js';
-import type * as UtilsModule from '../../api/utils.js';
+import { PhilipsTVClient } from '../../src/api/PhilipsTVClient.js';
+import type * as UtilsModule from '../../src/api/utils.js';
 
 // ============================================================================
 // MOCKS
 // ============================================================================
 
-vi.mock('../../api/utils.js', async (importOriginal) => {
+vi.mock('../../src/api/utils.js', async (importOriginal) => {
   const actual = await importOriginal<typeof UtilsModule>();
   return {
     ...actual,
@@ -15,7 +15,7 @@ vi.mock('../../api/utils.js', async (importOriginal) => {
   };
 });
 
-import { fetchWithTimeout, sendWakeOnLan } from '../../api/utils.js';
+import { fetchWithTimeout, sendWakeOnLan } from '../../src/api/utils.js';
 
 const mockFetch = vi.mocked(fetchWithTimeout);
 const mockWol = vi.mocked(sendWakeOnLan);

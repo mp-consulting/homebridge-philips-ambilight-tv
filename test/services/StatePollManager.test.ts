@@ -1,14 +1,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'events';
-import { StatePollManager } from '../../services/StatePollManager.js';
-import type { PollCallbacks } from '../../services/StatePollManager.js';
-import type { PhilipsTVClient } from '../../api/PhilipsTVClient.js';
+import { StatePollManager } from '../../src/services/StatePollManager.js';
+import type { PollCallbacks } from '../../src/services/StatePollManager.js';
+import type { PhilipsTVClient } from '../../src/api/PhilipsTVClient.js';
 
 // ============================================================================
 // MOCKS
 // ============================================================================
 
-vi.mock('../../services/NotifyChangeClient.js', () => ({
+vi.mock('../../src/services/NotifyChangeClient.js', () => ({
   NotifyChangeClient: class MockNotifyChangeClient extends EventEmitter {
     start = vi.fn();
     stop = vi.fn();

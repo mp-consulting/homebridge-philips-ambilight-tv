@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { AmbilightService } from '../../services/AmbilightService.js';
-import type { AmbilightServiceDeps } from '../../services/AmbilightService.js';
+import { AmbilightService } from '../../src/services/AmbilightService.js';
+import type { AmbilightServiceDeps } from '../../src/services/AmbilightService.js';
 
 // ============================================================================
 // MOCK HELPERS

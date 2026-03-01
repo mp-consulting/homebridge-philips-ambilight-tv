@@ -1,12 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { NotifyChangeClient } from '../../services/NotifyChangeClient.js';
-import type * as UtilsModule from '../../api/utils.js';
+import { NotifyChangeClient } from '../../src/services/NotifyChangeClient.js';
+import type * as UtilsModule from '../../src/api/utils.js';
 
 // ============================================================================
 // MOCKS
 // ============================================================================
 
-vi.mock('../../api/utils.js', async (importOriginal) => {
+vi.mock('../../src/api/utils.js', async (importOriginal) => {
   const actual = await importOriginal<typeof UtilsModule>();
   return {
     ...actual,
@@ -14,7 +14,7 @@ vi.mock('../../api/utils.js', async (importOriginal) => {
   };
 });
 
-vi.mock('../../api/DigestAuthSession.js', () => ({
+vi.mock('../../src/api/DigestAuthSession.js', () => ({
   DigestAuthSession: class MockDigestAuthSession {
     buildHeader() {
       return null;
@@ -30,7 +30,7 @@ vi.mock('../../api/DigestAuthSession.js', () => ({
   },
 }));
 
-import { fetchWithTimeout } from '../../api/utils.js';
+import { fetchWithTimeout } from '../../src/api/utils.js';
 
 const mockFetch = vi.mocked(fetchWithTimeout);
 

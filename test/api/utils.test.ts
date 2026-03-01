@@ -11,8 +11,8 @@ import {
   sendWakeOnLan,
   sanitizeForHomeKit,
   createDeviceInfo,
-} from '../../api/utils.js';
-import type { DiscoveredDevice } from '../../api/types.js';
+} from '../../src/api/utils.js';
+import type { DiscoveredDevice } from '../../src/api/types.js';
 
 // ============================================================================
 // md5
