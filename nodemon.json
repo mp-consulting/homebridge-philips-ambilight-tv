@@ -2,7 +2,7 @@
   "watch": ["src", "homebridge-ui"],
   "ext": "ts,js,json,html,css",
   "ignore": [],
-  "exec": "tsc && homebridge-config-ui-x run -U ./test/hbConfig -D",
+  "exec": "tsc && npx homebridge-config-ui-x run -U ./test/hbConfig -D",
   "signal": "SIGTERM",
   "env": {
     "NODE_OPTIONS": "--trace-warnings"
