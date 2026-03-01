@@ -1,4 +1,4 @@
-import type { AdaptiveLightingController, CharacteristicValue, ColorUtils, HapStatusError, PlatformAccessory, Service } from 'homebridge';
+import type { AdaptiveLightingController, Characteristic, CharacteristicValue, ColorUtils, HapStatusError, PlatformAccessory, Service } from 'homebridge';
 
 import type { PhilipsTVClient } from '../api/PhilipsTVClient.js';
 import type { AmbilightCached, AmbilightColor, AmbilightStyleName } from '../api/types.js';
@@ -32,7 +32,7 @@ const USER_ACTION_COOLDOWN_MS = 10_000;
 
 export interface AmbilightServiceDeps {
   readonly Service: typeof Service;
-  readonly Characteristic: typeof import('homebridge').Characteristic;
+  readonly Characteristic: typeof Characteristic;
   readonly AdaptiveLightingController: typeof AdaptiveLightingController;
   readonly ColorUtils: typeof ColorUtils;
   readonly tvClient: PhilipsTVClient;

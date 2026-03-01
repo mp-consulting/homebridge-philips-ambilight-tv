@@ -1,4 +1,4 @@
-import type { CharacteristicValue, HapStatusError, PlatformAccessory, Service } from 'homebridge';
+import type { Characteristic, CharacteristicValue, HapStatusError, PlatformAccessory, Service } from 'homebridge';
 import fs from 'fs';
 import { writeFile } from 'fs/promises';
 import path from 'path';
@@ -95,7 +95,7 @@ interface InputData {
 
 export interface InputSourceManagerDeps {
   readonly Service: typeof Service;
-  readonly Characteristic: typeof import('homebridge').Characteristic;
+  readonly Characteristic: typeof Characteristic;
   readonly tvClient: PhilipsTVClient;
   readonly accessory: PlatformAccessory;
   readonly storagePath: string;
@@ -645,12 +645,12 @@ export class InputSourceManager {
 
   private async switchInput(input: InputSource): Promise<boolean> {
     switch (input.type) {
-    case 'app':
-      return this.deps.tvClient.launchApplication(input.id);
-    case 'source':
-      return this.deps.tvClient.setSource(input.id);
-    case 'channel':
-      return this.deps.tvClient.setChannel(parseInt(input.id, 10), input.channelListId);
+      case 'app':
+        return this.deps.tvClient.launchApplication(input.id);
+      case 'source':
+        return this.deps.tvClient.setSource(input.id);
+      case 'channel':
+        return this.deps.tvClient.setChannel(parseInt(input.id, 10), input.channelListId);
     }
   }
 }

@@ -1,12 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { PhilipsTVClient } from '../../api/PhilipsTVClient.js';
+import type * as UtilsModule from '../../api/utils.js';
 
 // ============================================================================
 // MOCKS
 // ============================================================================
 
 vi.mock('../../api/utils.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../api/utils.js')>();
+  const actual = await importOriginal<typeof UtilsModule>();
   return {
     ...actual,
     fetchWithTimeout: vi.fn(),
