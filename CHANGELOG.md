@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.12] - 2026-03-02
+
+### Fixed
+
+- **Long-poll log spam**: Long-poll no longer retries endlessly when the TV is off — eliminated the repeating "Long-poll failed / Retrying long-poll mode" warnings that filled logs every 2–3 minutes
+- **Long-poll lifecycle tied to power state**: Long-poll now starts only when the TV is on and stops immediately when it turns off, instead of blindly retrying regardless of power state
+- **Long-poll race condition**: Fixed potential orphaned NotifyChangeClient when a retry timer races with a power-on detection, which could leak connections
+
+### Changed
+
+- **Startup optimization**: Long-poll is no longer attempted at startup when the TV is off — it starts automatically when the TV becomes reachable
+- **Test coverage**: Added 7 new tests for long-poll lifecycle (20 total for StatePollManager, 130 total)
+
 ## [1.0.11] - 2026-02-28
 
 ### Added
