@@ -6,6 +6,8 @@
 
 A Homebridge plugin to control Philips Android TVs with Ambilight as HomeKit Television accessories.
 
+> Originally based on [homebridge-philips-tv-ambilight](https://github.com/konradknitter/homebridge-philips-tv-ambilight) by [Konrad Knitter](https://github.com/konradknitter), licensed under the Apache License 2.0. This fork has been substantially rewritten by [MP Consulting](https://github.com/mp-consulting).
+
 ## Features
 
 - Power ON/OFF with Wake-on-LAN support
@@ -197,7 +199,7 @@ npm run test:tv
 
 ## License
 
-MIT
+This project is derived from [homebridge-philips-tv-ambilight](https://github.com/konradknitter/homebridge-philips-tv-ambilight) by Konrad Knitter, which is licensed under the [Apache License 2.0](http://www.apache.org/licenses/LICENSE-2.0). Modifications and new code are licensed under the [MIT License](https://opensource.org/licenses/MIT). See the [LICENSE](LICENSE) file for full details.
 
 ## Credits
 
