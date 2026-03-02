@@ -1,68 +1,59 @@
 # CLAUDE.md
 
-## Project Overview
+## Project overview
 
-Homebridge plugin (`@mp-consulting/homebridge-philips-ambilight-tv`) for Philips Android TVs with Ambilight. Provides power control (WOL), input selection, volume, remote functions, and Ambilight color control with Adaptive Lighting support.
-
-## Tech Stack
-
-- **Language**: TypeScript (strict, ES2022, ESM via NodeNext)
-- **Runtime**: Node.js ^20.18.0 || ^22.10.0, Homebridge ^1.8.0 || ^2.0.0-beta
-- **Testing**: Vitest with coverage
-- **Linting**: ESLint 9 flat config with typescript-eslint
-- **Key deps**: `undici` (HTTP), `bonjour-service` (mDNS), `node-arp` (ARP discovery)
+Homebridge plugin that exposes Philips Ambilight TVs as HomeKit Television accessories. Communicates with TVs via the JointSpace v6 REST API and a long-poll WebSocket (NotifyChangeClient) for near-instant state updates.
 
 ## Commands
 
-- `npm run build` — Compile TypeScript to `dist/`
-- `npm run lint` — Lint with zero warnings
-- `npm test` — Run tests (Vitest)
-- `npm run test:coverage` — Tests with coverage
-- `npm run test:tv` — Integration test against real TV endpoints
-- `npm run start` — Build and launch Homebridge with test config
-- `npm run watch` — Build, link, and watch with nodemon
+| Task | Command |
+|------|---------|
+| Build | `npm run build` |
+| Lint | `npm run lint` |
+| Test | `npm test` |
+| Test (watch) | `npm run test:watch` |
+| Test (coverage) | `npm run test:coverage` |
+| Dev (auto-reload) | `npm run watch` |
+| Run locally | `npm start` |
 
-## Project Structure
-
-```
-src/
-├── index.ts                    # Plugin entry point
-├── platform.ts                 # DynamicPlatformPlugin (multi-TV support)
-├── platformAccessory.ts        # Individual TV accessory logic
-├── settings.ts                 # Plugin constants
-├── api/                        # Philips JointSpace API v6
-│   ├── PhilipsTVClient.ts      # Main API client
-│   ├── DigestAuthSession.ts    # Digest authentication
-│   ├── constants.ts            # API endpoints
-│   ├── types.ts                # Type definitions
-│   └── utils.ts                # Helpers
-└── services/                   # HomeKit service implementations
-    ├── AmbilightService.ts     # Color control with Adaptive Lighting
-    ├── InputSourceManager.ts   # Input source handling
-    ├── NotifyChangeClient.ts   # Long-poll state detection
-    ├── StatePollManager.ts     # Fallback interval polling
-    └── StateSensorService.ts   # State sensors (MotionSensor-based)
-test/
-├── api/                        # API layer tests
-├── services/                   # Service layer tests
-└── hbConfig/                   # Sample Homebridge config
-homebridge-ui/                  # Custom config UI with setup wizard
-```
+Lint enforces zero warnings. Build compiles to `dist/` via `tsc`. Prepublish runs test + lint + build.
 
 ## Architecture
 
-- **External accessories**: TVs published via `publishExternalAccessories()` (own HAP server)
-- **Digest authentication** for JointSpace API v6 (Philips Android TVs 2016+)
-- **Dual state detection**: Long-poll (`NotifyChangeClient`) with interval polling fallback
-- **State sensors**: Expose power/ambilight/mute as MotionSensor services for automations
-- **Adaptive Lighting**: Full support for HomeKit's Adaptive Lighting on Ambilight
+```
+src/
+├── index.ts              # Plugin registration
+├── settings.ts           # PLATFORM_NAME, PLUGIN_NAME constants
+├── platform.ts           # Homebridge DynamicPlatformPlugin
+├── platformAccessory.ts  # TV accessory setup & HAP handlers
+├── api/                  # JointSpace v6 client, digest auth, fetch helpers
+└── services/             # Ambilight, polling, long-poll, input sources, sensors
 
-## Code Style
+test/                     # Unit tests (mirrors src/ structure)
+homebridge-ui/            # Custom UI for pairing wizard & source config
+```
 
-- Single quotes, 2-space indent, semicolons required
-- Trailing commas in multiline, max line length 160
-- Unix line endings, object curly spacing
+## Code conventions
 
-## Git Settings
+- **ESM only** — `"type": "module"`, imports use `.js` extensions
+- **TypeScript strict mode** — ES2022 target, `nodenext` module resolution
+- **Type-only imports** — `import type { Foo }` enforced by ESLint
+- **Style** — single quotes, 2-space indent, semicolons, trailing commas in multiline, max 160 chars/line
+- **Naming** — PascalCase classes/types, camelCase functions, UPPER_SNAKE_CASE constants, `_prefix` for unused args
+- **Section markers** — `// ====...` comment blocks separate constants / types / class sections
+- **No `any`** — `@typescript-eslint/no-explicit-any` is a warning; avoid it
 
-- `coAuthoredBy`: false
+## Testing
+
+- **Vitest v4** with globals (`describe`, `it`, `expect`, `vi`)
+- Tests in `test/` directory, mirroring `src/` structure
+- Mocking: `vi.mock()` for modules, `vi.fn()` for stubs
+- Fake timers: `vi.useFakeTimers()` in beforeEach, `vi.useRealTimers()` in afterEach
+- Use `vi.advanceTimersByTimeAsync()` for async timer tests
+
+## Git conventions
+
+- Conventional commits: `feat:`, `fix:`, `chore:`, `refactor:`, `perf:`, `style:`
+- Do not include co-authored-by lines (setting: `includeCoAuthoredBy: false`)
+- CI runs on Node 20.x and 22.x
+- npm publish triggered by GitHub releases (trusted publishing with OIDC provenance)

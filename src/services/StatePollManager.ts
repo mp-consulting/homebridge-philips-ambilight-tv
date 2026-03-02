@@ -12,8 +12,8 @@ const DEFAULT_POLLING_INTERVAL_MS = 10000;
 /** Delay before first poll after accessory creation (ms) */
 const INITIAL_POLL_DELAY_MS = 5000;
 
-/** Retry long-poll after this many ms of fallback interval polling */
-const LONG_POLL_RETRY_INTERVAL_MS = 60_000;
+/** Retry long-poll after a transient failure while the TV is on */
+const LONG_POLL_RETRY_MS = 60_000;
 
 // ============================================================================
 // TYPES
@@ -59,12 +59,9 @@ export class StatePollManager {
       await this.pollState();
       this.callbacks.onAppsReady();
 
-      // Start interval polling immediately as baseline
+      // Start interval polling as baseline — long-poll is started
+      // automatically by pollState() when it detects the TV is on
       this.startIntervalPolling();
-
-      // Try long-poll in parallel — interval polling keeps running
-      // until long-poll proves it works (first successful notification)
-      this.startLongPoll();
     }, INITIAL_POLL_DELAY_MS);
 
     this.log('debug', `State updates will start in ${INITIAL_POLL_DELAY_MS}ms`);
@@ -77,10 +74,7 @@ export class StatePollManager {
     }
     this.stopIntervalPolling();
     this.stopLongPoll();
-    if (this.longPollRetryTimer) {
-      clearTimeout(this.longPollRetryTimer);
-      this.longPollRetryTimer = undefined;
-    }
+    this.cancelLongPollRetry();
   }
 
   // ==========================================================================
@@ -88,6 +82,9 @@ export class StatePollManager {
   // ==========================================================================
 
   private startLongPoll(): void {
+    this.stopLongPoll();
+    this.cancelLongPollRetry();
+
     this.notifyClient = new NotifyChangeClient(
       {
         ip: this.config.ip,
@@ -119,10 +116,18 @@ export class StatePollManager {
     });
 
     this.notifyClient.on('failed', () => {
-      this.log('warn', 'Long-poll failed, ensuring interval polling is active');
-      this.longPollConfirmed = false;
+      this.stopLongPoll();
       this.startIntervalPolling();
-      this.scheduleLongPollRetry();
+
+      if (this.isPoweredOn) {
+        // TV is on but long-poll failed — transient error, retry once
+        this.log('warn', 'Long-poll failed while TV is on, will retry');
+        this.scheduleLongPollRetry();
+      } else {
+        // TV is off — no point retrying, pollState() will restart
+        // long-poll when the TV comes back on
+        this.log('debug', 'Long-poll stopped (TV is off)');
+      }
     });
 
     this.notifyClient.start();
@@ -139,13 +144,18 @@ export class StatePollManager {
   }
 
   private scheduleLongPollRetry(): void {
+    this.cancelLongPollRetry();
+    this.longPollRetryTimer = setTimeout(() => {
+      this.log('debug', 'Retrying long-poll mode...');
+      this.startLongPoll();
+    }, LONG_POLL_RETRY_MS);
+  }
+
+  private cancelLongPollRetry(): void {
     if (this.longPollRetryTimer) {
       clearTimeout(this.longPollRetryTimer);
+      this.longPollRetryTimer = undefined;
     }
-    this.longPollRetryTimer = setTimeout(() => {
-      this.log('info', 'Retrying long-poll mode...');
-      this.startLongPoll();
-    }, LONG_POLL_RETRY_INTERVAL_MS);
   }
 
   // ==========================================================================
@@ -179,6 +189,15 @@ export class StatePollManager {
         this.isPoweredOn = isOn;
         this.log('info', `Power: ${isOn ? 'On' : 'Standby'}`);
         this.callbacks.onPowerChange(isOn);
+
+        if (isOn && !this.notifyClient) {
+          // TV just came back — restart long-poll
+          this.startLongPoll();
+        } else if (!isOn) {
+          // TV turned off — stop long-poll immediately
+          this.stopLongPoll();
+          this.cancelLongPollRetry();
+        }
       }
 
       if (isOn) {

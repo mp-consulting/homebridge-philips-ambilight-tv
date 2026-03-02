@@ -8,10 +8,16 @@ import type { PhilipsTVClient } from '../../src/api/PhilipsTVClient.js';
 // MOCKS
 // ============================================================================
 
+let notifyInstances: (EventEmitter & { start: ReturnType<typeof vi.fn>; stop: ReturnType<typeof vi.fn> })[] = [];
+
 vi.mock('../../src/services/NotifyChangeClient.js', () => ({
   NotifyChangeClient: class MockNotifyChangeClient extends EventEmitter {
     start = vi.fn();
     stop = vi.fn();
+    constructor() {
+      super();
+      notifyInstances.push(this as MockNotifyChangeClient);
+    }
   },
 }));
 
@@ -58,6 +64,7 @@ describe('StatePollManager', () => {
     tvClient = createMockTVClient();
     callbacks = createMockCallbacks();
     debugLog.mockReset();
+    notifyInstances = [];
   });
 
   afterEach(() => {
@@ -218,6 +225,137 @@ describe('StatePollManager', () => {
       await vi.advanceTimersByTimeAsync(5100);
 
       expect(callbacks.onInputUpdate).toHaveBeenCalledWith('com.netflix.ninja');
+    });
+  });
+
+  // ==========================================================================
+  // LONG-POLL LIFECYCLE
+  // ==========================================================================
+
+  describe('long-poll lifecycle', () => {
+    it('should not start long-poll when TV is off at startup', async () => {
+      // TV starts off (default mock)
+      manager = new StatePollManager(tvClient, TEST_CONFIG, callbacks, debugLog);
+      manager.start();
+      await vi.advanceTimersByTimeAsync(5100);
+
+      // No long-poll client should have been created
+      expect(notifyInstances).toHaveLength(0);
+    });
+
+    it('should not retry long-poll when TV turns off', async () => {
+      // Start with TV on — long-poll is created
+      (tvClient.getPowerState as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+      (tvClient.getVolume as ReturnType<typeof vi.fn>).mockResolvedValue({ current: 10, muted: false });
+      manager = new StatePollManager(tvClient, TEST_CONFIG, callbacks, debugLog);
+      manager.start();
+      await vi.advanceTimersByTimeAsync(5100);
+      expect(notifyInstances).toHaveLength(1);
+
+      // TV turns off — long-poll is stopped proactively by pollState()
+      // (listeners removed, so any late 'failed' event is ignored)
+      (tvClient.getPowerState as ReturnType<typeof vi.fn>).mockResolvedValue(false);
+      await vi.advanceTimersByTimeAsync(10_100);
+
+      expect(notifyInstances[0].stop).toHaveBeenCalled();
+
+      // Wait well past retry interval — no new instance should be created
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(notifyInstances).toHaveLength(1);
+    });
+
+    it('should retry long-poll when it fails while TV is on', async () => {
+      (tvClient.getPowerState as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+      manager = new StatePollManager(tvClient, TEST_CONFIG, callbacks, debugLog);
+      manager.start();
+      await vi.advanceTimersByTimeAsync(5100);
+
+      expect(notifyInstances).toHaveLength(1);
+      notifyInstances[0].emit('failed');
+
+      expect(debugLog).toHaveBeenCalledWith('warn', 'Long-poll failed while TV is on, will retry');
+
+      // After retry delay, a new long-poll client should be created
+      await vi.advanceTimersByTimeAsync(60_100);
+      expect(notifyInstances).toHaveLength(2);
+    });
+
+    it('should start long-poll when TV turns on', async () => {
+      // TV starts off — no long-poll created
+      manager = new StatePollManager(tvClient, TEST_CONFIG, callbacks, debugLog);
+      manager.start();
+      await vi.advanceTimersByTimeAsync(5100);
+      expect(notifyInstances).toHaveLength(0);
+
+      // TV turns on — detected by next interval poll
+      (tvClient.getPowerState as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+      await vi.advanceTimersByTimeAsync(10_100);
+
+      // A long-poll client should have been created
+      expect(notifyInstances).toHaveLength(1);
+      expect(notifyInstances[0].start).toHaveBeenCalled();
+    });
+
+    it('should stop long-poll immediately when TV turns off', async () => {
+      // Start with TV on
+      (tvClient.getPowerState as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+      manager = new StatePollManager(tvClient, TEST_CONFIG, callbacks, debugLog);
+      manager.start();
+      await vi.advanceTimersByTimeAsync(5100);
+
+      const client = notifyInstances[0];
+
+      // TV turns off
+      (tvClient.getPowerState as ReturnType<typeof vi.fn>).mockResolvedValue(false);
+      await vi.advanceTimersByTimeAsync(10_100);
+
+      expect(client.stop).toHaveBeenCalled();
+    });
+
+    it('should not create orphaned clients when retry races with power-on', async () => {
+      // Start with TV on
+      (tvClient.getPowerState as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+      manager = new StatePollManager(tvClient, TEST_CONFIG, callbacks, debugLog);
+      manager.start();
+      await vi.advanceTimersByTimeAsync(5100);
+
+      // Long-poll fails while TV is on — retry scheduled in 60s
+      notifyInstances[0].emit('failed');
+      expect(notifyInstances).toHaveLength(1);
+
+      // At 30s: TV turns off then back on (detected by interval polling)
+      (tvClient.getPowerState as ReturnType<typeof vi.fn>).mockResolvedValue(false);
+      await vi.advanceTimersByTimeAsync(10_100);
+      (tvClient.getPowerState as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+      await vi.advanceTimersByTimeAsync(10_100);
+
+      // Power-on created a new client
+      const countAfterPowerOn = notifyInstances.length;
+
+      // Wait past original retry timer — should NOT create another client
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(notifyInstances).toHaveLength(countAfterPowerOn);
+    });
+
+    it('should stop interval polling when long-poll is confirmed working', async () => {
+      (tvClient.getPowerState as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+      (tvClient.getVolume as ReturnType<typeof vi.fn>).mockResolvedValue({ current: 10, muted: false });
+      manager = new StatePollManager(tvClient, TEST_CONFIG, callbacks, debugLog);
+      manager.start();
+      await vi.advanceTimersByTimeAsync(5100);
+
+      // Emit an actionable notification on the latest client to confirm long-poll
+      const latestClient = notifyInstances[notifyInstances.length - 1];
+      latestClient.emit('notification', { 'audio/volume': {} });
+
+      expect(debugLog).toHaveBeenCalledWith('info', 'Long-poll confirmed working, stopped interval polling');
+
+      // Record call count, then wait past interval — should not increase
+      // (need to wait for the pollState triggered by notification first)
+      await vi.advanceTimersByTimeAsync(100);
+      const callCount = (tvClient.getPowerState as ReturnType<typeof vi.fn>).mock.calls.length;
+      await vi.advanceTimersByTimeAsync(20_000);
+      expect((tvClient.getPowerState as ReturnType<typeof vi.fn>).mock.calls.length).toBe(callCount);
     });
   });
 
