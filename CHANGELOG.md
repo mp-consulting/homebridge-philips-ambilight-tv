@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.15] - 2026-03-03
+
+### Changed
+
+- **Wizard confirm screen layout**: 2-column layout matching the edit screen — connection settings on the left, HomeKit settings on the right
+
+### Docs
+
+- **API reference**: Added missing endpoints (`/audio`, `/storage`, `/timestamp`, `POST /ambilight/cached`, `/epg_source`, `/recordings`), documented simple vs expert ambilight configuration modes, added mute via `/input/key` note
+
 ## [1.0.14] - 2026-03-03
 
 ### Added

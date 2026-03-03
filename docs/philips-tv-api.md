@@ -90,6 +90,7 @@ The app sends **burst** magic packets:
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
+| GET | `/audio` | Get full audio settings |
 | GET | `/audio/volume` | Get volume state |
 | POST | `/audio/volume` | Set volume/mute |
 
@@ -100,9 +101,11 @@ The app sends **burst** magic packets:
 // POST body (set volume)
 { "current": 15, "muted": false }
 
-// POST body (toggle mute)
+// POST body (toggle mute via volume endpoint)
 { "muted": true }
 ```
+
+> **Note:** Mute can also be toggled via `POST /input/key {"key":"Mute"}`, which simulates the remote's mute button. This is the preferred approach for toggle behavior, as the volume endpoint requires knowing the current state.
 
 ## Screen State
 
@@ -121,6 +124,8 @@ The app sends **burst** magic packets:
 | GET | `/system/deviceid_encrypted` | Get encrypted device ID |
 | GET | `/system/serialnumber_encrypted` | Get encrypted serial number |
 | GET | `/startupstate` | Get startup state |
+| GET | `/storage` | Get device storage info |
+| GET | `/timestamp` | Get system timestamp |
 
 ## Ambilight
 
@@ -137,6 +142,7 @@ The app sends **burst** magic packets:
 | POST | `/ambilight/currentconfiguration` | Set style/algorithm config |
 | GET | `/ambilight/supportedstyles` | Get all supported ambilight styles |
 | GET | `/ambilight/cached` | Get cached ambilight pixel data |
+| POST | `/ambilight/cached` | Set custom per-pixel ambilight colors |
 | GET | `/ambilight/measured` | Get measured ambilight colors |
 | GET | `/ambilight/processed` | Get processed ambilight colors |
 | POST | `/ambilight/lounge` | Set lounge light mode |
@@ -146,6 +152,14 @@ The app sends **burst** magic packets:
 
 ```json
 // POST /ambilight/currentconfiguration
+// Simple mode (style + menu setting):
+{
+  "styleName": "FOLLOW_VIDEO" | "FOLLOW_AUDIO" | "Lounge light" | "OFF",
+  "isExpert": false,
+  "menuSetting": "<algorithm_name>"
+}
+
+// Expert mode (full control with color settings):
 {
   "styleName": "FOLLOW_VIDEO" | "FOLLOW_AUDIO" | "FOLLOW_COLOR" | "FOLLOW_FLAG" | "Lounge light" | "OFF",
   "isExpert": true,
@@ -158,6 +172,8 @@ The app sends **burst** magic packets:
   }
 }
 ```
+
+> **Note:** Simple mode (`isExpert: false` + `menuSetting`) is sufficient for switching between predefined styles. Expert mode (`isExpert: true` + `algorithm`) allows full control over color settings and speed.
 
 ### Style Names & Algorithms
 
@@ -261,6 +277,8 @@ The app sends **burst** magic packets:
 | POST | `/channeldb/tv/modifyfavourite/` | Modify favorites |
 | GET | `/1/channels/current` | Get current channel (v1) |
 | GET | `/1/channellistsEx` | Get extended channel lists (v1) |
+| GET | `/epg_source` | Get EPG source information |
+| GET | `/recordings` | List TV recordings |
 
 ## Sources
 
