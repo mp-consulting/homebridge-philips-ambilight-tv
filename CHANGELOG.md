@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.16] - 2026-03-04
+
+### Fixed
+
+- **State sensor HAP warning**: Register `ConfiguredName` as optional characteristic on MotionSensor services before setting it, eliminating "Characteristic not in required or optional characteristic section" warnings
+
 ## [1.0.15] - 2026-03-03
 
 ### Changed
