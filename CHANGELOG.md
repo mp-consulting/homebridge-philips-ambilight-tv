@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.13] - 2026-03-03
+
+### Fixed
+
+- **State sensor names**: Set `ConfiguredName` on MotionSensor services so HomeKit displays distinct names (e.g. "TV Power", "TV Ambilight", "TV Muted") instead of all showing "TV"
+
 ## [1.0.12] - 2026-03-02
 
 ### Fixed
