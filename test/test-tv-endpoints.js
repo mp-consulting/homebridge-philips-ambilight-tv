@@ -352,9 +352,9 @@ const POST_TESTS = [
     body: { powerstate: 'On' },
   },
   {
-    name: 'Unmute Audio',
-    endpoint: '/audio/volume',
-    body: { muted: false },
+    name: 'Send Key (Mute)',
+    endpoint: '/input/key',
+    body: { key: 'Mute' },
   },
   {
     name: 'Send Key (VolumeUp)',

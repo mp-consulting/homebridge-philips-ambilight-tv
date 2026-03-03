@@ -36,8 +36,8 @@ const EXCLUDED_PACKAGES = new Set([
   'org.droidtv.contentexplorer',
 ]);
 
-/** HomeKit RemoteKey to Philips TV key mapping */
-const HOMEKIT_TO_TV_KEY: Readonly<Record<number, RemoteKey>> = {
+/** HomeKit RemoteKey to Philips TV key mapping (base, without info key) */
+const HOMEKIT_TO_TV_KEY_BASE: Readonly<Record<number, RemoteKey>> = {
   0: 'Rewind',
   1: 'FastForward',
   2: 'Next',
@@ -50,7 +50,6 @@ const HOMEKIT_TO_TV_KEY: Readonly<Record<number, RemoteKey>> = {
   9: 'Back',
   10: 'Home',
   11: 'PlayPause',
-  15: 'Info',
 };
 
 // ============================================================================
@@ -102,6 +101,7 @@ export interface InputSourceManagerDeps {
   readonly deviceId: string;
   readonly userInputs?: InputConfig[];
   readonly sourceConfigs?: SourceConfig[];
+  readonly infoButtonKey?: RemoteKey;
   readonly communicationError: () => HapStatusError;
   readonly log: (level: 'debug' | 'info' | 'warn' | 'error', message: string) => void;
 }
@@ -118,10 +118,14 @@ export class InputSourceManager {
   /** Source configs indexed by id for fast lookup */
   private sourceConfigMap: Map<string, SourceConfig>;
 
+  /** HomeKit RemoteKey mapping (info button key is configurable) */
+  private readonly remoteKeyMap: Readonly<Record<number, RemoteKey>>;
+
   /** File path for persisted input configs (survives restarts for external accessories) */
   private readonly inputCachePath: string;
 
   constructor(private readonly deps: InputSourceManagerDeps) {
+    this.remoteKeyMap = { ...HOMEKIT_TO_TV_KEY_BASE, 15: deps.infoButtonKey ?? 'Source' };
     this.sourceConfigMap = new Map(
       (deps.sourceConfigs ?? []).map(s => [s.id, s]),
     );
@@ -285,7 +289,7 @@ export class InputSourceManager {
   // ==========================================================================
 
   async handleRemoteKey(value: CharacteristicValue): Promise<void> {
-    const tvKey = HOMEKIT_TO_TV_KEY[value as number];
+    const tvKey = this.remoteKeyMap[value as number];
 
     if (!tvKey) {
       this.deps.log('debug', `Unknown remote key: ${value}`);

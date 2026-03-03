@@ -2,11 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.0.13] - 2026-03-03
+## [1.0.14] - 2026-03-03
+
+### Added
+
+- **Configurable info button**: The HomeKit remote's information button can now be mapped to Source, Info, Options, or Find — configurable in the Homebridge UI (defaults to Source)
 
 ### Fixed
 
+- **Mute button**: Mute now uses `sendKey('Mute')` instead of `POST /audio/volume`, matching how the TV actually handles mute toggling
+- **Mute state sync**: Mute handler now updates local state after success, preventing poll from reverting the change
 - **State sensor names**: Set `ConfiguredName` on MotionSensor services so HomeKit displays distinct names (e.g. "TV Power", "TV Ambilight", "TV Muted") instead of all showing "TV"
+
+### Changed
+
+- **Edit screen layout**: 2-column layout — connection settings on the left, HomeKit settings on the right
 
 ## [1.0.12] - 2026-03-02
 

@@ -91,6 +91,18 @@
                 { "title": "Lounge Light", "enum": ["Lounge light"] }
               ]
             },
+            "infoButtonKey": {
+              "title": "Info Button Key",
+              "type": "string",
+              "default": "Source",
+              "description": "The TV key that the HomeKit remote's information button sends.",
+              "oneOf": [
+                { "title": "Source (input picker)", "enum": ["Source"] },
+                { "title": "Info (program details)", "enum": ["Info"] },
+                { "title": "Options (context menu)", "enum": ["Options"] },
+                { "title": "Find (search)", "enum": ["Find"] }
+              ]
+            },
             "inputs": {
               "title": "Custom Input Sources",
               "type": "array",
@@ -207,6 +219,7 @@
             },
             "devices[].wakeOnLanEnabled",
             "devices[].ambilightMode",
+            "devices[].infoButtonKey",
             {
               "key": "devices[].stateSensors",
               "type": "checkboxes",

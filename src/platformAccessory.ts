@@ -56,6 +56,7 @@ export class PhilipsAmbilightTVAccessory {
       deviceId: this.config.mac,
       userInputs: this.config.inputs,
       sourceConfigs: this.config.sources,
+      infoButtonKey: this.config.infoButtonKey,
       communicationError: () => this.communicationError(),
       log: (level, msg) => this.log(level, msg),
     });
@@ -216,9 +217,14 @@ export class PhilipsAmbilightTVAccessory {
   }
 
   private async handleSetMute(value: CharacteristicValue): Promise<void> {
-    this.log('debug', `Setting mute to ${value}`);
+    const muted = value as boolean;
+    this.log('debug', `Setting mute to ${muted}`);
     try {
-      await this.tvClient.setMuted(value as boolean);
+      const success = await this.tvClient.sendKey('Mute');
+      if (success) {
+        this.isMuted = muted;
+        this.stateSensorService.update('mute', muted);
+      }
     } catch {
       this.log('warn', 'Failed to set mute state');
     }

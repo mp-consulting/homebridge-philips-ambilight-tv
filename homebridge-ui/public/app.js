@@ -377,6 +377,7 @@
     $('editTvIp').value = tv.ip || '';
     $('editTvMac').value = tv.mac || '';
     $('editAmbilightMode').value = tv.ambilightMode || 'FOLLOW_VIDEO/NATURAL';
+    $('editInfoButtonKey').value = tv.infoButtonKey || 'Source';
     const editSensors = tv.stateSensors || [];
     $('editSensorPower').checked = editSensors.includes('power');
     $('editSensorAmbilight').checked = editSensors.includes('ambilight');
@@ -410,6 +411,7 @@
         ip: $('editTvIp').value.trim(),
         mac: $('editTvMac').value.trim(),
         ambilightMode: $('editAmbilightMode').value,
+        infoButtonKey: $('editInfoButtonKey').value,
         stateSensors: editStateSensors,
       });
       homebridge.toast.success('TV configuration updated');
@@ -453,6 +455,7 @@
     $('confirmTvIp').value = state.currentConfig.ip || '';
     $('confirmTvMac').value = state.currentConfig.mac || '';
     $('confirmAmbilightMode').value = state.currentConfig.ambilightMode || 'FOLLOW_VIDEO/NATURAL';
+    $('confirmInfoButtonKey').value = state.currentConfig.infoButtonKey || 'Source';
     const confirmSensors = state.currentConfig.stateSensors || [];
     $('confirmSensorPower').checked = confirmSensors.includes('power');
     $('confirmSensorAmbilight').checked = confirmSensors.includes('ambilight');
@@ -475,6 +478,7 @@
     state.currentConfig.name = $('confirmTvName').value.trim();
     state.currentConfig.mac = $('confirmTvMac').value.trim();
     state.currentConfig.ambilightMode = $('confirmAmbilightMode').value;
+    state.currentConfig.infoButtonKey = $('confirmInfoButtonKey').value;
     const confirmStateSensors = [];
     if ($('confirmSensorPower').checked) {
       confirmStateSensors.push('power');

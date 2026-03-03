@@ -331,6 +331,7 @@ export interface TVDeviceConfig {
   inputs?: InputConfig[];
   sources?: SourceConfig[];
   stateSensors?: ('power' | 'ambilight' | 'mute')[];
+  infoButtonKey?: RemoteKey;
 }
 
 export interface InputConfig {
