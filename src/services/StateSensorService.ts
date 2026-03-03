@@ -67,6 +67,7 @@ export class StateSensorService {
       }
 
       service.setCharacteristic(Char.Name, displayName);
+      service.setCharacteristic(Char.ConfiguredName, displayName);
       service.setCharacteristic(Char.MotionDetected, false);
       this.sensors.set(type, service);
     }
