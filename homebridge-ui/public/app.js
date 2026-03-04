@@ -574,62 +574,76 @@
   };
 
   const renderSourcesList = () => {
-    const list = $('sourcesList');
-    list.innerHTML = '';
+    const hidden = $('hiddenSourcesList');
+    const visible = $('visibleSourcesList');
+    hidden.innerHTML = '';
+    visible.innerHTML = '';
 
+    let visibleIndex = 0;
     state.sources.forEach((source, index) => {
-      const li = createSourceListItem(source, index);
-      list.appendChild(li);
+      if (source.visible === false) {
+        hidden.appendChild(createHiddenSourceItem(source, index));
+      } else {
+        visible.appendChild(createVisibleSourceItem(source, visibleIndex++));
+      }
     });
 
     setupDragAndDrop();
   };
 
-  const getSourceIcon = (source) => {
+  const getSourceTypeBadge = (source) => {
     if (source.icon === 'hdmi') {
-      return '<i class="bi bi-plug source-icon hdmi"></i>';
+      return '<span class="badge bg-primary rounded-pill source-type-badge">HDMI</span>';
     }
     if (source.icon === 'tv') {
-      return '<i class="bi bi-broadcast source-icon tv"></i>';
+      return '<span class="badge bg-secondary rounded-pill source-type-badge">TV</span>';
     }
-    return '<i class="bi bi-phone source-icon app"></i>';
+    return '<span class="badge bg-success rounded-pill source-type-badge">App</span>';
   };
 
-  const getSourceTypeName = (source) => {
-    if (source.icon === 'hdmi') {
-      return 'HDMI Input';
-    }
-    if (source.icon === 'tv') {
-      return 'TV Tuner';
-    }
-    return 'Application';
-  };
-
-  const createSourceListItem = (source, index) => {
+  const createHiddenSourceItem = (source, index) => {
     const li = document.createElement('li');
-    li.className = `list-group-item source-item${source.visible === false ? ' source-hidden' : ''}`;
+    li.className = 'list-group-item source-item source-hidden';
+    li.dataset.index = index;
+    li.dataset.id = source.id;
+
+    li.innerHTML = `
+      <span class="source-name">${source.customName || source.name}</span>
+      ${getSourceTypeBadge(source)}
+      <div class="source-actions ms-auto">
+        <button class="show-btn" title="Add to visible"><i class="bi bi-plus-lg"></i></button>
+      </div>
+    `;
+
+    li.querySelector('.show-btn').addEventListener('click', async (e) => {
+      e.stopPropagation();
+      source.visible = true;
+      await saveSourcesConfig();
+      renderSourcesList();
+    });
+
+    return li;
+  };
+
+  const createVisibleSourceItem = (source, index) => {
+    const li = document.createElement('li');
+    li.className = 'list-group-item source-item';
     li.dataset.index = index;
     li.dataset.id = source.id;
     li.draggable = true;
 
     li.innerHTML = `
       <span class="drag-handle"><i class="bi bi-grip-vertical"></i></span>
-      ${getSourceIcon(source)}
-      <div class="source-info">
-        <p class="source-name">${source.customName || source.name}</p>
-        <span class="source-type">${getSourceTypeName(source)}</span>
-      </div>
-      <div class="source-actions">
-        <button class="visibility-btn${source.visible === false ? ' hidden' : ''}" title="${source.visible === false ? 'Show' : 'Hide'} source">
-          <i class="bi bi-eye${source.visible === false ? '-slash' : ''}"></i>
-        </button>
+      <span class="source-name">${source.customName || source.name}</span>
+      ${getSourceTypeBadge(source)}
+      <div class="source-actions ms-auto">
+        <button class="hide-btn" title="Hide source"><i class="bi bi-x-lg"></i></button>
       </div>
     `;
 
-    // Visibility toggle
-    li.querySelector('.visibility-btn').addEventListener('click', async (e) => {
+    li.querySelector('.hide-btn').addEventListener('click', async (e) => {
       e.stopPropagation();
-      source.visible = source.visible === false ? true : false;
+      source.visible = false;
       await saveSourcesConfig();
       renderSourcesList();
     });
@@ -638,7 +652,7 @@
   };
 
   const setupDragAndDrop = () => {
-    const list = $('sourcesList');
+    const list = $('visibleSourcesList');
 
     list.addEventListener('dragstart', handleDragStart);
     list.addEventListener('dragend', handleDragEnd);
@@ -680,7 +694,7 @@
     }
 
     // Get final order from DOM
-    const list = $('sourcesList');
+    const list = $('visibleSourcesList');
     const items = Array.from(list.querySelectorAll('.source-item'));
     const newOrder = items.map(item => item.dataset.id);
 
@@ -717,7 +731,7 @@
       return;
     }
 
-    const list = $('sourcesList');
+    const list = $('visibleSourcesList');
     const rect = target.getBoundingClientRect();
     const midY = rect.top + rect.height / 2;
 

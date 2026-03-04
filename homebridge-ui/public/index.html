@@ -277,9 +277,6 @@
     <!-- Edit Sources Screen -->
     <div id="editSourcesScreen">
       <h5><i class="bi bi-tv"></i> Edit Sources for <span id="editSourcesTvName"></span></h5>
-      <div class="alert alert-info mb-3">
-        <small><i class="bi bi-info-circle"></i> Drag and drop sources to change their display order in HomeKit. Toggle visibility to show/hide sources. Changes are saved automatically.</small>
-      </div>
       <div id="sourcesLoadingSpinner" class="text-center my-4">
         <div class="spinner-border text-primary" role="status">
           <span class="visually-hidden">Loading...</span>
@@ -287,18 +284,27 @@
         <p class="mt-2 text-muted">Fetching sources from TV...</p>
       </div>
       <div id="sourcesListContainer" style="display: none;">
-        <div class="mb-3">
-          <small class="text-muted">
-            <i class="bi bi-grip-vertical"></i> Drag to reorder |
-            <i class="bi bi-eye"></i> Click eye to toggle visibility
-          </small>
+        <div class="row g-2 mb-2">
+          <div class="col-6">
+            <div class="sources-col-header">
+              <span class="badge rounded-pill bg-secondary"><i class="bi bi-eye-slash me-1"></i>Hidden</span>
+              <small class="text-muted sources-col-hint">click + to show</small>
+            </div>
+            <ul id="hiddenSourcesList" class="list-group sources-pool"></ul>
+          </div>
+          <div class="col-6">
+            <div class="sources-col-header">
+              <span class="badge rounded-pill bg-primary"><i class="bi bi-eye me-1"></i>Visible</span>
+              <small class="text-muted sources-col-hint">drag to reorder</small>
+            </div>
+            <ul id="visibleSourcesList" class="list-group sources-sortable"></ul>
+          </div>
         </div>
-        <ul id="sourcesList" class="list-group sources-sortable mb-3"></ul>
-        <div class="d-flex justify-content-between">
-          <button id="resetSourcesOrderBtn" class="btn btn-outline-secondary">
-            <i class="bi bi-arrow-counterclockwise"></i> Reset Order
+        <div class="d-flex justify-content-between mt-2">
+          <button id="resetSourcesOrderBtn" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-arrow-counterclockwise"></i> Reset
           </button>
-          <button id="doneEditSourcesBtn" class="btn btn-primary">
+          <button id="doneEditSourcesBtn" class="btn btn-primary btn-sm">
             <i class="bi bi-check-lg"></i> Done
           </button>
         </div>

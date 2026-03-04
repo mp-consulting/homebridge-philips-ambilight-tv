@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.18] - 2026-03-04
+
+### Changed
+
+- **Sources editor**: Replaced single scrollable list with a two-column layout — hidden sources on the left (click `+` to show), visible sources on the right (drag to reorder, click `×` to hide)
+- **Sources editor**: Column headers use colored pill badges with a border separator instead of a plain alert block
+
 ## [1.0.17] - 2026-03-04
 
 ### Changed
