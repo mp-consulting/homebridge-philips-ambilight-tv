@@ -4,7 +4,7 @@ import tseslint from 'typescript-eslint';
 export default tseslint.config(
   // Ignores
   {
-    ignores: ['dist/**', 'node_modules/**'],
+    ignores: ['dist/**', 'node_modules/**', 'homebridge-ui/public/lib/**'],
   },
   // Base recommended configs
   eslint.configs.recommended,
@@ -63,6 +63,7 @@ export default tseslint.config(
         window: 'readonly',
         homebridge: 'readonly',
         bootstrap: 'readonly',
+        MpKit: 'readonly',
         console: 'readonly',
         setTimeout: 'readonly',
         clearTimeout: 'readonly',

@@ -48,3 +48,6 @@ tmp/
 # BMad agent files
 _bmad/
 _bmad-output/
+
+# Homebridge UI generated libs (copied from node_modules by build-ui)
+homebridge-ui/public/lib/

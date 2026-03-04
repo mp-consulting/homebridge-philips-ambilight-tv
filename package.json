@@ -2,7 +2,7 @@
   "name": "@mp-consulting/homebridge-philips-ambilight-tv",
   "displayName": "Philips Ambilight TV",
   "type": "module",
-  "version": "1.0.16",
+  "version": "1.0.17",
   "description": "Homebridge plugin to control Philips Ambilight TV as a HomeKit Television accessory.",
   "author": "Mickael Palma",
   "license": "(Apache-2.0 AND MIT)",
@@ -32,7 +32,8 @@
     "homebridge": "^1.8.0 || ^2.0.0-beta.0"
   },
   "scripts": {
-    "build": "rimraf ./dist && tsc",
+    "copy:ui-kit": "mkdir -p homebridge-ui/public/lib && cp node_modules/@mp-consulting/homebridge-ui-kit/dist/kit.css homebridge-ui/public/lib/ && cp node_modules/@mp-consulting/homebridge-ui-kit/dist/kit.js homebridge-ui/public/lib/",
+    "build": "npm run copy:ui-kit && rimraf ./dist && tsc",
     "lint": "eslint . --max-warnings=0",
     "prepublishOnly": "npm test && npm run lint && npm run build",
     "watch": "npm run build && npm link && nodemon",
@@ -59,7 +60,8 @@
     "rimraf": "^6.1.0",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.53.1",
-    "vitest": "^4.0.18"
+    "vitest": "^4.0.18",
+    "@mp-consulting/homebridge-ui-kit": "^1.0.0"
   },
   "files": [
     "dist",

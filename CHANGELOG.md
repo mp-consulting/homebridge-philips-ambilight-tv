@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.17] - 2026-03-04
+
+### Changed
+
+- **Config UI**: Migrate to homebridge-ui-kit design system (Bootstrap 5.3 + Bootstrap Icons, shared kit.css/kit.js, `data-bs-theme="dark"` dark mode)
+- **Config UI**: Hide header on edit and sources screens to reclaim vertical space
+- Standardize `.gitignore` and `.npmignore`
+
 ## [1.0.16] - 2026-03-04
 
 ### Fixed

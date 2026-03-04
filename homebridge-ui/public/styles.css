@@ -19,89 +19,10 @@
   display: none;
 }
 
-/* Dark mode text visibility fixes */
-@media (prefers-color-scheme: dark) {
-  .text-muted {
-    color: #a0a0a0 !important;
-  }
-
-  .device-row .text-muted {
-    color: #b0b0b0 !important;
-  }
-}
-
-/* Homebridge UI dark mode (uses data attribute) */
-[data-theme="dark"] .text-muted,
-.dark-mode .text-muted {
-  color: #a0a0a0 !important;
-}
-
-[data-theme="dark"] .device-row .text-muted,
-.dark-mode .device-row .text-muted {
-  color: #b0b0b0 !important;
-}
-
-/* Badge visibility in dark mode */
-@media (prefers-color-scheme: dark) {
-  .badge-secondary {
-    background-color: #6c757d !important;
-    color: #fff !important;
-  }
-
-  .list-group-item:hover .badge-secondary,
-  .list-group-item-action:hover .badge-secondary {
-    background-color: #5a6268 !important;
-    color: #fff !important;
-  }
-}
-
-[data-theme="dark"] .badge-secondary,
-.dark-mode .badge-secondary {
-  background-color: #6c757d !important;
-  color: #fff !important;
-}
-
-[data-theme="dark"] .list-group-item:hover .badge-secondary,
-[data-theme="dark"] .list-group-item-action:hover .badge-secondary,
-.dark-mode .list-group-item:hover .badge-secondary,
-.dark-mode .list-group-item-action:hover .badge-secondary {
-  background-color: #5a6268 !important;
-  color: #fff !important;
-}
-
 /* Add borders to list groups */
 .list-group {
   border: 1px solid rgba(0, 0, 0, 0.125);
   border-radius: 0.25rem;
-}
-
-/* Close button styling */
-.close-btn {
-  position: absolute;
-  background: none;
-  border: none;
-  font-size: 24px;
-  color: #6c757d;
-  cursor: pointer;
-  padding: 5px 10px;
-  line-height: 1;
-  transition: color 0.2s ease;
-  z-index: 10;
-}
-
-.close-btn:hover {
-  color: #dc3545;
-}
-
-.close-btn:focus {
-  outline: none;
-}
-
-/* Make sure parent container has relative positioning */
-#wizardStep1,
-#wizardStep2,
-#editScreen {
-  position: relative;
 }
 
 /* ============================================================================
@@ -127,20 +48,20 @@
 
 .source-item.dragging {
   opacity: 0.4;
-  background-color: #e3f2fd !important;
-  border: 2px dashed #007bff;
+  background-color: var(--bs-info-bg-subtle) !important;
+  border: 2px dashed var(--bs-info);
   transform: scale(0.98);
   z-index: 1000;
 }
 
 .source-item .drag-handle {
-  color: #adb5bd;
+  color: var(--bs-secondary-color);
   margin-right: 0.75rem;
   font-size: 1rem;
 }
 
 .source-item:hover .drag-handle {
-  color: #6c757d;
+  color: var(--bs-body-color);
 }
 
 .source-item .source-icon {
@@ -173,7 +94,7 @@
 
 .source-item .source-type {
   font-size: 0.75rem;
-  color: #6c757d;
+  color: var(--bs-secondary-color);
 }
 
 .source-item .source-actions {
@@ -186,13 +107,13 @@
   border: none;
   padding: 0.25rem 0.5rem;
   cursor: pointer;
-  color: #6c757d;
+  color: var(--bs-secondary-color);
   font-size: 1rem;
   transition: color 0.15s ease;
 }
 
 .source-item .visibility-btn:hover {
-  color: #007bff;
+  color: var(--bs-primary);
 }
 
 .source-item .visibility-btn.hidden {
@@ -205,45 +126,4 @@
 
 .source-item.source-hidden .source-name {
   text-decoration: line-through;
-}
-
-/* Dark mode for sources */
-@media (prefers-color-scheme: dark) {
-  .source-item.dragging {
-    background-color: #1a252f !important;
-    border-color: #4dabf7;
-  }
-
-  .source-item .drag-handle {
-    color: #6c757d;
-  }
-
-  .source-item:hover .drag-handle {
-    color: #adb5bd;
-  }
-
-  .source-item .source-type {
-    color: #adb5bd;
-  }
-}
-
-[data-theme="dark"] .source-item.dragging,
-.dark-mode .source-item.dragging {
-  background-color: #1a252f !important;
-  border-color: #4dabf7;
-}
-
-[data-theme="dark"] .source-item .drag-handle,
-.dark-mode .source-item .drag-handle {
-  color: #6c757d;
-}
-
-[data-theme="dark"] .source-item:hover .drag-handle,
-.dark-mode .source-item:hover .drag-handle {
-  color: #adb5bd;
-}
-
-[data-theme="dark"] .source-item .source-type,
-.dark-mode .source-item .source-type {
-  color: #adb5bd;
 }

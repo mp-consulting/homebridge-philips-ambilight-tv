@@ -1,312 +1,320 @@
-<link rel="stylesheet" href="styles.css">
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Philips Ambilight TV</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="lib/kit.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container py-3">
 
-<div id="app" class="container">
-  <div class="row g-2">
-    <div class="col-12 position-absolute top-0 start-50 translate-middle-x">
-      <h1 class="text-center">Philips Ambilight TV Setup Wizard</h3>
-    </div>
-    <div class="col-12 text-center">
-      <img src="ambilight-tv.jpg" alt="Philips Ambilight TV">
-      <hr>
-    </div>
-  </div>
-  <!-- Wizard Step 1: Device Discovery -->
-  <div id="wizardStep1">
-    <h5>Step 1: Discover Your TV</h5>
-    <p class="text-muted">Click the button below to scan your network for Android TVs.</p>
-    <div class="row g-2">
-      <div class="col-12">
-        <div id="discoveryAlert" class="alert alert-info mb-3">
-          <i class="fas fa-info-circle"></i> Ensure your TV is powered on and connected to the same network as
-          this device.
-        </div>
+    <div class="mp-header mb-3">
+      <span class="mp-header-icon" style="color: #0070d2;"><i class="bi bi-tv-fill"></i></span>
+      <div>
+        <h1 class="mp-header-title">Philips Ambilight TV</h1>
+        <p class="mp-header-subtitle">Pair and configure your Philips Ambilight TVs for HomeKit</p>
       </div>
     </div>
-    <div class="row g-2 mb-3">
-      <div class="col-12">
-        <button id="discoverBtn" class="btn btn-secondary">
-          <span id="discoverSpinner" class="spinner-border spinner-border-sm ml-2"></span>
-          <span id="discoverBtnText"><i class="fas fa-search"></i> Discover TVs</span>
-        </button>
-        <button id="cancelDiscoveryBtn" class="btn btn-primary">Cancel</button>
-      </div>
-    </div>
-    <div id="deviceList" class="row g-2">
-      <div id="deviceListContainer" class="col-12"></div>
-    </div>
-  </div>
 
-  <!-- Wizard Step 2: Pairing -->
-  <div id="wizardStep2" class="container">
-    <div class="row g-2">
-      <div class="col-12">
-        <h5>Step 2: Pair with Your TV</h5>
-        <div id="pinInputSection">
-          <div class="alert alert-warning mb-3">
-            <strong>Look at your TV!</strong> A 4-digit PIN code should be displayed on the screen.
-          </div>
-          <div class="mb-3 row">
-            <label class="col-sm-3 col-form-label mt-2"><strong>Enter the PIN:</strong></label>
-            <div class="col-sm-5">
-              <div class="d-flex gap-2 mt-2" id="pinInputGroup">
-                <input type="text" class="form-control form-control-lg text-center pin-digit" maxlength="1"
-                  inputmode="numeric">
-                <input type="text" class="form-control form-control-lg text-center pin-digit" maxlength="1"
-                  inputmode="numeric">
-                <input type="text" class="form-control form-control-lg text-center pin-digit" maxlength="1"
-                  inputmode="numeric">
-                <input type="text" class="form-control form-control-lg text-center pin-digit" maxlength="1"
-                  inputmode="numeric">
-              </div>
-            </div>
-          </div>
-        </div>
+    <!-- Wizard Step 1: Device Discovery -->
+    <div id="wizardStep1">
+      <h5>Step 1: Discover Your TV</h5>
+      <p class="text-muted">Click the button below to scan your network for Android TVs.</p>
+      <div class="row g-2">
         <div class="col-12">
-          <button id="submitPinBtn" class="btn btn-success btn-block btn-lg">Confirm PIN</button>
-          <button id="cancelPairingBtn" class="btn btn-secondary btn-block">Cancel</button>
+          <div id="discoveryAlert" class="alert alert-info mb-3">
+            <i class="bi bi-info-circle"></i> Ensure your TV is powered on and connected to the same network as this device.
+          </div>
         </div>
       </div>
-    </div>
-  </div>
-
-  <!-- Wizard Step 3: Confirm Details -->
-  <div id="wizardStep3" class="container">
-    <div class="row g-2">
-      <div class="col-12">
-        <h5>Step 3: Confirm TV Details</h5>
-        <div class="alert alert-success mb-3">
-          <i class="fas fa-check-circle"></i> Pairing successful! Please review and customize the TV details below.
+      <div class="row g-2 mb-3">
+        <div class="col-12">
+          <button id="discoverBtn" class="btn btn-secondary">
+            <span id="discoverSpinner" class="spinner-border spinner-border-sm ms-2"></span>
+            <span id="discoverBtnText"><i class="bi bi-search"></i> Discover TVs</span>
+          </button>
+          <button id="cancelDiscoveryBtn" class="btn btn-primary">Cancel</button>
         </div>
-        <form id="confirmTvForm" class="needs-validation" novalidate>
-          <div class="row">
-            <!-- Left column: Connection -->
-            <div class="col-md-6">
-              <h6 class="text-muted mb-3">Connection</h6>
-              <div class="mb-3">
-                <label for="confirmTvName" class="form-label">TV Name</label>
-                <input type="text" class="form-control" id="confirmTvName" placeholder="Living Room TV" required>
-                <div class="invalid-feedback">Please provide a TV name.</div>
-              </div>
-              <div class="mb-3">
-                <label for="confirmTvIp" class="form-label">IP Address</label>
-                <input type="text" class="form-control" id="confirmTvIp" readonly>
-              </div>
-              <div class="mb-3">
-                <label for="confirmTvMac" class="form-label">MAC Address</label>
-                <div class="input-group">
-                  <input type="text" class="form-control" id="confirmTvMac" placeholder="AA:BB:CC:DD:EE:FF">
-                  <button class="btn btn-secondary" type="button" id="confirmGetMacBtn">
-                    <i class="fas fa-search"></i> Get MAC
-                  </button>
-                </div>
-              </div>
+      </div>
+      <div id="deviceList" class="row g-2">
+        <div id="deviceListContainer" class="col-12"></div>
+      </div>
+    </div>
+
+    <!-- Wizard Step 2: Pairing -->
+    <div id="wizardStep2">
+      <div class="row g-2">
+        <div class="col-12">
+          <h5>Step 2: Pair with Your TV</h5>
+          <div id="pinInputSection">
+            <div class="alert alert-warning mb-3">
+              <strong>Look at your TV!</strong> A 4-digit PIN code should be displayed on the screen.
             </div>
-            <!-- Right column: Settings -->
-            <div class="col-md-6">
-              <h6 class="text-muted mb-3">Settings</h6>
-              <div class="mb-3">
-                <label for="confirmAmbilightMode" class="form-label">Ambilight Mode</label>
-                <select class="form-select" id="confirmAmbilightMode">
-                  <optgroup label="Follow Video">
-                    <option value="FOLLOW_VIDEO/STANDARD">Standard</option>
-                    <option value="FOLLOW_VIDEO/NATURAL" selected>Natural</option>
-                    <option value="FOLLOW_VIDEO/VIVID">Vivid</option>
-                    <option value="FOLLOW_VIDEO/GAME">Game</option>
-                    <option value="FOLLOW_VIDEO/COMFORT">Comfort</option>
-                    <option value="FOLLOW_VIDEO/RELAX">Relax</option>
-                    <option value="FOLLOW_VIDEO/FOOTBALL">Football</option>
-                  </optgroup>
-                  <optgroup label="Follow Audio">
-                    <option value="FOLLOW_AUDIO/ENERGY_ADAPTIVE_BRIGHTNESS">Energy Brightness</option>
-                    <option value="FOLLOW_AUDIO/ENERGY_ADAPTIVE_COLORS">Energy Colors</option>
-                    <option value="FOLLOW_AUDIO/VU_METER">VU Meter</option>
-                    <option value="FOLLOW_AUDIO/SPECTRUM_ANALYZER">Spectrum</option>
-                    <option value="FOLLOW_AUDIO/PARTY">Party</option>
-                  </optgroup>
-                  <optgroup label="Other">
-                    <option value="Lounge light">Lounge Light</option>
-                  </optgroup>
-                </select>
-              </div>
-              <div class="mb-3">
-                <label for="confirmInfoButtonKey" class="form-label">Info Button Key</label>
-                <select class="form-select" id="confirmInfoButtonKey">
-                  <option value="Source" selected>Source (input picker)</option>
-                  <option value="Info">Info (program details)</option>
-                  <option value="Options">Options (context menu)</option>
-                  <option value="Find">Find (search)</option>
-                </select>
-              </div>
-              <div class="mb-3">
-                <label class="form-label">State Sensors</label>
-                <div class="form-check form-switch mb-1">
-                  <input class="form-check-input" type="checkbox" id="confirmSensorPower">
-                  <label class="form-check-label" for="confirmSensorPower">Power (TV On/Off)</label>
-                </div>
-                <div class="form-check form-switch mb-1">
-                  <input class="form-check-input" type="checkbox" id="confirmSensorAmbilight">
-                  <label class="form-check-label" for="confirmSensorAmbilight">Ambilight (Active/Inactive)</label>
-                </div>
-                <div class="form-check form-switch mb-1">
-                  <input class="form-check-input" type="checkbox" id="confirmSensorMute">
-                  <label class="form-check-label" for="confirmSensorMute">Muted (Yes/No)</label>
+            <div class="mb-3 row">
+              <label class="col-sm-3 col-form-label mt-2"><strong>Enter the PIN:</strong></label>
+              <div class="col-sm-5">
+                <div class="d-flex gap-2 mt-2" id="pinInputGroup">
+                  <input type="text" class="form-control form-control-lg text-center pin-digit" maxlength="1" inputmode="numeric">
+                  <input type="text" class="form-control form-control-lg text-center pin-digit" maxlength="1" inputmode="numeric">
+                  <input type="text" class="form-control form-control-lg text-center pin-digit" maxlength="1" inputmode="numeric">
+                  <input type="text" class="form-control form-control-lg text-center pin-digit" maxlength="1" inputmode="numeric">
                 </div>
               </div>
             </div>
           </div>
-          <hr>
           <div class="col-12">
-            <button id="saveTvBtn" class="btn btn-success" type="submit">
-              <i class="fas fa-save"></i> Save TV
-            </button>
-            <button id="cancelConfirmBtn" class="btn btn-secondary" type="button">Cancel</button>
+            <button id="submitPinBtn" class="btn btn-success btn-lg">Confirm PIN</button>
+            <button id="cancelPairingBtn" class="btn btn-secondary">Cancel</button>
           </div>
-        </form>
+        </div>
       </div>
     </div>
-  </div>
 
-  <!-- Success Screen -->
-  <div id="successScreen">
-    <h5>Configured TVs</h5>
-    <div id="noTvsMessage" class="alert alert-info mb-3">No TVs configured yet.</div>
-    <ul id="configuredTvList" class="list-group mb-3"></ul>
-    <button id="addAnotherTvBtn" class="btn btn-primary btn-block">
-      <i class="fas fa-plus"></i> Add Another TV
-    </button>
-  </div>
-
-  <!-- Edit TV Screen -->
-  <div id="editScreen">
-    <h5>Edit TV Configuration</h5>
-    <div class="alert alert-info">
-      <small><i class="fas fa-info-circle"></i> You cannot edit username/password. To change authentication, delete this
-        TV and pair it again.</small>
-    </div>
-    <form id="editTvForm" class="needs-validation" novalidate>
-      <div class="row">
-        <!-- Left column: Connection -->
-        <div class="col-md-6">
-          <h6 class="text-muted mb-3">Connection</h6>
-          <div class="mb-3">
-            <label for="editTvName" class="form-label">TV Name</label>
-            <input type="text" class="form-control" id="editTvName" placeholder="Living Room TV" required>
-            <div class="invalid-feedback">Please provide a TV name.</div>
+    <!-- Wizard Step 3: Confirm Details -->
+    <div id="wizardStep3">
+      <div class="row g-2">
+        <div class="col-12">
+          <h5>Step 3: Confirm TV Details</h5>
+          <div class="alert alert-success mb-3">
+            <i class="bi bi-check-circle"></i> Pairing successful! Please review and customize the TV details below.
           </div>
-          <div class="mb-3">
-            <label for="editTvIp" class="form-label">IP Address</label>
-            <input type="text" class="form-control" id="editTvIp" placeholder="192.168.1.100" required>
-            <div class="invalid-feedback">Please provide an IP address.</div>
-          </div>
-          <div class="mb-3">
-            <label for="editTvMac" class="form-label">MAC Address</label>
-            <div class="input-group">
-              <input type="text" class="form-control" id="editTvMac" placeholder="AA:BB:CC:DD:EE:FF" required>
-              <button class="btn btn-secondary" type="button" id="getMacBtn">
-                <i class="fas fa-search"></i> Get MAC
+          <form id="confirmTvForm" class="needs-validation" novalidate>
+            <div class="row">
+              <!-- Left column: Connection -->
+              <div class="col-md-6">
+                <h6 class="text-muted mb-3">Connection</h6>
+                <div class="mb-3">
+                  <label for="confirmTvName" class="form-label">TV Name</label>
+                  <input type="text" class="form-control" id="confirmTvName" placeholder="Living Room TV" required>
+                  <div class="invalid-feedback">Please provide a TV name.</div>
+                </div>
+                <div class="mb-3">
+                  <label for="confirmTvIp" class="form-label">IP Address</label>
+                  <input type="text" class="form-control" id="confirmTvIp" readonly>
+                </div>
+                <div class="mb-3">
+                  <label for="confirmTvMac" class="form-label">MAC Address</label>
+                  <div class="input-group">
+                    <input type="text" class="form-control" id="confirmTvMac" placeholder="AA:BB:CC:DD:EE:FF">
+                    <button class="btn btn-secondary" type="button" id="confirmGetMacBtn">
+                      <i class="bi bi-search"></i> Get MAC
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <!-- Right column: Settings -->
+              <div class="col-md-6">
+                <h6 class="text-muted mb-3">Settings</h6>
+                <div class="mb-3">
+                  <label for="confirmAmbilightMode" class="form-label">Ambilight Mode</label>
+                  <select class="form-select" id="confirmAmbilightMode">
+                    <optgroup label="Follow Video">
+                      <option value="FOLLOW_VIDEO/STANDARD">Standard</option>
+                      <option value="FOLLOW_VIDEO/NATURAL" selected>Natural</option>
+                      <option value="FOLLOW_VIDEO/VIVID">Vivid</option>
+                      <option value="FOLLOW_VIDEO/GAME">Game</option>
+                      <option value="FOLLOW_VIDEO/COMFORT">Comfort</option>
+                      <option value="FOLLOW_VIDEO/RELAX">Relax</option>
+                      <option value="FOLLOW_VIDEO/FOOTBALL">Football</option>
+                    </optgroup>
+                    <optgroup label="Follow Audio">
+                      <option value="FOLLOW_AUDIO/ENERGY_ADAPTIVE_BRIGHTNESS">Energy Brightness</option>
+                      <option value="FOLLOW_AUDIO/ENERGY_ADAPTIVE_COLORS">Energy Colors</option>
+                      <option value="FOLLOW_AUDIO/VU_METER">VU Meter</option>
+                      <option value="FOLLOW_AUDIO/SPECTRUM_ANALYZER">Spectrum</option>
+                      <option value="FOLLOW_AUDIO/PARTY">Party</option>
+                    </optgroup>
+                    <optgroup label="Other">
+                      <option value="Lounge light">Lounge Light</option>
+                    </optgroup>
+                  </select>
+                </div>
+                <div class="mb-3">
+                  <label for="confirmInfoButtonKey" class="form-label">Info Button Key</label>
+                  <select class="form-select" id="confirmInfoButtonKey">
+                    <option value="Source" selected>Source (input picker)</option>
+                    <option value="Info">Info (program details)</option>
+                    <option value="Options">Options (context menu)</option>
+                    <option value="Find">Find (search)</option>
+                  </select>
+                </div>
+                <div class="mb-3">
+                  <label class="form-label">State Sensors</label>
+                  <div class="form-check form-switch mb-1">
+                    <input class="form-check-input" type="checkbox" id="confirmSensorPower">
+                    <label class="form-check-label" for="confirmSensorPower">Power (TV On/Off)</label>
+                  </div>
+                  <div class="form-check form-switch mb-1">
+                    <input class="form-check-input" type="checkbox" id="confirmSensorAmbilight">
+                    <label class="form-check-label" for="confirmSensorAmbilight">Ambilight (Active/Inactive)</label>
+                  </div>
+                  <div class="form-check form-switch mb-1">
+                    <input class="form-check-input" type="checkbox" id="confirmSensorMute">
+                    <label class="form-check-label" for="confirmSensorMute">Muted (Yes/No)</label>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <hr>
+            <div class="col-12">
+              <button id="saveTvBtn" class="btn btn-success" type="submit">
+                <i class="bi bi-floppy"></i> Save TV
               </button>
-              <div class="invalid-feedback">Please provide a MAC address.</div>
+              <button id="cancelConfirmBtn" class="btn btn-secondary" type="button">Cancel</button>
             </div>
-          </div>
-        </div>
-        <!-- Right column: Settings -->
-        <div class="col-md-6">
-          <h6 class="text-muted mb-3">Settings</h6>
-          <div class="mb-3">
-            <label for="editAmbilightMode" class="form-label">Ambilight Mode</label>
-            <select class="form-select" id="editAmbilightMode">
-              <optgroup label="Follow Video">
-                <option value="FOLLOW_VIDEO/STANDARD">Standard</option>
-                <option value="FOLLOW_VIDEO/NATURAL">Natural</option>
-                <option value="FOLLOW_VIDEO/VIVID">Vivid</option>
-                <option value="FOLLOW_VIDEO/GAME">Game</option>
-                <option value="FOLLOW_VIDEO/COMFORT">Comfort</option>
-                <option value="FOLLOW_VIDEO/RELAX">Relax</option>
-                <option value="FOLLOW_VIDEO/FOOTBALL">Football</option>
-              </optgroup>
-              <optgroup label="Follow Audio">
-                <option value="FOLLOW_AUDIO/ENERGY_ADAPTIVE_BRIGHTNESS">Energy Brightness</option>
-                <option value="FOLLOW_AUDIO/ENERGY_ADAPTIVE_COLORS">Energy Colors</option>
-                <option value="FOLLOW_AUDIO/VU_METER">VU Meter</option>
-                <option value="FOLLOW_AUDIO/SPECTRUM_ANALYZER">Spectrum</option>
-                <option value="FOLLOW_AUDIO/PARTY">Party</option>
-              </optgroup>
-              <optgroup label="Other">
-                <option value="Lounge light">Lounge Light</option>
-              </optgroup>
-            </select>
-          </div>
-          <div class="mb-3">
-            <label for="editInfoButtonKey" class="form-label">Info Button Key</label>
-            <select class="form-select" id="editInfoButtonKey">
-              <option value="Source">Source (input picker)</option>
-              <option value="Info">Info (program details)</option>
-              <option value="Options">Options (context menu)</option>
-              <option value="Find">Find (search)</option>
-            </select>
-          </div>
-          <div class="mb-3">
-            <label class="form-label">State Sensors</label>
-            <div class="form-check form-switch mb-1">
-              <input class="form-check-input" type="checkbox" id="editSensorPower">
-              <label class="form-check-label" for="editSensorPower">Power (TV On/Off)</label>
-            </div>
-            <div class="form-check form-switch mb-1">
-              <input class="form-check-input" type="checkbox" id="editSensorAmbilight">
-              <label class="form-check-label" for="editSensorAmbilight">Ambilight (Active/Inactive)</label>
-            </div>
-            <div class="form-check form-switch mb-1">
-              <input class="form-check-input" type="checkbox" id="editSensorMute">
-              <label class="form-check-label" for="editSensorMute">Muted (Yes/No)</label>
-            </div>
-          </div>
+          </form>
         </div>
       </div>
-      <hr>
-      <div class="col-12">
-        <button id="saveEditBtn" class="btn btn-success" type="submit">Save</button>
-        <button id="cancelEditBtn" class="btn btn-primary" type="button">Cancel</button>
-      </div>
-    </form>
-  </div>
+    </div>
 
-  <!-- Edit Sources Screen -->
-  <div id="editSourcesScreen">
-    <h5><i class="fas fa-tv"></i> Edit Sources for <span id="editSourcesTvName"></span></h5>
-    <div class="alert alert-info mb-3">
-      <small><i class="fas fa-info-circle"></i> Drag and drop sources to change their display order in HomeKit.
-      Toggle visibility to show/hide sources. Changes are saved automatically.</small>
-    </div>
-    <div id="sourcesLoadingSpinner" class="text-center my-4">
-      <div class="spinner-border text-primary" role="status">
-        <span class="visually-hidden">Loading...</span>
-      </div>
-      <p class="mt-2 text-muted">Fetching sources from TV...</p>
-    </div>
-    <div id="sourcesListContainer" style="display: none;">
-      <div class="mb-3">
-        <small class="text-muted">
-          <i class="fas fa-grip-vertical"></i> Drag to reorder |
-          <i class="fas fa-eye"></i> Click eye to toggle visibility
-        </small>
-      </div>
-      <ul id="sourcesList" class="list-group sources-sortable mb-3"></ul>
-      <div class="d-flex justify-content-between">
-        <button id="resetSourcesOrderBtn" class="btn btn-outline-secondary">
-          <i class="fas fa-undo"></i> Reset Order
-        </button>
-        <button id="doneEditSourcesBtn" class="btn btn-primary">
-          <i class="fas fa-check"></i> Done
-        </button>
-      </div>
-    </div>
-    <div id="sourcesErrorContainer" class="alert alert-warning" style="display: none;">
-      <i class="fas fa-exclamation-triangle"></i> <span id="sourcesErrorMessage"></span>
-      <button id="retryLoadSourcesBtn" class="btn btn-warning btn-sm mt-2">
-        <i class="fas fa-redo"></i> Retry
+    <!-- Success Screen -->
+    <div id="successScreen">
+      <h5>Configured TVs</h5>
+      <div id="noTvsMessage" class="alert alert-info mb-3">No TVs configured yet.</div>
+      <ul id="configuredTvList" class="list-group mb-3"></ul>
+      <button id="addAnotherTvBtn" class="btn btn-primary">
+        <i class="bi bi-plus"></i> Add Another TV
       </button>
     </div>
-  </div>
-</div>
 
-<script src="app.js"></script>
+    <!-- Edit TV Screen -->
+    <div id="editScreen">
+      <h5>Edit TV Configuration</h5>
+      <div class="alert alert-info">
+        <small><i class="bi bi-info-circle"></i> You cannot edit username/password. To change authentication, delete this TV and pair it again.</small>
+      </div>
+      <form id="editTvForm" class="needs-validation" novalidate>
+        <div class="row">
+          <!-- Left column: Connection -->
+          <div class="col-md-6">
+            <h6 class="text-muted mb-3">Connection</h6>
+            <div class="mb-3">
+              <label for="editTvName" class="form-label">TV Name</label>
+              <input type="text" class="form-control" id="editTvName" placeholder="Living Room TV" required>
+              <div class="invalid-feedback">Please provide a TV name.</div>
+            </div>
+            <div class="mb-3">
+              <label for="editTvIp" class="form-label">IP Address</label>
+              <input type="text" class="form-control" id="editTvIp" placeholder="192.168.1.100" required>
+              <div class="invalid-feedback">Please provide an IP address.</div>
+            </div>
+            <div class="mb-3">
+              <label for="editTvMac" class="form-label">MAC Address</label>
+              <div class="input-group">
+                <input type="text" class="form-control" id="editTvMac" placeholder="AA:BB:CC:DD:EE:FF" required>
+                <button class="btn btn-secondary" type="button" id="getMacBtn">
+                  <i class="bi bi-search"></i> Get MAC
+                </button>
+                <div class="invalid-feedback">Please provide a MAC address.</div>
+              </div>
+            </div>
+          </div>
+          <!-- Right column: Settings -->
+          <div class="col-md-6">
+            <h6 class="text-muted mb-3">Settings</h6>
+            <div class="mb-3">
+              <label for="editAmbilightMode" class="form-label">Ambilight Mode</label>
+              <select class="form-select" id="editAmbilightMode">
+                <optgroup label="Follow Video">
+                  <option value="FOLLOW_VIDEO/STANDARD">Standard</option>
+                  <option value="FOLLOW_VIDEO/NATURAL">Natural</option>
+                  <option value="FOLLOW_VIDEO/VIVID">Vivid</option>
+                  <option value="FOLLOW_VIDEO/GAME">Game</option>
+                  <option value="FOLLOW_VIDEO/COMFORT">Comfort</option>
+                  <option value="FOLLOW_VIDEO/RELAX">Relax</option>
+                  <option value="FOLLOW_VIDEO/FOOTBALL">Football</option>
+                </optgroup>
+                <optgroup label="Follow Audio">
+                  <option value="FOLLOW_AUDIO/ENERGY_ADAPTIVE_BRIGHTNESS">Energy Brightness</option>
+                  <option value="FOLLOW_AUDIO/ENERGY_ADAPTIVE_COLORS">Energy Colors</option>
+                  <option value="FOLLOW_AUDIO/VU_METER">VU Meter</option>
+                  <option value="FOLLOW_AUDIO/SPECTRUM_ANALYZER">Spectrum</option>
+                  <option value="FOLLOW_AUDIO/PARTY">Party</option>
+                </optgroup>
+                <optgroup label="Other">
+                  <option value="Lounge light">Lounge Light</option>
+                </optgroup>
+              </select>
+            </div>
+            <div class="mb-3">
+              <label for="editInfoButtonKey" class="form-label">Info Button Key</label>
+              <select class="form-select" id="editInfoButtonKey">
+                <option value="Source">Source (input picker)</option>
+                <option value="Info">Info (program details)</option>
+                <option value="Options">Options (context menu)</option>
+                <option value="Find">Find (search)</option>
+              </select>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">State Sensors</label>
+              <div class="form-check form-switch mb-1">
+                <input class="form-check-input" type="checkbox" id="editSensorPower">
+                <label class="form-check-label" for="editSensorPower">Power (TV On/Off)</label>
+              </div>
+              <div class="form-check form-switch mb-1">
+                <input class="form-check-input" type="checkbox" id="editSensorAmbilight">
+                <label class="form-check-label" for="editSensorAmbilight">Ambilight (Active/Inactive)</label>
+              </div>
+              <div class="form-check form-switch mb-1">
+                <input class="form-check-input" type="checkbox" id="editSensorMute">
+                <label class="form-check-label" for="editSensorMute">Muted (Yes/No)</label>
+              </div>
+            </div>
+          </div>
+        </div>
+        <hr>
+        <div class="col-12">
+          <button id="saveEditBtn" class="btn btn-success" type="submit">Save</button>
+          <button id="cancelEditBtn" class="btn btn-primary" type="button">Cancel</button>
+        </div>
+      </form>
+    </div>
+
+    <!-- Edit Sources Screen -->
+    <div id="editSourcesScreen">
+      <h5><i class="bi bi-tv"></i> Edit Sources for <span id="editSourcesTvName"></span></h5>
+      <div class="alert alert-info mb-3">
+        <small><i class="bi bi-info-circle"></i> Drag and drop sources to change their display order in HomeKit. Toggle visibility to show/hide sources. Changes are saved automatically.</small>
+      </div>
+      <div id="sourcesLoadingSpinner" class="text-center my-4">
+        <div class="spinner-border text-primary" role="status">
+          <span class="visually-hidden">Loading...</span>
+        </div>
+        <p class="mt-2 text-muted">Fetching sources from TV...</p>
+      </div>
+      <div id="sourcesListContainer" style="display: none;">
+        <div class="mb-3">
+          <small class="text-muted">
+            <i class="bi bi-grip-vertical"></i> Drag to reorder |
+            <i class="bi bi-eye"></i> Click eye to toggle visibility
+          </small>
+        </div>
+        <ul id="sourcesList" class="list-group sources-sortable mb-3"></ul>
+        <div class="d-flex justify-content-between">
+          <button id="resetSourcesOrderBtn" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-counterclockwise"></i> Reset Order
+          </button>
+          <button id="doneEditSourcesBtn" class="btn btn-primary">
+            <i class="bi bi-check-lg"></i> Done
+          </button>
+        </div>
+      </div>
+      <div id="sourcesErrorContainer" class="alert alert-warning" style="display: none;">
+        <i class="bi bi-exclamation-triangle"></i> <span id="sourcesErrorMessage"></span>
+        <button id="retryLoadSourcesBtn" class="btn btn-warning btn-sm mt-2">
+          <i class="bi bi-arrow-clockwise"></i> Retry
+        </button>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
+  <script src="lib/kit.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

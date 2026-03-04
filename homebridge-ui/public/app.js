@@ -31,7 +31,7 @@
     if (loading) {
       btn.dataset.originalContent = btn.innerHTML;
       btn.disabled = true;
-      btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> ${loadingText}`;
+      btn.innerHTML = `<span class="spinner-border spinner-border-sm" aria-hidden="true"></span> ${loadingText}`;
     } else {
       btn.disabled = false;
       btn.innerHTML = originalContent || btn.dataset.originalContent;
@@ -46,10 +46,16 @@
   // NAVIGATION
   // ============================================================================
 
+  const COMPACT_SCREENS = new Set(['editScreen', 'editSourcesScreen']);
+
   const showScreen = (screenId) => {
     SCREENS.forEach((id) => {
       $(id).style.display = id === screenId ? 'block' : 'none';
     });
+    const header = document.querySelector('.mp-header');
+    if (header) {
+      header.style.display = COMPACT_SCREENS.has(screenId) ? 'none' : '';
+    }
     if (screenId === 'successScreen') {
       renderConfiguredTvs();
     }
@@ -134,13 +140,13 @@
     li.innerHTML = `
       <div class="d-flex w-100 justify-content-between align-items-center">
         <div>
-          <h6 class="mb-1"><i class="fas fa-tv mr-2"></i> ${tv.name}</h6>
-          <small class="text-muted"><i class="fas fa-network-wired mr-1"></i> ${tv.ip}</small>
+          <h6 class="mb-1"><i class="bi bi-tv me-2"></i> ${tv.name}</h6>
+          <small class="text-muted"><i class="bi bi-hdd-network me-1"></i> ${tv.ip}</small>
         </div>
         <div>
-          <button class="btn btn-sm btn-secondary edit-sources-btn mr-2"><i class="fas fa-list"></i> Sources</button>
-          <button class="btn btn-sm btn-primary edit-tv-btn mr-2"><i class="fas fa-edit"></i> Edit</button>
-          <button class="btn btn-sm btn-danger delete-tv-btn"><i class="fas fa-trash"></i> Delete</button>
+          <button class="btn btn-sm btn-secondary edit-sources-btn me-2"><i class="bi bi-list"></i> Sources</button>
+          <button class="btn btn-sm btn-primary edit-tv-btn me-2"><i class="bi bi-pencil"></i> Edit</button>
+          <button class="btn btn-sm btn-danger delete-tv-btn"><i class="bi bi-trash"></i> Delete</button>
         </div>
       </div>
     `;
@@ -152,7 +158,7 @@
       try {
         await deleteTv(index);
       } catch (e) {
-        setButtonLoading(this, false, null, '<i class="fas fa-trash"></i> Delete');
+        setButtonLoading(this, false, null, '<i class="bi bi-trash"></i> Delete');
         homebridge.toast.error('Failed to delete TV: ' + e.message);
       }
     });
@@ -247,9 +253,9 @@
     const badge = listItem?.querySelector('.select-badge');
     const originalBadgeText = badge?.textContent;
     if (badge) {
-      badge.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Connecting...';
-      badge.classList.remove('badge-primary');
-      badge.classList.add('badge-secondary');
+      badge.innerHTML = '<span class="spinner-border spinner-border-sm" aria-hidden="true"></span> Connecting...';
+      badge.classList.remove('bg-primary');
+      badge.classList.add('bg-secondary');
     }
 
     homebridge.toast.info('Initiating pairing with TV...');
@@ -276,8 +282,8 @@
         // Restore badge
         if (badge) {
           badge.textContent = originalBadgeText;
-          badge.classList.remove('badge-secondary');
-          badge.classList.add('badge-primary');
+          badge.classList.remove('bg-secondary');
+          badge.classList.add('bg-primary');
         }
         if (state.currentConfig.mac && listItem) {
           showWolCollapse(listItem);
@@ -288,8 +294,8 @@
       // Restore badge
       if (badge) {
         badge.textContent = originalBadgeText;
-        badge.classList.remove('badge-secondary');
-        badge.classList.add('badge-primary');
+        badge.classList.remove('bg-secondary');
+        badge.classList.add('bg-primary');
       }
       if (state.currentConfig.mac && listItem) {
         showWolCollapse(listItem);
@@ -306,21 +312,21 @@
       <div class="device-row" style="cursor: pointer;">
         <div class="d-flex w-100 justify-content-between align-items-center">
           <div>
-            <h6 class="mb-1"><i class="fas fa-tv mr-2"></i> ${device.name || 'Unknown Device'}</h6>
-            <small class="text-muted"><i class="fas fa-network-wired mr-1"></i> ${ip}</small>
+            <h6 class="mb-1"><i class="bi bi-tv me-2"></i> ${device.name || 'Unknown Device'}</h6>
+            <small class="text-muted"><i class="bi bi-hdd-network me-1"></i> ${ip}</small>
           </div>
-          <span class="badge badge-primary badge-pill select-badge">Select</span>
+          <span class="badge bg-primary rounded-pill select-badge">Select</span>
         </div>
       </div>
       <div class="wol-collapse mt-2" style="display: none;">
         <div class="alert alert-warning mb-0">
-          <h6 class="alert-heading mb-1"><i class="fas fa-power-off"></i> TV not responding</h6>
+          <h6 class="alert-heading mb-1"><i class="bi bi-power"></i> TV not responding</h6>
           <p class="mb-2 small">The TV may be in standby mode.</p>
           <button class="btn btn-warning btn-sm wol-btn" type="button">
-            <i class="fas fa-bolt"></i> Wake TV
+            <i class="bi bi-lightning-charge"></i> Wake TV
           </button>
           <button class="btn btn-secondary btn-sm wol-retry-btn" type="button">
-            <i class="fas fa-redo"></i> Retry
+            <i class="bi bi-arrow-clockwise"></i> Retry
           </button>
         </div>
       </div>
@@ -581,12 +587,12 @@
 
   const getSourceIcon = (source) => {
     if (source.icon === 'hdmi') {
-      return '<i class="fas fa-plug source-icon hdmi"></i>';
+      return '<i class="bi bi-plug source-icon hdmi"></i>';
     }
     if (source.icon === 'tv') {
-      return '<i class="fas fa-broadcast-tower source-icon tv"></i>';
+      return '<i class="bi bi-broadcast source-icon tv"></i>';
     }
-    return '<i class="fas fa-mobile-alt source-icon app"></i>';
+    return '<i class="bi bi-phone source-icon app"></i>';
   };
 
   const getSourceTypeName = (source) => {
@@ -607,7 +613,7 @@
     li.draggable = true;
 
     li.innerHTML = `
-      <span class="drag-handle"><i class="fas fa-grip-vertical"></i></span>
+      <span class="drag-handle"><i class="bi bi-grip-vertical"></i></span>
       ${getSourceIcon(source)}
       <div class="source-info">
         <p class="source-name">${source.customName || source.name}</p>
@@ -615,7 +621,7 @@
       </div>
       <div class="source-actions">
         <button class="visibility-btn${source.visible === false ? ' hidden' : ''}" title="${source.visible === false ? 'Show' : 'Hide'} source">
-          <i class="fas fa-eye${source.visible === false ? '-slash' : ''}"></i>
+          <i class="bi bi-eye${source.visible === false ? '-slash' : ''}"></i>
         </button>
       </div>
     `;
@@ -800,7 +806,7 @@
       listDiv.style.display = 'contents';
     } finally {
       btn.disabled = false;
-      btnText.innerHTML = '<i class="fas fa-search"></i> Discover TVs';
+      btnText.innerHTML = '<i class="bi bi-search"></i> Discover TVs';
       spinner.style.display = 'none';
     }
   };
