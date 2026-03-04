@@ -51,17 +51,17 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.2",
+    "@mp-consulting/homebridge-ui-kit": "^1.0.0",
     "@types/node": "^24.0.0",
     "@vitest/coverage-v8": "^4.0.18",
     "eslint": "^9.39.2",
     "homebridge": "^2.0.0-beta.55",
-    "homebridge-config-ui-x": "^5.15.0",
+    "homebridge-config-ui-x": "^5.19.0",
     "nodemon": "^3.1.11",
     "rimraf": "^6.1.0",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.53.1",
-    "vitest": "^4.0.18",
-    "@mp-consulting/homebridge-ui-kit": "^1.0.0"
+    "vitest": "^4.0.18"
   },
   "files": [
     "dist",
