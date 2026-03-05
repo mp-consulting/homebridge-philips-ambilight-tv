@@ -4,6 +4,20 @@
  */
 
 (async () => {
+  // Confirm theme from Homebridge settings (overrides the early OS-preference detection)
+  try {
+    const settings = await homebridge.getUserSettings();
+    const scheme = settings.colorScheme;
+    if (scheme === 'dark' || scheme === 'light') {
+      document.documentElement.dataset.bsTheme = scheme;
+    } else if (scheme === 'auto') {
+      document.documentElement.dataset.bsTheme =
+        window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+  } catch {
+    // getUserSettings not available in older versions — keep the early-detected theme
+  }
+
   // ============================================================================
   // CONSTANTS & STATE
   // ============================================================================
