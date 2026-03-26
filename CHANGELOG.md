@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.20] - 2026-03-26
+
+### Changed
+
+- **Dependencies**: Updated all dependencies to latest compatible versions
+
 ## [1.0.19] - 2026-03-05
 
 ### Fixed
