@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.22] - 2026-03-30
+
+### Fixed
+
+- **API queue timeout**: Add 8-second queue-level timeout to prevent Homebridge "didn't respond at all" warnings when the TV is unreachable and multiple commands pile up behind timed-out requests
+- **Dependencies**: Hoist `class-validator` as a direct dependency so `homebridge-config-ui-x` resolves it correctly at runtime
+
+### Changed
+
+- **Node.js**: Bump `.tool-versions` to Node 20.22.2
+
 ## [1.0.21] - 2026-03-30
 
 ### Fixed
