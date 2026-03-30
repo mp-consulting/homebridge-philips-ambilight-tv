@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.23] - 2026-03-30
+
+### Fixed
+
+- **Ambilight callback timeout**: Bail early from Ambilight ON handler when power call fails instead of chaining a second doomed request; reduce POST timeout from 5s to 3s so sequential API calls fit within Homebridge's callback window
+
 ## [1.0.22] - 2026-03-30
 
 ### Fixed
