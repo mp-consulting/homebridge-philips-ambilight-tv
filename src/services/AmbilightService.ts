@@ -133,7 +133,10 @@ export class AmbilightService {
       let success: boolean;
       if (shouldBeOn) {
         const { style, algorithm } = this.parseAmbilightMode();
-        await this.deps.tvClient.setAmbilightPower(true);
+        const powerOn = await this.deps.tvClient.setAmbilightPower(true);
+        if (!powerOn) {
+          throw this.deps.communicationError();
+        }
         success = await this.deps.tvClient.setAmbilightStyle(style as AmbilightStyleName, algorithm || undefined);
         if (success) {
           this.isOn = true;
