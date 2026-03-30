@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.21] - 2026-03-30
+
+### Fixed
+
+- package-lock.json sync
+
 ## [1.0.20] - 2026-03-30
 
 ### Changed
