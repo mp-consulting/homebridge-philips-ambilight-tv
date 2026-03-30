@@ -40,6 +40,13 @@ const DEFAULT_POST_TIMEOUT_MS = 5000;
 /** Minimum delay between consecutive API requests to avoid overwhelming the TV */
 const INTER_REQUEST_DELAY_MS = 100;
 
+/**
+ * Maximum time a request may wait in the queue before being dropped.
+ * Prevents requests from piling up behind timed-out requests and
+ * exceeding Homebridge's 10-second characteristic callback timeout.
+ */
+const QUEUE_TIMEOUT_MS = 8000;
+
 /** Ambilight menu settings node IDs (from iOS app analysis) */
 const AMBILIGHT_BRIGHTNESS_NODE_ID = 2131230769;
 const AMBILIGHT_SATURATION_NODE_ID = 2131230771;
@@ -123,6 +130,10 @@ export class PhilipsTVClient {
    * Queued request wrapper. Serializes all API calls so only one HTTP
    * exchange is in-flight at a time, with a small delay between requests
    * to avoid overwhelming the TV's lightweight JointSpace API server.
+   *
+   * A queue-level timeout ensures requests that wait too long behind
+   * earlier (timed-out) requests are dropped before exceeding
+   * Homebridge's characteristic callback timeout.
    */
   private request<T>(
     method: 'GET' | 'POST',
@@ -130,8 +141,18 @@ export class PhilipsTVClient {
     body?: unknown,
     timeout = method === 'POST' ? DEFAULT_POST_TIMEOUT_MS : DEFAULT_GET_TIMEOUT_MS,
   ): Promise<T | null> {
+    const enqueueTime = Date.now();
+
     return new Promise<T | null>((resolve) => {
       this.requestQueue = this.requestQueue.then(async () => {
+        // Drop requests that have been waiting in the queue too long
+        const waited = Date.now() - enqueueTime;
+        if (waited >= QUEUE_TIMEOUT_MS) {
+          this.debug(`API ${method} ${endpoint} → DROPPED (queued ${waited}ms)`);
+          resolve(null);
+          return;
+        }
+
         const start = Date.now();
         // Only log POST requests (user actions) — GET polling is silent unless it fails
         if (method === 'POST') {
