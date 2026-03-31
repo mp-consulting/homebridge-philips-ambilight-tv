@@ -1,5 +1,5 @@
 <p align="center">
-<img src="homebridge-ui/public/ambilight-tv.jpg" width="300">
+<img src="homebridge-ui/public/ambilight-tv.webp" width="300">
 </p>
 
 # Homebridge Philips Ambilight TV
