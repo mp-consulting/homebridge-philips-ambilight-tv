@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.1] - 2026-04-04
+
+### Fixed
+
+- **Sources UI**: Render sources list immediately when hiding/showing a source instead of waiting for the async config save, fixing the issue where hidden sources wouldn't appear in the hidden column until a page refresh
+
 ## [1.1.0] - 2026-04-04
 
 ### Added
