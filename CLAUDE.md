@@ -30,7 +30,7 @@ src/
 └── services/             # Ambilight, polling, long-poll, input sources, sensors
 
 test/                     # Unit tests (mirrors src/ structure)
-homebridge-ui/            # Custom UI for pairing wizard & source config
+homebridge-ui/            # Uses Homebridge custom UI framework for plugin configuration management (pairing wizard & source config)
 ```
 
 ## Code conventions
