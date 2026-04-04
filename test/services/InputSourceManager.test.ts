@@ -321,6 +321,27 @@ describe('InputSourceManager', () => {
       expect(deps.tvClient.setSource).toHaveBeenCalled();
     });
 
+    it('should activate TV tuner before switching to a channel', async () => {
+      const deps = createMockDeps({
+        userInputs: [{ identifier: '42', name: 'BBC One', type: 'channel' }],
+      });
+      const manager = new InputSourceManager(deps);
+      const tvService = createMockService();
+      manager.configureInputSources(tvService as never);
+
+      const channelSource = manager.getSources().find(s => s.name === 'BBC One')!;
+      await manager.handleSetInput(channelSource.identifier);
+
+      // Should call setSource (Watch TV) first, then setChannel
+      expect(deps.tvClient.setSource).toHaveBeenCalledWith('content://android.media.tv/channel');
+      expect(deps.tvClient.setChannel).toHaveBeenCalledWith(42, undefined);
+
+      // setSource should be called before setChannel
+      const setSourceOrder = (deps.tvClient.setSource as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0];
+      const setChannelOrder = (deps.tvClient.setChannel as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0];
+      expect(setSourceOrder).toBeLessThan(setChannelOrder);
+    });
+
     it('should throw for unknown identifier', async () => {
       const deps = createMockDeps();
       const manager = new InputSourceManager(deps);
@@ -351,6 +372,54 @@ describe('InputSourceManager', () => {
 
       await manager.handleRemoteKey(99);
       expect(deps.tvClient.sendKey).not.toHaveBeenCalled();
+    });
+
+    it('should use default Back key when not configured', async () => {
+      const deps = createMockDeps();
+      const manager = new InputSourceManager(deps);
+
+      await manager.handleRemoteKey(9);
+      expect(deps.tvClient.sendKey).toHaveBeenCalledWith('Back');
+    });
+
+    it('should use default PlayPause key when not configured', async () => {
+      const deps = createMockDeps();
+      const manager = new InputSourceManager(deps);
+
+      await manager.handleRemoteKey(11);
+      expect(deps.tvClient.sendKey).toHaveBeenCalledWith('PlayPause');
+    });
+
+    it('should use default Source key for info button when not configured', async () => {
+      const deps = createMockDeps();
+      const manager = new InputSourceManager(deps);
+
+      await manager.handleRemoteKey(15);
+      expect(deps.tvClient.sendKey).toHaveBeenCalledWith('Source');
+    });
+
+    it('should use custom info button key when configured', async () => {
+      const deps = createMockDeps({ infoButtonKey: 'Info' });
+      const manager = new InputSourceManager(deps);
+
+      await manager.handleRemoteKey(15);
+      expect(deps.tvClient.sendKey).toHaveBeenCalledWith('Info');
+    });
+
+    it('should use custom back button key when configured', async () => {
+      const deps = createMockDeps({ backButtonKey: 'Home' });
+      const manager = new InputSourceManager(deps);
+
+      await manager.handleRemoteKey(9);
+      expect(deps.tvClient.sendKey).toHaveBeenCalledWith('Home');
+    });
+
+    it('should use custom play/pause button key when configured', async () => {
+      const deps = createMockDeps({ playPauseButtonKey: 'Source' });
+      const manager = new InputSourceManager(deps);
+
+      await manager.handleRemoteKey(11);
+      expect(deps.tvClient.sendKey).toHaveBeenCalledWith('Source');
     });
   });
 
