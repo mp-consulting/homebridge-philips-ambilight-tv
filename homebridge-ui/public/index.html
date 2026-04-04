@@ -140,8 +140,17 @@
                     </optgroup>
                   </select>
                 </div>
+              </div>
+            </div>
+            <!-- Remote Control section -->
+            <div class="row mt-3">
+              <div class="col-12">
+                <h6 class="text-muted mb-3"><i class="bi bi-dpad me-1"></i>Remote Control</h6>
+                <p class="text-muted small mb-3">Customize which TV key each HomeKit remote button sends.</p>
+              </div>
+              <div class="col-md-4">
                 <div class="mb-3">
-                  <label for="confirmInfoButtonKey" class="form-label">Info Button Key</label>
+                  <label for="confirmInfoButtonKey" class="form-label">Info Button</label>
                   <select class="form-select" id="confirmInfoButtonKey">
                     <option value="Source" selected>Source (input picker)</option>
                     <option value="Info">Info (program details)</option>
@@ -149,8 +158,10 @@
                     <option value="Find">Find (search)</option>
                   </select>
                 </div>
+              </div>
+              <div class="col-md-4">
                 <div class="mb-3">
-                  <label for="confirmBackButtonKey" class="form-label">Back Button Key</label>
+                  <label for="confirmBackButtonKey" class="form-label">Back Button</label>
                   <select class="form-select" id="confirmBackButtonKey">
                     <option value="Back" selected>Back</option>
                     <option value="Home">Home</option>
@@ -158,8 +169,10 @@
                     <option value="Options">Options (context menu)</option>
                   </select>
                 </div>
+              </div>
+              <div class="col-md-4">
                 <div class="mb-3">
-                  <label for="confirmPlayPauseButtonKey" class="form-label">Play/Pause Button Key</label>
+                  <label for="confirmPlayPauseButtonKey" class="form-label">Play/Pause Button</label>
                   <select class="form-select" id="confirmPlayPauseButtonKey">
                     <option value="PlayPause" selected>Play/Pause</option>
                     <option value="Home">Home</option>
@@ -167,13 +180,23 @@
                     <option value="Online">Online (smart TV portal)</option>
                   </select>
                 </div>
+              </div>
+            </div>
+            <!-- Automations section -->
+            <div class="row mt-2">
+              <div class="col-12">
+                <h6 class="text-muted mb-3"><i class="bi bi-gear-wide-connected me-1"></i>Automations</h6>
+              </div>
+              <div class="col-md-6">
                 <div class="mb-3">
                   <div class="form-check form-switch">
                     <input class="form-check-input" type="checkbox" id="confirmSourceSwitches">
-                    <label class="form-check-label" for="confirmSourceSwitches">Source Switches (for automations)</label>
+                    <label class="form-check-label" for="confirmSourceSwitches">Source Switches</label>
                   </div>
-                  <small class="text-muted">Expose each input source as a separate Switch accessory for HomeKit automations and scenes.</small>
+                  <small class="text-muted">Expose each input source as a separate Switch for HomeKit automations and scenes.</small>
                 </div>
+              </div>
+              <div class="col-md-6">
                 <div class="mb-3">
                   <label class="form-label">State Sensors</label>
                   <div class="form-check form-switch mb-1">
@@ -272,8 +295,17 @@
                 </optgroup>
               </select>
             </div>
+          </div>
+        </div>
+        <!-- Remote Control section -->
+        <div class="row mt-3">
+          <div class="col-12">
+            <h6 class="text-muted mb-3"><i class="bi bi-dpad me-1"></i>Remote Control</h6>
+            <p class="text-muted small mb-3">Customize which TV key each HomeKit remote button sends.</p>
+          </div>
+          <div class="col-md-4">
             <div class="mb-3">
-              <label for="editInfoButtonKey" class="form-label">Info Button Key</label>
+              <label for="editInfoButtonKey" class="form-label">Info Button</label>
               <select class="form-select" id="editInfoButtonKey">
                 <option value="Source">Source (input picker)</option>
                 <option value="Info">Info (program details)</option>
@@ -281,8 +313,10 @@
                 <option value="Find">Find (search)</option>
               </select>
             </div>
+          </div>
+          <div class="col-md-4">
             <div class="mb-3">
-              <label for="editBackButtonKey" class="form-label">Back Button Key</label>
+              <label for="editBackButtonKey" class="form-label">Back Button</label>
               <select class="form-select" id="editBackButtonKey">
                 <option value="Back">Back</option>
                 <option value="Home">Home</option>
@@ -290,8 +324,10 @@
                 <option value="Options">Options (context menu)</option>
               </select>
             </div>
+          </div>
+          <div class="col-md-4">
             <div class="mb-3">
-              <label for="editPlayPauseButtonKey" class="form-label">Play/Pause Button Key</label>
+              <label for="editPlayPauseButtonKey" class="form-label">Play/Pause Button</label>
               <select class="form-select" id="editPlayPauseButtonKey">
                 <option value="PlayPause">Play/Pause</option>
                 <option value="Home">Home</option>
@@ -299,13 +335,23 @@
                 <option value="Online">Online (smart TV portal)</option>
               </select>
             </div>
+          </div>
+        </div>
+        <!-- Automations section -->
+        <div class="row mt-2">
+          <div class="col-12">
+            <h6 class="text-muted mb-3"><i class="bi bi-gear-wide-connected me-1"></i>Automations</h6>
+          </div>
+          <div class="col-md-6">
             <div class="mb-3">
               <div class="form-check form-switch">
                 <input class="form-check-input" type="checkbox" id="editSourceSwitches">
-                <label class="form-check-label" for="editSourceSwitches">Source Switches (for automations)</label>
+                <label class="form-check-label" for="editSourceSwitches">Source Switches</label>
               </div>
-              <small class="text-muted">Expose each input source as a separate Switch accessory for HomeKit automations and scenes.</small>
+              <small class="text-muted">Expose each input source as a separate Switch for HomeKit automations and scenes.</small>
             </div>
+          </div>
+          <div class="col-md-6">
             <div class="mb-3">
               <label class="form-label">State Sensors</label>
               <div class="form-check form-switch mb-1">
