@@ -89,127 +89,139 @@
           <div class="alert alert-success mb-3">
             <i class="bi bi-check-circle"></i> Pairing successful! Please review and customize the TV details below.
           </div>
+          <ul class="nav nav-tabs mb-3" id="confirmTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+              <button class="nav-link active" id="confirmGeneralTab" data-bs-toggle="tab" data-bs-target="#confirmGeneralPane" type="button" role="tab"><i class="bi bi-sliders me-1"></i>General</button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link" id="confirmRemoteTab" data-bs-toggle="tab" data-bs-target="#confirmRemotePane" type="button" role="tab"><i class="bi bi-dpad me-1"></i>Remote</button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link" id="confirmAutomationsTab" data-bs-toggle="tab" data-bs-target="#confirmAutomationsPane" type="button" role="tab"><i class="bi bi-gear-wide-connected me-1"></i>Automations</button>
+            </li>
+          </ul>
           <form id="confirmTvForm" class="needs-validation" novalidate>
-            <div class="row">
-              <!-- Left column: Connection -->
-              <div class="col-md-6">
-                <h6 class="text-muted mb-3">Connection</h6>
-                <div class="mb-3">
-                  <label for="confirmTvName" class="form-label">TV Name</label>
-                  <input type="text" class="form-control" id="confirmTvName" placeholder="Living Room TV" required>
-                  <div class="invalid-feedback">Please provide a TV name.</div>
-                </div>
-                <div class="mb-3">
-                  <label for="confirmTvIp" class="form-label">IP Address</label>
-                  <input type="text" class="form-control" id="confirmTvIp" readonly>
-                </div>
-                <div class="mb-3">
-                  <label for="confirmTvMac" class="form-label">MAC Address</label>
-                  <div class="input-group">
-                    <input type="text" class="form-control" id="confirmTvMac" placeholder="AA:BB:CC:DD:EE:FF">
-                    <button class="btn btn-secondary" type="button" id="confirmGetMacBtn">
-                      <i class="bi bi-search"></i> Get MAC
-                    </button>
+            <div class="tab-content">
+              <!-- General tab -->
+              <div class="tab-pane fade show active" id="confirmGeneralPane" role="tabpanel">
+                <div class="row">
+                  <div class="col-md-6">
+                    <h6 class="text-muted mb-3">Connection</h6>
+                    <div class="mb-3">
+                      <label for="confirmTvName" class="form-label">TV Name</label>
+                      <input type="text" class="form-control" id="confirmTvName" placeholder="Living Room TV" required>
+                      <div class="invalid-feedback">Please provide a TV name.</div>
+                    </div>
+                    <div class="mb-3">
+                      <label for="confirmTvIp" class="form-label">IP Address</label>
+                      <input type="text" class="form-control" id="confirmTvIp" readonly>
+                    </div>
+                    <div class="mb-3">
+                      <label for="confirmTvMac" class="form-label">MAC Address</label>
+                      <div class="input-group">
+                        <input type="text" class="form-control" id="confirmTvMac" placeholder="AA:BB:CC:DD:EE:FF">
+                        <button class="btn btn-secondary" type="button" id="confirmGetMacBtn">
+                          <i class="bi bi-search"></i> Get MAC
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="col-md-6">
+                    <h6 class="text-muted mb-3">Settings</h6>
+                    <div class="mb-3">
+                      <label for="confirmAmbilightMode" class="form-label">Ambilight Mode</label>
+                      <select class="form-select" id="confirmAmbilightMode">
+                        <optgroup label="Follow Video">
+                          <option value="FOLLOW_VIDEO/STANDARD">Standard</option>
+                          <option value="FOLLOW_VIDEO/NATURAL" selected>Natural</option>
+                          <option value="FOLLOW_VIDEO/VIVID">Vivid</option>
+                          <option value="FOLLOW_VIDEO/GAME">Game</option>
+                          <option value="FOLLOW_VIDEO/COMFORT">Comfort</option>
+                          <option value="FOLLOW_VIDEO/RELAX">Relax</option>
+                          <option value="FOLLOW_VIDEO/FOOTBALL">Football</option>
+                        </optgroup>
+                        <optgroup label="Follow Audio">
+                          <option value="FOLLOW_AUDIO/ENERGY_ADAPTIVE_BRIGHTNESS">Energy Brightness</option>
+                          <option value="FOLLOW_AUDIO/ENERGY_ADAPTIVE_COLORS">Energy Colors</option>
+                          <option value="FOLLOW_AUDIO/VU_METER">VU Meter</option>
+                          <option value="FOLLOW_AUDIO/SPECTRUM_ANALYZER">Spectrum</option>
+                          <option value="FOLLOW_AUDIO/PARTY">Party</option>
+                        </optgroup>
+                        <optgroup label="Other">
+                          <option value="Lounge light">Lounge Light</option>
+                        </optgroup>
+                      </select>
+                    </div>
                   </div>
                 </div>
               </div>
-              <!-- Right column: Settings -->
-              <div class="col-md-6">
-                <h6 class="text-muted mb-3">Settings</h6>
-                <div class="mb-3">
-                  <label for="confirmAmbilightMode" class="form-label">Ambilight Mode</label>
-                  <select class="form-select" id="confirmAmbilightMode">
-                    <optgroup label="Follow Video">
-                      <option value="FOLLOW_VIDEO/STANDARD">Standard</option>
-                      <option value="FOLLOW_VIDEO/NATURAL" selected>Natural</option>
-                      <option value="FOLLOW_VIDEO/VIVID">Vivid</option>
-                      <option value="FOLLOW_VIDEO/GAME">Game</option>
-                      <option value="FOLLOW_VIDEO/COMFORT">Comfort</option>
-                      <option value="FOLLOW_VIDEO/RELAX">Relax</option>
-                      <option value="FOLLOW_VIDEO/FOOTBALL">Football</option>
-                    </optgroup>
-                    <optgroup label="Follow Audio">
-                      <option value="FOLLOW_AUDIO/ENERGY_ADAPTIVE_BRIGHTNESS">Energy Brightness</option>
-                      <option value="FOLLOW_AUDIO/ENERGY_ADAPTIVE_COLORS">Energy Colors</option>
-                      <option value="FOLLOW_AUDIO/VU_METER">VU Meter</option>
-                      <option value="FOLLOW_AUDIO/SPECTRUM_ANALYZER">Spectrum</option>
-                      <option value="FOLLOW_AUDIO/PARTY">Party</option>
-                    </optgroup>
-                    <optgroup label="Other">
-                      <option value="Lounge light">Lounge Light</option>
-                    </optgroup>
-                  </select>
-                </div>
-              </div>
-            </div>
-            <!-- Remote Control section -->
-            <div class="row mt-3">
-              <div class="col-12">
-                <h6 class="text-muted mb-3"><i class="bi bi-dpad me-1"></i>Remote Control</h6>
+              <!-- Remote tab -->
+              <div class="tab-pane fade" id="confirmRemotePane" role="tabpanel">
                 <p class="text-muted small mb-3">Customize which TV key each HomeKit remote button sends.</p>
-              </div>
-              <div class="col-md-4">
-                <div class="mb-3">
-                  <label for="confirmInfoButtonKey" class="form-label">Info Button</label>
-                  <select class="form-select" id="confirmInfoButtonKey">
-                    <option value="Source" selected>Source (input picker)</option>
-                    <option value="Info">Info (program details)</option>
-                    <option value="Options">Options (context menu)</option>
-                    <option value="Find">Find (search)</option>
-                  </select>
-                </div>
-              </div>
-              <div class="col-md-4">
-                <div class="mb-3">
-                  <label for="confirmBackButtonKey" class="form-label">Back Button</label>
-                  <select class="form-select" id="confirmBackButtonKey">
-                    <option value="Back" selected>Back</option>
-                    <option value="Home">Home</option>
-                    <option value="Source">Source (input picker)</option>
-                    <option value="Options">Options (context menu)</option>
-                  </select>
-                </div>
-              </div>
-              <div class="col-md-4">
-                <div class="mb-3">
-                  <label for="confirmPlayPauseButtonKey" class="form-label">Play/Pause Button</label>
-                  <select class="form-select" id="confirmPlayPauseButtonKey">
-                    <option value="PlayPause" selected>Play/Pause</option>
-                    <option value="Home">Home</option>
-                    <option value="Source">Source (input picker)</option>
-                    <option value="Online">Online (smart TV portal)</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-            <!-- Automations section -->
-            <div class="row mt-2">
-              <div class="col-12">
-                <h6 class="text-muted mb-3"><i class="bi bi-gear-wide-connected me-1"></i>Automations</h6>
-              </div>
-              <div class="col-md-6">
-                <div class="mb-3">
-                  <div class="form-check form-switch">
-                    <input class="form-check-input" type="checkbox" id="confirmSourceSwitches">
-                    <label class="form-check-label" for="confirmSourceSwitches">Source Switches</label>
+                <div class="row">
+                  <div class="col-md-4">
+                    <div class="mb-3">
+                      <label for="confirmInfoButtonKey" class="form-label">Info Button</label>
+                      <select class="form-select" id="confirmInfoButtonKey">
+                        <option value="Source" selected>Source (input picker)</option>
+                        <option value="Info">Info (program details)</option>
+                        <option value="Options">Options (context menu)</option>
+                        <option value="Find">Find (search)</option>
+                      </select>
+                    </div>
                   </div>
-                  <small class="text-muted">Expose each input source as a separate Switch for HomeKit automations and scenes.</small>
+                  <div class="col-md-4">
+                    <div class="mb-3">
+                      <label for="confirmBackButtonKey" class="form-label">Back Button</label>
+                      <select class="form-select" id="confirmBackButtonKey">
+                        <option value="Back" selected>Back</option>
+                        <option value="Home">Home</option>
+                        <option value="Source">Source (input picker)</option>
+                        <option value="Options">Options (context menu)</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div class="col-md-4">
+                    <div class="mb-3">
+                      <label for="confirmPlayPauseButtonKey" class="form-label">Play/Pause Button</label>
+                      <select class="form-select" id="confirmPlayPauseButtonKey">
+                        <option value="PlayPause" selected>Play/Pause</option>
+                        <option value="Home">Home</option>
+                        <option value="Source">Source (input picker)</option>
+                        <option value="Online">Online (smart TV portal)</option>
+                      </select>
+                    </div>
+                  </div>
                 </div>
               </div>
-              <div class="col-md-6">
-                <div class="mb-3">
-                  <label class="form-label">State Sensors</label>
-                  <div class="form-check form-switch mb-1">
-                    <input class="form-check-input" type="checkbox" id="confirmSensorPower">
-                    <label class="form-check-label" for="confirmSensorPower">Power (TV On/Off)</label>
+              <!-- Automations tab -->
+              <div class="tab-pane fade" id="confirmAutomationsPane" role="tabpanel">
+                <div class="row">
+                  <div class="col-md-6">
+                    <div class="mb-3">
+                      <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="confirmSourceSwitches">
+                        <label class="form-check-label" for="confirmSourceSwitches">Source Switches</label>
+                      </div>
+                      <small class="text-muted">Expose each input source as a separate Switch for HomeKit automations and scenes.</small>
+                    </div>
                   </div>
-                  <div class="form-check form-switch mb-1">
-                    <input class="form-check-input" type="checkbox" id="confirmSensorAmbilight">
-                    <label class="form-check-label" for="confirmSensorAmbilight">Ambilight (Active/Inactive)</label>
-                  </div>
-                  <div class="form-check form-switch mb-1">
-                    <input class="form-check-input" type="checkbox" id="confirmSensorMute">
-                    <label class="form-check-label" for="confirmSensorMute">Muted (Yes/No)</label>
+                  <div class="col-md-6">
+                    <div class="mb-3">
+                      <label class="form-label">State Sensors</label>
+                      <div class="form-check form-switch mb-1">
+                        <input class="form-check-input" type="checkbox" id="confirmSensorPower">
+                        <label class="form-check-label" for="confirmSensorPower">Power (TV On/Off)</label>
+                      </div>
+                      <div class="form-check form-switch mb-1">
+                        <input class="form-check-input" type="checkbox" id="confirmSensorAmbilight">
+                        <label class="form-check-label" for="confirmSensorAmbilight">Ambilight (Active/Inactive)</label>
+                      </div>
+                      <div class="form-check form-switch mb-1">
+                        <input class="form-check-input" type="checkbox" id="confirmSensorMute">
+                        <label class="form-check-label" for="confirmSensorMute">Muted (Yes/No)</label>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -242,129 +254,141 @@
       <div class="alert alert-info">
         <small><i class="bi bi-info-circle"></i> You cannot edit username/password. To change authentication, delete this TV and pair it again.</small>
       </div>
+      <ul class="nav nav-tabs mb-3" id="editTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+          <button class="nav-link active" id="editGeneralTab" data-bs-toggle="tab" data-bs-target="#editGeneralPane" type="button" role="tab"><i class="bi bi-sliders me-1"></i>General</button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link" id="editRemoteTab" data-bs-toggle="tab" data-bs-target="#editRemotePane" type="button" role="tab"><i class="bi bi-dpad me-1"></i>Remote</button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link" id="editAutomationsTab" data-bs-toggle="tab" data-bs-target="#editAutomationsPane" type="button" role="tab"><i class="bi bi-gear-wide-connected me-1"></i>Automations</button>
+        </li>
+      </ul>
       <form id="editTvForm" class="needs-validation" novalidate>
-        <div class="row">
-          <!-- Left column: Connection -->
-          <div class="col-md-6">
-            <h6 class="text-muted mb-3">Connection</h6>
-            <div class="mb-3">
-              <label for="editTvName" class="form-label">TV Name</label>
-              <input type="text" class="form-control" id="editTvName" placeholder="Living Room TV" required>
-              <div class="invalid-feedback">Please provide a TV name.</div>
-            </div>
-            <div class="mb-3">
-              <label for="editTvIp" class="form-label">IP Address</label>
-              <input type="text" class="form-control" id="editTvIp" placeholder="192.168.1.100" required>
-              <div class="invalid-feedback">Please provide an IP address.</div>
-            </div>
-            <div class="mb-3">
-              <label for="editTvMac" class="form-label">MAC Address</label>
-              <div class="input-group">
-                <input type="text" class="form-control" id="editTvMac" placeholder="AA:BB:CC:DD:EE:FF" required>
-                <button class="btn btn-secondary" type="button" id="getMacBtn">
-                  <i class="bi bi-search"></i> Get MAC
-                </button>
-                <div class="invalid-feedback">Please provide a MAC address.</div>
+        <div class="tab-content">
+          <!-- General tab -->
+          <div class="tab-pane fade show active" id="editGeneralPane" role="tabpanel">
+            <div class="row">
+              <div class="col-md-6">
+                <h6 class="text-muted mb-3">Connection</h6>
+                <div class="mb-3">
+                  <label for="editTvName" class="form-label">TV Name</label>
+                  <input type="text" class="form-control" id="editTvName" placeholder="Living Room TV" required>
+                  <div class="invalid-feedback">Please provide a TV name.</div>
+                </div>
+                <div class="mb-3">
+                  <label for="editTvIp" class="form-label">IP Address</label>
+                  <input type="text" class="form-control" id="editTvIp" placeholder="192.168.1.100" required>
+                  <div class="invalid-feedback">Please provide an IP address.</div>
+                </div>
+                <div class="mb-3">
+                  <label for="editTvMac" class="form-label">MAC Address</label>
+                  <div class="input-group">
+                    <input type="text" class="form-control" id="editTvMac" placeholder="AA:BB:CC:DD:EE:FF" required>
+                    <button class="btn btn-secondary" type="button" id="getMacBtn">
+                      <i class="bi bi-search"></i> Get MAC
+                    </button>
+                    <div class="invalid-feedback">Please provide a MAC address.</div>
+                  </div>
+                </div>
+              </div>
+              <div class="col-md-6">
+                <h6 class="text-muted mb-3">Settings</h6>
+                <div class="mb-3">
+                  <label for="editAmbilightMode" class="form-label">Ambilight Mode</label>
+                  <select class="form-select" id="editAmbilightMode">
+                    <optgroup label="Follow Video">
+                      <option value="FOLLOW_VIDEO/STANDARD">Standard</option>
+                      <option value="FOLLOW_VIDEO/NATURAL">Natural</option>
+                      <option value="FOLLOW_VIDEO/VIVID">Vivid</option>
+                      <option value="FOLLOW_VIDEO/GAME">Game</option>
+                      <option value="FOLLOW_VIDEO/COMFORT">Comfort</option>
+                      <option value="FOLLOW_VIDEO/RELAX">Relax</option>
+                      <option value="FOLLOW_VIDEO/FOOTBALL">Football</option>
+                    </optgroup>
+                    <optgroup label="Follow Audio">
+                      <option value="FOLLOW_AUDIO/ENERGY_ADAPTIVE_BRIGHTNESS">Energy Brightness</option>
+                      <option value="FOLLOW_AUDIO/ENERGY_ADAPTIVE_COLORS">Energy Colors</option>
+                      <option value="FOLLOW_AUDIO/VU_METER">VU Meter</option>
+                      <option value="FOLLOW_AUDIO/SPECTRUM_ANALYZER">Spectrum</option>
+                      <option value="FOLLOW_AUDIO/PARTY">Party</option>
+                    </optgroup>
+                    <optgroup label="Other">
+                      <option value="Lounge light">Lounge Light</option>
+                    </optgroup>
+                  </select>
+                </div>
               </div>
             </div>
           </div>
-          <!-- Right column: Settings -->
-          <div class="col-md-6">
-            <h6 class="text-muted mb-3">Settings</h6>
-            <div class="mb-3">
-              <label for="editAmbilightMode" class="form-label">Ambilight Mode</label>
-              <select class="form-select" id="editAmbilightMode">
-                <optgroup label="Follow Video">
-                  <option value="FOLLOW_VIDEO/STANDARD">Standard</option>
-                  <option value="FOLLOW_VIDEO/NATURAL">Natural</option>
-                  <option value="FOLLOW_VIDEO/VIVID">Vivid</option>
-                  <option value="FOLLOW_VIDEO/GAME">Game</option>
-                  <option value="FOLLOW_VIDEO/COMFORT">Comfort</option>
-                  <option value="FOLLOW_VIDEO/RELAX">Relax</option>
-                  <option value="FOLLOW_VIDEO/FOOTBALL">Football</option>
-                </optgroup>
-                <optgroup label="Follow Audio">
-                  <option value="FOLLOW_AUDIO/ENERGY_ADAPTIVE_BRIGHTNESS">Energy Brightness</option>
-                  <option value="FOLLOW_AUDIO/ENERGY_ADAPTIVE_COLORS">Energy Colors</option>
-                  <option value="FOLLOW_AUDIO/VU_METER">VU Meter</option>
-                  <option value="FOLLOW_AUDIO/SPECTRUM_ANALYZER">Spectrum</option>
-                  <option value="FOLLOW_AUDIO/PARTY">Party</option>
-                </optgroup>
-                <optgroup label="Other">
-                  <option value="Lounge light">Lounge Light</option>
-                </optgroup>
-              </select>
-            </div>
-          </div>
-        </div>
-        <!-- Remote Control section -->
-        <div class="row mt-3">
-          <div class="col-12">
-            <h6 class="text-muted mb-3"><i class="bi bi-dpad me-1"></i>Remote Control</h6>
+          <!-- Remote tab -->
+          <div class="tab-pane fade" id="editRemotePane" role="tabpanel">
             <p class="text-muted small mb-3">Customize which TV key each HomeKit remote button sends.</p>
-          </div>
-          <div class="col-md-4">
-            <div class="mb-3">
-              <label for="editInfoButtonKey" class="form-label">Info Button</label>
-              <select class="form-select" id="editInfoButtonKey">
-                <option value="Source">Source (input picker)</option>
-                <option value="Info">Info (program details)</option>
-                <option value="Options">Options (context menu)</option>
-                <option value="Find">Find (search)</option>
-              </select>
-            </div>
-          </div>
-          <div class="col-md-4">
-            <div class="mb-3">
-              <label for="editBackButtonKey" class="form-label">Back Button</label>
-              <select class="form-select" id="editBackButtonKey">
-                <option value="Back">Back</option>
-                <option value="Home">Home</option>
-                <option value="Source">Source (input picker)</option>
-                <option value="Options">Options (context menu)</option>
-              </select>
-            </div>
-          </div>
-          <div class="col-md-4">
-            <div class="mb-3">
-              <label for="editPlayPauseButtonKey" class="form-label">Play/Pause Button</label>
-              <select class="form-select" id="editPlayPauseButtonKey">
-                <option value="PlayPause">Play/Pause</option>
-                <option value="Home">Home</option>
-                <option value="Source">Source (input picker)</option>
-                <option value="Online">Online (smart TV portal)</option>
-              </select>
-            </div>
-          </div>
-        </div>
-        <!-- Automations section -->
-        <div class="row mt-2">
-          <div class="col-12">
-            <h6 class="text-muted mb-3"><i class="bi bi-gear-wide-connected me-1"></i>Automations</h6>
-          </div>
-          <div class="col-md-6">
-            <div class="mb-3">
-              <div class="form-check form-switch">
-                <input class="form-check-input" type="checkbox" id="editSourceSwitches">
-                <label class="form-check-label" for="editSourceSwitches">Source Switches</label>
+            <div class="row">
+              <div class="col-md-4">
+                <div class="mb-3">
+                  <label for="editInfoButtonKey" class="form-label">Info Button</label>
+                  <select class="form-select" id="editInfoButtonKey">
+                    <option value="Source">Source (input picker)</option>
+                    <option value="Info">Info (program details)</option>
+                    <option value="Options">Options (context menu)</option>
+                    <option value="Find">Find (search)</option>
+                  </select>
+                </div>
               </div>
-              <small class="text-muted">Expose each input source as a separate Switch for HomeKit automations and scenes.</small>
+              <div class="col-md-4">
+                <div class="mb-3">
+                  <label for="editBackButtonKey" class="form-label">Back Button</label>
+                  <select class="form-select" id="editBackButtonKey">
+                    <option value="Back">Back</option>
+                    <option value="Home">Home</option>
+                    <option value="Source">Source (input picker)</option>
+                    <option value="Options">Options (context menu)</option>
+                  </select>
+                </div>
+              </div>
+              <div class="col-md-4">
+                <div class="mb-3">
+                  <label for="editPlayPauseButtonKey" class="form-label">Play/Pause Button</label>
+                  <select class="form-select" id="editPlayPauseButtonKey">
+                    <option value="PlayPause">Play/Pause</option>
+                    <option value="Home">Home</option>
+                    <option value="Source">Source (input picker)</option>
+                    <option value="Online">Online (smart TV portal)</option>
+                  </select>
+                </div>
+              </div>
             </div>
           </div>
-          <div class="col-md-6">
-            <div class="mb-3">
-              <label class="form-label">State Sensors</label>
-              <div class="form-check form-switch mb-1">
-                <input class="form-check-input" type="checkbox" id="editSensorPower">
-                <label class="form-check-label" for="editSensorPower">Power (TV On/Off)</label>
+          <!-- Automations tab -->
+          <div class="tab-pane fade" id="editAutomationsPane" role="tabpanel">
+            <div class="row">
+              <div class="col-md-6">
+                <div class="mb-3">
+                  <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="editSourceSwitches">
+                    <label class="form-check-label" for="editSourceSwitches">Source Switches</label>
+                  </div>
+                  <small class="text-muted">Expose each input source as a separate Switch for HomeKit automations and scenes.</small>
+                </div>
               </div>
-              <div class="form-check form-switch mb-1">
-                <input class="form-check-input" type="checkbox" id="editSensorAmbilight">
-                <label class="form-check-label" for="editSensorAmbilight">Ambilight (Active/Inactive)</label>
-              </div>
-              <div class="form-check form-switch mb-1">
-                <input class="form-check-input" type="checkbox" id="editSensorMute">
-                <label class="form-check-label" for="editSensorMute">Muted (Yes/No)</label>
+              <div class="col-md-6">
+                <div class="mb-3">
+                  <label class="form-label">State Sensors</label>
+                  <div class="form-check form-switch mb-1">
+                    <input class="form-check-input" type="checkbox" id="editSensorPower">
+                    <label class="form-check-label" for="editSensorPower">Power (TV On/Off)</label>
+                  </div>
+                  <div class="form-check form-switch mb-1">
+                    <input class="form-check-input" type="checkbox" id="editSensorAmbilight">
+                    <label class="form-check-label" for="editSensorAmbilight">Ambilight (Active/Inactive)</label>
+                  </div>
+                  <div class="form-check form-switch mb-1">
+                    <input class="form-check-input" type="checkbox" id="editSensorMute">
+                    <label class="form-check-label" for="editSensorMute">Muted (Yes/No)</label>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

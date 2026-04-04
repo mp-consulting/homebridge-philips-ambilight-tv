@@ -405,6 +405,11 @@
     $('editSensorPower').checked = editSensors.includes('power');
     $('editSensorAmbilight').checked = editSensors.includes('ambilight');
     $('editSensorMute').checked = editSensors.includes('mute');
+    // Reset to General tab
+    const generalTab = $('editGeneralTab');
+    if (generalTab) {
+      new bootstrap.Tab(generalTab).show();
+    }
     showScreen('editScreen');
   };
 
