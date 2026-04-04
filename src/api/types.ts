@@ -334,6 +334,7 @@ export interface TVDeviceConfig {
   infoButtonKey?: RemoteKey;
   backButtonKey?: RemoteKey;
   playPauseButtonKey?: RemoteKey;
+  sourceSwitches?: boolean;
 }
 
 export interface InputConfig {

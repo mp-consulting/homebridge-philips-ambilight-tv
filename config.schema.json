@@ -168,6 +168,12 @@
                 }
               }
             },
+            "sourceSwitches": {
+              "title": "Source Switches",
+              "type": "boolean",
+              "default": false,
+              "description": "Expose each input source as a separate Switch accessory for use in HomeKit automations and scenes."
+            },
             "stateSensors": {
               "title": "State Sensors",
               "type": "array",
@@ -246,6 +252,7 @@
             "devices[].infoButtonKey",
             "devices[].backButtonKey",
             "devices[].playPauseButtonKey",
+            "devices[].sourceSwitches",
             {
               "key": "devices[].stateSensors",
               "type": "checkboxes",

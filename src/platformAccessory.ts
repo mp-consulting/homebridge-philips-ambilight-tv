@@ -7,6 +7,7 @@ import type { TVDeviceConfig, AmbilightCached, RemoteKey } from './api/types.js'
 import { AmbilightService } from './services/AmbilightService.js';
 import { InputSourceManager } from './services/InputSourceManager.js';
 import { StatePollManager } from './services/StatePollManager.js';
+import { SourceSwitchService } from './services/SourceSwitchService.js';
 import { StateSensorService } from './services/StateSensorService.js';
 
 // ============================================================================
@@ -21,6 +22,7 @@ export class PhilipsAmbilightTVAccessory {
 
   private readonly ambilightService: AmbilightService;
   private readonly inputSourceManager: InputSourceManager;
+  private readonly sourceSwitchService: SourceSwitchService;
   private readonly statePollManager: StatePollManager;
   private readonly stateSensorService: StateSensorService;
 
@@ -63,6 +65,14 @@ export class PhilipsAmbilightTVAccessory {
       log: (level, msg) => this.log(level, msg),
     });
 
+    this.sourceSwitchService = new SourceSwitchService({
+      Service: this.Service,
+      Characteristic: this.Characteristic,
+      tvClient: this.tvClient,
+      communicationError: () => this.communicationError(),
+      log: (level, msg) => this.log(level, msg),
+    });
+
     this.stateSensorService = new StateSensorService({
       Service: this.Service,
       Characteristic: this.Characteristic,
@@ -76,7 +86,10 @@ export class PhilipsAmbilightTVAccessory {
         onPowerChange: (isOn) => this.onPowerChange(isOn),
         onAmbilightUpdate: (style, fallback) => this.onAmbilightUpdate(style, fallback),
         onVolumeUpdate: (muted) => this.onMuteChange(muted),
-        onInputUpdate: (app) => this.inputSourceManager.updateFromPoll(app, this.tvService),
+        onInputUpdate: (app) => {
+          this.inputSourceManager.updateFromPoll(app, this.tvService);
+          this.sourceSwitchService.updateFromPoll(app);
+        },
         onAppsReady: () => this.inputSourceManager.fetchAppsFromTV(),
       },
       (level, msg) => this.log(level, msg),
@@ -88,6 +101,15 @@ export class PhilipsAmbilightTVAccessory {
     this.speakerService = this.configureSpeakerService();
     this.ambilightService.configureService(this.accessory, this.tvService);
     this.inputSourceManager.configureInputSources(this.tvService);
+
+    // Configure source switches (individual Switch services for HomeKit automations)
+    if (this.config.sourceSwitches) {
+      const tvName = sanitizeForHomeKit(this.config.name);
+      const sources = this.inputSourceManager.getSources().map(s => ({
+        id: s.id, name: s.name, type: s.type, channelListId: s.channelListId,
+      }));
+      this.sourceSwitchService.configureSwitches(this.accessory, sources, tvName);
+    }
 
     // Configure state sensors (MotionSensor services for HomeKit automations)
     const sensorTypes = this.config.stateSensors ?? [];
@@ -246,6 +268,7 @@ export class PhilipsAmbilightTVAccessory {
     if (!isOn) {
       this.stateSensorService.update('ambilight', false);
       this.stateSensorService.update('mute', false);
+      this.sourceSwitchService.resetAll();
     }
     this.log('debug', `Power state updated: ${isOn ? 'ON' : 'OFF'}`);
   }
