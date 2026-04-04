@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.2] - 2026-04-04
+
+### Fixed
+
+- **Wake-on-LAN**: Return success optimistically after sending WoL packets so the TV can be turned on even when fully off (API unreachable); the polling service reconciles the actual state once the TV boots
+
 ## [1.1.1] - 2026-04-04
 
 ### Fixed
