@@ -654,6 +654,9 @@ export class InputSourceManager {
       case 'source':
         return this.deps.tvClient.setSource(input.id);
       case 'channel':
+        // Activate the TV tuner first to avoid black screen when switching
+        // from an app or HDMI source directly to a channel
+        await this.deps.tvClient.setSource(WATCH_TV_URI);
         return this.deps.tvClient.setChannel(parseInt(input.id, 10), input.channelListId);
     }
   }
