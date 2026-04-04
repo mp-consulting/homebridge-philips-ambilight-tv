@@ -33,7 +33,6 @@ import type {
 // CONSTANTS
 // ============================================================================
 
-const WOL_WAKE_DELAY_MS = 1000;
 const DEFAULT_GET_TIMEOUT_MS = 2000;
 const DEFAULT_POST_TIMEOUT_MS = 3000;
 
@@ -304,19 +303,24 @@ export class PhilipsTVClient {
 
   async setPowerState(on: boolean): Promise<boolean> {
     if (on) {
-      await this.tryWakeOnLan();
+      // Send WoL first — if the TV is fully off, the API POST will fail
+      // because the network stack isn't up yet. Return success optimistically
+      // after WoL; the polling service will reconcile the actual state.
+      const wolSent = await this.tryWakeOnLan();
+      const result = await this.post('/powerstate', { powerstate: 'On' });
+      return result !== null || wolSent;
     }
 
-    const result = await this.post('/powerstate', { powerstate: on ? 'On' : 'Standby' });
+    const result = await this.post('/powerstate', { powerstate: 'Standby' });
     return result !== null;
   }
 
-  private async tryWakeOnLan(): Promise<void> {
+  private async tryWakeOnLan(): Promise<boolean> {
     try {
       await sendWakeOnLan(this.config.mac);
-      await this.sleep(WOL_WAKE_DELAY_MS);
+      return true;
     } catch {
-      // WOL failed, continue with API call
+      return false;
     }
   }
 

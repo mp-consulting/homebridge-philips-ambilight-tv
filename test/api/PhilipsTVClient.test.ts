@@ -113,6 +113,28 @@ describe('PhilipsTVClient', () => {
       expect(mockWol).not.toHaveBeenCalled();
     });
 
+    it('should return true when WOL succeeds but API POST fails', async () => {
+      mockFetch.mockReturnValue(mockResponse(null));
+
+      const promise = client.setPowerState(true);
+      await vi.runAllTimersAsync();
+      const result = await promise;
+
+      expect(mockWol).toHaveBeenCalled();
+      expect(result).toBe(true);
+    });
+
+    it('should return false when both WOL and API POST fail', async () => {
+      mockWol.mockRejectedValue(new Error('WOL failed'));
+      mockFetch.mockRejectedValue(new Error('ETIMEDOUT'));
+
+      const promise = client.setPowerState(true);
+      await vi.runAllTimersAsync();
+      const result = await promise;
+
+      expect(result).toBe(false);
+    });
+
     it('should POST correct powerstate body', async () => {
       mockFetch.mockReturnValue(mockResponse({}));
 
