@@ -419,13 +419,7 @@ export class PhilipsTVClient {
 
   async getCurrentActivity(): Promise<string | null> {
     const result = await this.get<{ component?: { packageName?: string } }>('/activities/current');
-    const packageName = result?.component?.packageName ?? null;
-    // The TV tuner app reports as org.droidtv.playtv but the Watch TV source
-    // uses the content URI as its ID — map it so polling detects the active source
-    if (packageName === PLAYTV_COMPONENT.packageName) {
-      return WATCH_TV_URI;
-    }
-    return packageName;
+    return result?.component?.packageName ?? null;
   }
 
   private async launchIntent(intent: ApplicationIntent): Promise<boolean> {
