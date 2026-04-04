@@ -649,8 +649,8 @@
     li.querySelector('.show-btn').addEventListener('click', async (e) => {
       e.stopPropagation();
       source.visible = true;
-      await saveSourcesConfig();
       renderSourcesList();
+      await saveSourcesConfig();
     });
 
     return li;
@@ -675,8 +675,8 @@
     li.querySelector('.hide-btn').addEventListener('click', async (e) => {
       e.stopPropagation();
       source.visible = false;
-      await saveSourcesConfig();
       renderSourcesList();
+      await saveSourcesConfig();
     });
 
     return li;
