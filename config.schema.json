@@ -103,6 +103,30 @@
                 { "title": "Find (search)", "enum": ["Find"] }
               ]
             },
+            "backButtonKey": {
+              "title": "Back Button Key",
+              "type": "string",
+              "default": "Back",
+              "description": "The TV key that the HomeKit remote's back button sends.",
+              "oneOf": [
+                { "title": "Back", "enum": ["Back"] },
+                { "title": "Home", "enum": ["Home"] },
+                { "title": "Source (input picker)", "enum": ["Source"] },
+                { "title": "Options (context menu)", "enum": ["Options"] }
+              ]
+            },
+            "playPauseButtonKey": {
+              "title": "Play/Pause Button Key",
+              "type": "string",
+              "default": "PlayPause",
+              "description": "The TV key that the HomeKit remote's play/pause button sends.",
+              "oneOf": [
+                { "title": "Play/Pause", "enum": ["PlayPause"] },
+                { "title": "Home", "enum": ["Home"] },
+                { "title": "Source (input picker)", "enum": ["Source"] },
+                { "title": "Online (smart TV portal)", "enum": ["Online"] }
+              ]
+            },
             "inputs": {
               "title": "Custom Input Sources",
               "type": "array",
@@ -220,6 +244,8 @@
             "devices[].wakeOnLanEnabled",
             "devices[].ambilightMode",
             "devices[].infoButtonKey",
+            "devices[].backButtonKey",
+            "devices[].playPauseButtonKey",
             {
               "key": "devices[].stateSensors",
               "type": "checkboxes",

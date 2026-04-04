@@ -57,6 +57,8 @@ export class PhilipsAmbilightTVAccessory {
       userInputs: this.config.inputs,
       sourceConfigs: this.config.sources,
       infoButtonKey: this.config.infoButtonKey,
+      backButtonKey: this.config.backButtonKey,
+      playPauseButtonKey: this.config.playPauseButtonKey,
       communicationError: () => this.communicationError(),
       log: (level, msg) => this.log(level, msg),
     });

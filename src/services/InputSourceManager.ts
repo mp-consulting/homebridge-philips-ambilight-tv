@@ -47,9 +47,7 @@ const HOMEKIT_TO_TV_KEY_BASE: Readonly<Record<number, RemoteKey>> = {
   6: 'CursorLeft',
   7: 'CursorRight',
   8: 'Confirm',
-  9: 'Back',
   10: 'Home',
-  11: 'PlayPause',
 };
 
 // ============================================================================
@@ -102,6 +100,8 @@ export interface InputSourceManagerDeps {
   readonly userInputs?: InputConfig[];
   readonly sourceConfigs?: SourceConfig[];
   readonly infoButtonKey?: RemoteKey;
+  readonly backButtonKey?: RemoteKey;
+  readonly playPauseButtonKey?: RemoteKey;
   readonly communicationError: () => HapStatusError;
   readonly log: (level: 'debug' | 'info' | 'warn' | 'error', message: string) => void;
 }
@@ -125,7 +125,12 @@ export class InputSourceManager {
   private readonly inputCachePath: string;
 
   constructor(private readonly deps: InputSourceManagerDeps) {
-    this.remoteKeyMap = { ...HOMEKIT_TO_TV_KEY_BASE, 15: deps.infoButtonKey ?? 'Source' };
+    this.remoteKeyMap = {
+      ...HOMEKIT_TO_TV_KEY_BASE,
+      9: deps.backButtonKey ?? 'Back',
+      11: deps.playPauseButtonKey ?? 'PlayPause',
+      15: deps.infoButtonKey ?? 'Source',
+    };
     this.sourceConfigMap = new Map(
       (deps.sourceConfigs ?? []).map(s => [s.id, s]),
     );
