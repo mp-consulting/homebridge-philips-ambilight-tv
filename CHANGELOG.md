@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.0] - 2026-04-04
+
+### Added
+
+- **Input source switches**: Expose input sources as Switch accessories for HomeKit automations
+- **Remote button mappings**: Add configurable back and play/pause remote button mappings
+- **Custom UI**: Add remote key and source switch settings to the configuration UI with tabbed layout
+
+### Fixed
+
+- **Channel switching**: Activate TV tuner before switching channels to prevent black screen
+
+### Changed
+
+- **Node.js**: Add Node.js 24.x support to CI matrix and standardize engines to `^20.18.0 || ^22.10.0 || ^24.0.0`
+- **Assets**: Convert ambilight-tv image from JPG to WebP
+
 ## [1.0.23] - 2026-03-30
 
 ### Fixed
