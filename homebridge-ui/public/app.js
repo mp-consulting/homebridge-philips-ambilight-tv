@@ -398,6 +398,9 @@
     $('editTvMac').value = tv.mac || '';
     $('editAmbilightMode').value = tv.ambilightMode || 'FOLLOW_VIDEO/NATURAL';
     $('editInfoButtonKey').value = tv.infoButtonKey || 'Source';
+    $('editBackButtonKey').value = tv.backButtonKey || 'Back';
+    $('editPlayPauseButtonKey').value = tv.playPauseButtonKey || 'PlayPause';
+    $('editSourceSwitches').checked = tv.sourceSwitches || false;
     const editSensors = tv.stateSensors || [];
     $('editSensorPower').checked = editSensors.includes('power');
     $('editSensorAmbilight').checked = editSensors.includes('ambilight');
@@ -432,6 +435,9 @@
         mac: $('editTvMac').value.trim(),
         ambilightMode: $('editAmbilightMode').value,
         infoButtonKey: $('editInfoButtonKey').value,
+        backButtonKey: $('editBackButtonKey').value,
+        playPauseButtonKey: $('editPlayPauseButtonKey').value,
+        sourceSwitches: $('editSourceSwitches').checked,
         stateSensors: editStateSensors,
       });
       homebridge.toast.success('TV configuration updated');
@@ -476,6 +482,9 @@
     $('confirmTvMac').value = state.currentConfig.mac || '';
     $('confirmAmbilightMode').value = state.currentConfig.ambilightMode || 'FOLLOW_VIDEO/NATURAL';
     $('confirmInfoButtonKey').value = state.currentConfig.infoButtonKey || 'Source';
+    $('confirmBackButtonKey').value = state.currentConfig.backButtonKey || 'Back';
+    $('confirmPlayPauseButtonKey').value = state.currentConfig.playPauseButtonKey || 'PlayPause';
+    $('confirmSourceSwitches').checked = state.currentConfig.sourceSwitches || false;
     const confirmSensors = state.currentConfig.stateSensors || [];
     $('confirmSensorPower').checked = confirmSensors.includes('power');
     $('confirmSensorAmbilight').checked = confirmSensors.includes('ambilight');
@@ -499,6 +508,9 @@
     state.currentConfig.mac = $('confirmTvMac').value.trim();
     state.currentConfig.ambilightMode = $('confirmAmbilightMode').value;
     state.currentConfig.infoButtonKey = $('confirmInfoButtonKey').value;
+    state.currentConfig.backButtonKey = $('confirmBackButtonKey').value;
+    state.currentConfig.playPauseButtonKey = $('confirmPlayPauseButtonKey').value;
+    state.currentConfig.sourceSwitches = $('confirmSourceSwitches').checked;
     const confirmStateSensors = [];
     if ($('confirmSensorPower').checked) {
       confirmStateSensors.push('power');

@@ -150,6 +150,31 @@
                   </select>
                 </div>
                 <div class="mb-3">
+                  <label for="confirmBackButtonKey" class="form-label">Back Button Key</label>
+                  <select class="form-select" id="confirmBackButtonKey">
+                    <option value="Back" selected>Back</option>
+                    <option value="Home">Home</option>
+                    <option value="Source">Source (input picker)</option>
+                    <option value="Options">Options (context menu)</option>
+                  </select>
+                </div>
+                <div class="mb-3">
+                  <label for="confirmPlayPauseButtonKey" class="form-label">Play/Pause Button Key</label>
+                  <select class="form-select" id="confirmPlayPauseButtonKey">
+                    <option value="PlayPause" selected>Play/Pause</option>
+                    <option value="Home">Home</option>
+                    <option value="Source">Source (input picker)</option>
+                    <option value="Online">Online (smart TV portal)</option>
+                  </select>
+                </div>
+                <div class="mb-3">
+                  <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="confirmSourceSwitches">
+                    <label class="form-check-label" for="confirmSourceSwitches">Source Switches (for automations)</label>
+                  </div>
+                  <small class="text-muted">Expose each input source as a separate Switch accessory for HomeKit automations and scenes.</small>
+                </div>
+                <div class="mb-3">
                   <label class="form-label">State Sensors</label>
                   <div class="form-check form-switch mb-1">
                     <input class="form-check-input" type="checkbox" id="confirmSensorPower">
@@ -255,6 +280,31 @@
                 <option value="Options">Options (context menu)</option>
                 <option value="Find">Find (search)</option>
               </select>
+            </div>
+            <div class="mb-3">
+              <label for="editBackButtonKey" class="form-label">Back Button Key</label>
+              <select class="form-select" id="editBackButtonKey">
+                <option value="Back">Back</option>
+                <option value="Home">Home</option>
+                <option value="Source">Source (input picker)</option>
+                <option value="Options">Options (context menu)</option>
+              </select>
+            </div>
+            <div class="mb-3">
+              <label for="editPlayPauseButtonKey" class="form-label">Play/Pause Button Key</label>
+              <select class="form-select" id="editPlayPauseButtonKey">
+                <option value="PlayPause">Play/Pause</option>
+                <option value="Home">Home</option>
+                <option value="Source">Source (input picker)</option>
+                <option value="Online">Online (smart TV portal)</option>
+              </select>
+            </div>
+            <div class="mb-3">
+              <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" id="editSourceSwitches">
+                <label class="form-check-label" for="editSourceSwitches">Source Switches (for automations)</label>
+              </div>
+              <small class="text-muted">Expose each input source as a separate Switch accessory for HomeKit automations and scenes.</small>
             </div>
             <div class="mb-3">
               <label class="form-label">State Sensors</label>
