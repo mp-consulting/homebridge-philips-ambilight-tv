@@ -1,6 +1,14 @@
 import type { Characteristic, CharacteristicValue, HapStatusError, PlatformAccessory, Service } from 'homebridge';
 
 import type { PhilipsTVClient } from '../api/PhilipsTVClient.js';
+import { WATCH_TV_URI } from '../api/PhilipsTVClient.js';
+
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+
+/** Delay (ms) after activating the TV tuner before switching to a channel */
+const TUNER_ACTIVATION_DELAY_MS = 1500;
 
 // ============================================================================
 // TYPES
@@ -69,11 +77,11 @@ export class SourceSwitchService {
       let service = accessory.getServiceById(Svc.Switch, subtype);
       if (!service) {
         service = accessory.addService(Svc.Switch, displayName, subtype);
+        service.addOptionalCharacteristic(Char.ConfiguredName);
+        service.setCharacteristic(Char.ConfiguredName, source.name);
       }
 
       service.setCharacteristic(Char.Name, displayName);
-      service.addOptionalCharacteristic(Char.ConfiguredName);
-      service.setCharacteristic(Char.ConfiguredName, displayName);
 
       service.getCharacteristic(Char.On)
         .onGet(() => this.handleGetSwitch(source.id))
@@ -186,7 +194,8 @@ export class SourceSwitchService {
       case 'source':
         return this.deps.tvClient.setSource(sw.id);
       case 'channel': {
-        await this.deps.tvClient.setSource('content://android.media.tv/channel');
+        await this.deps.tvClient.setSource(WATCH_TV_URI);
+        await new Promise(resolve => setTimeout(resolve, TUNER_ACTIVATION_DELAY_MS));
         return this.deps.tvClient.setChannel(parseInt(sw.id, 10), sw.channelListId);
       }
     }

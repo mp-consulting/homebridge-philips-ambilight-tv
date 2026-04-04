@@ -105,7 +105,7 @@ export class PhilipsAmbilightTVAccessory {
     // Configure source switches (individual Switch services for HomeKit automations)
     if (this.config.sourceSwitches) {
       const tvName = sanitizeForHomeKit(this.config.name);
-      const sources = this.inputSourceManager.getSources().map(s => ({
+      const sources = this.inputSourceManager.getVisibleSources().map(s => ({
         id: s.id, name: s.name, type: s.type, channelListId: s.channelListId,
       }));
       this.sourceSwitchService.configureSwitches(this.accessory, sources, tvName);

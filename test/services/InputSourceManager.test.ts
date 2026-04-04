@@ -330,7 +330,9 @@ describe('InputSourceManager', () => {
       manager.configureInputSources(tvService as never);
 
       const channelSource = manager.getSources().find(s => s.name === 'BBC One')!;
-      await manager.handleSetInput(channelSource.identifier);
+      const promise = manager.handleSetInput(channelSource.identifier);
+      await vi.advanceTimersByTimeAsync(1500);
+      await promise;
 
       // Should call setSource (Watch TV) first, then setChannel
       expect(deps.tvClient.setSource).toHaveBeenCalledWith('content://android.media.tv/channel');

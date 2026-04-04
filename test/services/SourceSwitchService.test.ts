@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { SourceSwitchService } from '../../src/services/SourceSwitchService.js';
 import type { SourceSwitchDeps } from '../../src/services/SourceSwitchService.js';
+import { WATCH_TV_URI } from '../../src/api/PhilipsTVClient.js';
 
 // ============================================================================
 // MOCKS
@@ -182,9 +183,11 @@ describe('SourceSwitchService', () => {
       const onChar = channelSwitch.getCharacteristic({ UUID: 'on' });
       const onSetHandler = onChar.onSet.mock.calls[0][0] as (v: unknown) => Promise<void>;
 
-      await onSetHandler(true);
+      const promise = onSetHandler(true);
+      await vi.advanceTimersByTimeAsync(1500);
+      await promise;
 
-      expect(deps.tvClient.setSource).toHaveBeenCalledWith('content://android.media.tv/channel');
+      expect(deps.tvClient.setSource).toHaveBeenCalledWith(WATCH_TV_URI);
       expect(deps.tvClient.setChannel).toHaveBeenCalledWith(42, 'allcab');
     });
   });
