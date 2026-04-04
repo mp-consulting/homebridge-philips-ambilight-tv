@@ -23,9 +23,6 @@ const TLV_ELEMENT_END = 0x00;
 /** Number of static sources (Watch TV + HDMI 1-4) */
 const STATIC_SOURCE_COUNT = 1 + Object.keys(HDMI_SOURCES).length;
 
-/** Delay (ms) after activating the TV tuner before switching to a channel */
-const TUNER_ACTIVATION_DELAY_MS = 1500;
-
 /** System/launcher packages to exclude from auto-discovered apps */
 const EXCLUDED_PACKAGES = new Set([
   'com.google.android.tvlauncher',
@@ -667,12 +664,14 @@ export class InputSourceManager {
       case 'app':
         return this.deps.tvClient.launchApplication(input.id);
       case 'source':
+        if (input.id === WATCH_TV_URI) {
+          return this.deps.tvClient.launchWatchTV();
+        }
         return this.deps.tvClient.setSource(input.id);
       case 'channel':
         // Activate the TV tuner first to avoid black screen when switching
         // from an app or HDMI source directly to a channel
-        await this.deps.tvClient.setSource(WATCH_TV_URI);
-        await new Promise(resolve => setTimeout(resolve, TUNER_ACTIVATION_DELAY_MS));
+        await this.deps.tvClient.launchWatchTV();
         return this.deps.tvClient.setChannel(parseInt(input.id, 10), input.channelListId);
     }
   }

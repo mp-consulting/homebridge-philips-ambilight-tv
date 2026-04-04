@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { SourceSwitchService } from '../../src/services/SourceSwitchService.js';
 import type { SourceSwitchDeps } from '../../src/services/SourceSwitchService.js';
-import { WATCH_TV_URI } from '../../src/api/PhilipsTVClient.js';
 
 // ============================================================================
 // MOCKS
@@ -47,6 +46,8 @@ function createMockDeps(): SourceSwitchDeps {
       launchApplication: vi.fn().mockResolvedValue(true),
       setSource: vi.fn().mockResolvedValue(true),
       setChannel: vi.fn().mockResolvedValue(true),
+      sendKey: vi.fn().mockResolvedValue(true),
+      launchWatchTV: vi.fn().mockResolvedValue(true),
     } as never,
     communicationError: () => new Error('comm error') as never,
     log: vi.fn(),
@@ -183,11 +184,9 @@ describe('SourceSwitchService', () => {
       const onChar = channelSwitch.getCharacteristic({ UUID: 'on' });
       const onSetHandler = onChar.onSet.mock.calls[0][0] as (v: unknown) => Promise<void>;
 
-      const promise = onSetHandler(true);
-      await vi.advanceTimersByTimeAsync(1500);
-      await promise;
+      await onSetHandler(true);
 
-      expect(deps.tvClient.setSource).toHaveBeenCalledWith(WATCH_TV_URI);
+      expect(deps.tvClient.launchWatchTV).toHaveBeenCalled();
       expect(deps.tvClient.setChannel).toHaveBeenCalledWith(42, 'allcab');
     });
   });

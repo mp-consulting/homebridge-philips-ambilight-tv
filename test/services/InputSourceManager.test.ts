@@ -122,6 +122,7 @@ function createMockDeps(overrides?: Partial<InputSourceManagerDeps>): InputSourc
       setSource: vi.fn().mockResolvedValue(true),
       setChannel: vi.fn().mockResolvedValue(true),
       sendKey: vi.fn().mockResolvedValue(true),
+      launchWatchTV: vi.fn().mockResolvedValue(true),
     } as never,
     accessory: accessory as never,
     storagePath: '/tmp/test',
@@ -318,7 +319,7 @@ describe('InputSourceManager', () => {
       // Get the actual identifier for Watch TV (assigned dynamically)
       const watchTV = manager.getSources().find(s => s.name === 'Watch TV')!;
       await manager.handleSetInput(watchTV.identifier);
-      expect(deps.tvClient.setSource).toHaveBeenCalled();
+      expect(deps.tvClient.launchWatchTV).toHaveBeenCalled();
     });
 
     it('should activate TV tuner before switching to a channel', async () => {
@@ -330,18 +331,16 @@ describe('InputSourceManager', () => {
       manager.configureInputSources(tvService as never);
 
       const channelSource = manager.getSources().find(s => s.name === 'BBC One')!;
-      const promise = manager.handleSetInput(channelSource.identifier);
-      await vi.advanceTimersByTimeAsync(1500);
-      await promise;
+      await manager.handleSetInput(channelSource.identifier);
 
-      // Should call setSource (Watch TV) first, then setChannel
-      expect(deps.tvClient.setSource).toHaveBeenCalledWith('content://android.media.tv/channel');
+      // Should call launchWatchTV() first, then setChannel
+      expect(deps.tvClient.launchWatchTV).toHaveBeenCalled();
       expect(deps.tvClient.setChannel).toHaveBeenCalledWith(42, undefined);
 
-      // setSource should be called before setChannel
-      const setSourceOrder = (deps.tvClient.setSource as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0];
+      // launchWatchTV should be called before setChannel
+      const launchOrder = (deps.tvClient.launchWatchTV as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0];
       const setChannelOrder = (deps.tvClient.setChannel as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0];
-      expect(setSourceOrder).toBeLessThan(setChannelOrder);
+      expect(launchOrder).toBeLessThan(setChannelOrder);
     });
 
     it('should throw for unknown identifier', async () => {

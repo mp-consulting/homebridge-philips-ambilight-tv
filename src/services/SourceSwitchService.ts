@@ -4,13 +4,6 @@ import type { PhilipsTVClient } from '../api/PhilipsTVClient.js';
 import { WATCH_TV_URI } from '../api/PhilipsTVClient.js';
 
 // ============================================================================
-// CONSTANTS
-// ============================================================================
-
-/** Delay (ms) after activating the TV tuner before switching to a channel */
-const TUNER_ACTIVATION_DELAY_MS = 1500;
-
-// ============================================================================
 // TYPES
 // ============================================================================
 
@@ -192,10 +185,12 @@ export class SourceSwitchService {
       case 'app':
         return this.deps.tvClient.launchApplication(sw.id);
       case 'source':
+        if (sw.id === WATCH_TV_URI) {
+          return this.deps.tvClient.launchWatchTV();
+        }
         return this.deps.tvClient.setSource(sw.id);
       case 'channel': {
-        await this.deps.tvClient.setSource(WATCH_TV_URI);
-        await new Promise(resolve => setTimeout(resolve, TUNER_ACTIVATION_DELAY_MS));
+        await this.deps.tvClient.launchWatchTV();
         return this.deps.tvClient.setChannel(parseInt(sw.id, 10), sw.channelListId);
       }
     }
