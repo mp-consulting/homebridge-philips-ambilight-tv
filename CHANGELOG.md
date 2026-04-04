@@ -12,11 +12,8 @@ All notable changes to this project will be documented in this file.
 
 - **Source switch naming**: Switches now use the source name only (e.g. "Netflix") instead of prefixing with the TV model name (e.g. "43PUS7303 12 Netflix")
 - **Source switch rename persistence**: User-renamed switches no longer revert to default names after Homebridge restarts or plugin updates
-- **Channel switching black screen**: Add 1.5s delay after activating the TV tuner before switching to a channel, giving the TV time to complete the tuner switch
-
-### Changed
-
-- **Source switch internals**: Use `WATCH_TV_URI` constant instead of hardcoded string for TV tuner activation
+- **Watch TV / channel switching**: Use `WatchTV` remote key to activate the TV tuner instead of launching an intent with `content://android.media.tv/channel`, which incorrectly opened the TV Guide instead of live TV
+- **Watch TV source detection**: Polling now correctly detects "Watch TV" as the active source by mapping the `org.droidtv.playtv` package name to the Watch TV input
 
 ## [1.1.2] - 2026-04-04
 
