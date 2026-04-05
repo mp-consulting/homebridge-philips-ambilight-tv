@@ -123,6 +123,7 @@ function createMockDeps(overrides?: Partial<InputSourceManagerDeps>): InputSourc
       setChannel: vi.fn().mockResolvedValue(true),
       sendKey: vi.fn().mockResolvedValue(true),
       launchWatchTV: vi.fn().mockResolvedValue(true),
+      launchHome: vi.fn().mockResolvedValue(true),
     } as never,
     accessory: accessory as never,
     storagePath: '/tmp/test',
@@ -155,7 +156,7 @@ describe('InputSourceManager', () => {
   // ==========================================================================
 
   describe('configureInputSources', () => {
-    it('should create static sources (Watch TV + HDMI 1-4)', () => {
+    it('should create static sources (Watch TV + Home + HDMI 1-4)', () => {
       const deps = createMockDeps();
       const manager = new InputSourceManager(deps);
       const tvService = createMockService();
@@ -163,8 +164,9 @@ describe('InputSourceManager', () => {
       manager.configureInputSources(tvService as never);
 
       const sources = manager.getSources();
-      expect(sources.length).toBe(5); // Watch TV + HDMI 1-4
+      expect(sources.length).toBe(6); // Watch TV + Home + HDMI 1-4
       expect(sources[0].name).toBe('Watch TV');
+      expect(sources[1].name).toBe('Home');
     });
 
     it('should add user-configured inputs after static sources', () => {
@@ -180,9 +182,9 @@ describe('InputSourceManager', () => {
       manager.configureInputSources(tvService as never);
 
       const sources = manager.getSources();
-      expect(sources.length).toBe(7); // 5 static + 2 apps
-      expect(sources[5].name).toBe('Netflix');
-      expect(sources[6].name).toBe('YouTube');
+      expect(sources.length).toBe(8); // 6 static + 2 apps
+      expect(sources[6].name).toBe('Netflix');
+      expect(sources[7].name).toBe('YouTube');
     });
 
     it('should load cached inputs from disk', () => {
@@ -198,9 +200,9 @@ describe('InputSourceManager', () => {
       manager.configureInputSources(tvService as never);
 
       const sources = manager.getSources();
-      // 5 static + 1 cached app
-      expect(sources.length).toBe(6);
-      expect(sources[5].id).toBe('com.netflix.ninja');
+      // 6 static + 1 cached app
+      expect(sources.length).toBe(7);
+      expect(sources[6].id).toBe('com.netflix.ninja');
     });
 
     it('should respect MAX_INPUT_SOURCES limit', () => {
@@ -216,7 +218,7 @@ describe('InputSourceManager', () => {
 
       manager.configureInputSources(tvService as never);
 
-      // Should be capped at 30 (5 static + 25 apps)
+      // Should be capped at 30 (6 static + 24 apps)
       expect(manager.getSources().length).toBeLessThanOrEqual(30);
     });
   });
@@ -240,7 +242,7 @@ describe('InputSourceManager', () => {
       await manager.fetchAppsFromTV();
 
       const sources = manager.getSources();
-      expect(sources.length).toBe(7); // 5 static + 2 apps
+      expect(sources.length).toBe(8); // 6 static + 2 apps
     });
 
     it('should skip discovery when user has configured inputs', async () => {
@@ -320,6 +322,17 @@ describe('InputSourceManager', () => {
       const watchTV = manager.getSources().find(s => s.name === 'Watch TV')!;
       await manager.handleSetInput(watchTV.identifier);
       expect(deps.tvClient.launchWatchTV).toHaveBeenCalled();
+    });
+
+    it('should switch to Home screen via sendKey', async () => {
+      const deps = createMockDeps();
+      const manager = new InputSourceManager(deps);
+      const tvService = createMockService();
+      manager.configureInputSources(tvService as never);
+
+      const home = manager.getSources().find(s => s.name === 'Home')!;
+      await manager.handleSetInput(home.identifier);
+      expect(deps.tvClient.launchHome).toHaveBeenCalled();
     });
 
     it('should activate TV tuner before switching to a channel', async () => {

@@ -48,6 +48,7 @@ function createMockDeps(): SourceSwitchDeps {
       setChannel: vi.fn().mockResolvedValue(true),
       sendKey: vi.fn().mockResolvedValue(true),
       launchWatchTV: vi.fn().mockResolvedValue(true),
+      launchHome: vi.fn().mockResolvedValue(true),
     } as never,
     communicationError: () => new Error('comm error') as never,
     log: vi.fn(),

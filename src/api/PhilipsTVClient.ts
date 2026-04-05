@@ -72,6 +72,9 @@ export const HDMI_SOURCES: Readonly<Record<string, string>> = {
 /** Watch TV source URI */
 export const WATCH_TV_URI = 'content://android.media.tv/channel';
 
+/** Home screen virtual source URI */
+export const HOME_URI = 'virtual:home';
+
 /** Intent action for source selection */
 const SOURCE_SELECT_ACTION = 'org.droidtv.playtv.SELECTURI';
 
@@ -366,12 +369,17 @@ export class PhilipsTVClient {
   getBuiltInSources(): TVSource[] {
     return [
       { id: WATCH_TV_URI, name: 'Watch TV' },
+      { id: HOME_URI, name: 'Home' },
       ...Object.entries(HDMI_SOURCES).map(([id, name]) => ({ id, name })),
     ];
   }
 
   async launchWatchTV(): Promise<boolean> {
     return this.sendKey('WatchTV');
+  }
+
+  async launchHome(): Promise<boolean> {
+    return this.sendKey('Home');
   }
 
   async setSource(sourceUri: string): Promise<boolean> {

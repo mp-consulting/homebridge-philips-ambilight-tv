@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.0] - 2026-04-05
+
+### Added
+
+- **Home input source**: "Home" is now available as a selectable input source in the HomeKit wheel, allowing users to navigate to the TV home screen directly from the source picker (in addition to the existing remote button mapping)
+
 ## [1.2.2] - 2026-04-04
 
 ### Fixed

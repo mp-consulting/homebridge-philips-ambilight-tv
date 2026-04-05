@@ -4,7 +4,7 @@ import { writeFile } from 'fs/promises';
 import path from 'path';
 
 import type { PhilipsTVClient } from '../api/PhilipsTVClient.js';
-import { HDMI_SOURCES, WATCH_TV_URI } from '../api/PhilipsTVClient.js';
+import { HDMI_SOURCES, HOME_URI, WATCH_TV_URI } from '../api/PhilipsTVClient.js';
 import type { InputConfig, RemoteKey, SourceConfig } from '../api/types.js';
 import { sanitizeForHomeKit } from '../api/utils.js';
 
@@ -20,8 +20,8 @@ const MAX_INPUT_SOURCES = 30;
 const TLV_ELEMENT_START = 0x01;
 const TLV_ELEMENT_END = 0x00;
 
-/** Number of static sources (Watch TV + HDMI 1-4) */
-const STATIC_SOURCE_COUNT = 1 + Object.keys(HDMI_SOURCES).length;
+/** Number of static sources (Watch TV + Home + HDMI 1-4) */
+const STATIC_SOURCE_COUNT = 2 + Object.keys(HDMI_SOURCES).length;
 
 /** System/launcher packages to exclude from auto-discovered apps */
 const EXCLUDED_PACKAGES = new Set([
@@ -401,6 +401,7 @@ export class InputSourceManager {
   private getStaticSources(): InputData[] {
     const inputs: InputData[] = [];
     inputs.push({ id: WATCH_TV_URI, name: 'Watch TV', type: 'source' });
+    inputs.push({ id: HOME_URI, name: 'Home', type: 'source' });
     for (const [id, name] of Object.entries(HDMI_SOURCES)) {
       inputs.push({ id, name, type: 'source' });
     }
@@ -666,6 +667,9 @@ export class InputSourceManager {
       case 'source':
         if (input.id === WATCH_TV_URI) {
           return this.deps.tvClient.launchWatchTV();
+        }
+        if (input.id === HOME_URI) {
+          return this.deps.tvClient.launchHome();
         }
         return this.deps.tvClient.setSource(input.id);
       case 'channel':

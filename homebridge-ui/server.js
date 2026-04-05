@@ -20,7 +20,7 @@ import {
   createPairingSuccess,
   sendWakeOnLan,
 } from '../dist/api/utils.js';
-import { PhilipsTVClient, WATCH_TV_URI } from '../dist/api/PhilipsTVClient.js';
+import { PhilipsTVClient, HOME_URI, WATCH_TV_URI } from '../dist/api/PhilipsTVClient.js';
 
 const getMAC = promisify(arp.getMAC);
 
@@ -358,7 +358,7 @@ class UiServer extends HomebridgePluginUiServer {
         id: source.id,
         name: source.name,
         type: 'source',
-        icon: source.id === WATCH_TV_URI ? 'tv' : 'hdmi',
+        icon: source.id === WATCH_TV_URI ? 'tv' : source.id === HOME_URI ? 'home' : 'hdmi',
       }));
 
       // Try to get apps from TV using the client
