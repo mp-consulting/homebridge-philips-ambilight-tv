@@ -174,6 +174,27 @@ describe('SourceSwitchService', () => {
       expect(deps.tvClient.setSource).toHaveBeenCalledWith('content://android.media.tv/passthrough/HW5');
     });
 
+    it('should launch Home screen via sendKey when Home switch is turned on', async () => {
+      const deps = createMockDeps();
+      const service = new SourceSwitchService(deps);
+      const accessory = createMockAccessory();
+
+      const sources = [
+        { id: 'virtual:home', name: 'Home', type: 'source' as const },
+      ];
+
+      service.configureSwitches(accessory as never, sources, 'TV');
+
+      const homeSwitch = accessory.services.find(s => s.subtype === 'source-switch-virtual:home')!;
+      const onChar = homeSwitch.getCharacteristic({ UUID: 'on' });
+      const onSetHandler = onChar.onSet.mock.calls[0][0] as (v: unknown) => Promise<void>;
+
+      await onSetHandler(true);
+
+      expect(deps.tvClient.launchHome).toHaveBeenCalled();
+      expect(deps.tvClient.setSource).not.toHaveBeenCalled();
+    });
+
     it('should activate TV tuner before switching to a channel', async () => {
       const deps = createMockDeps();
       const service = new SourceSwitchService(deps);

@@ -1,7 +1,7 @@
 import type { Characteristic, CharacteristicValue, HapStatusError, PlatformAccessory, Service } from 'homebridge';
 
 import type { PhilipsTVClient } from '../api/PhilipsTVClient.js';
-import { WATCH_TV_URI } from '../api/PhilipsTVClient.js';
+import { HOME_URI, WATCH_TV_URI } from '../api/PhilipsTVClient.js';
 
 // ============================================================================
 // TYPES
@@ -187,6 +187,9 @@ export class SourceSwitchService {
       case 'source':
         if (sw.id === WATCH_TV_URI) {
           return this.deps.tvClient.launchWatchTV();
+        }
+        if (sw.id === HOME_URI) {
+          return this.deps.tvClient.launchHome();
         }
         return this.deps.tvClient.setSource(sw.id);
       case 'channel': {

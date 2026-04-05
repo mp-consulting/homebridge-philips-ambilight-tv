@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.1] - 2026-04-05
+
+### Fixed
+
+- **Home source switch**: Fix Home switch sending a bogus intent instead of the Home key — the source switch now correctly calls `launchHome()` like the input wheel does
+
 ## [1.3.0] - 2026-04-05
 
 ### Added
