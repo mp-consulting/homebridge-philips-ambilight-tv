@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.2] - 2026-04-06
+
+### Fixed
+
+- **Source switches**: Fix switches bouncing off in HomeKit after activating Watch TV, Home, or TV channels — the polling service was overriding the switch state with unrecognized system package names from the TV
+
 ## [1.3.1] - 2026-04-05
 
 ### Fixed

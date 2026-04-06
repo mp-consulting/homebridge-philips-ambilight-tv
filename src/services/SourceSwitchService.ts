@@ -147,9 +147,18 @@ export class SourceSwitchService {
   /**
    * Update switch states from poll data (current active app/source).
    * Called by the accessory when the active input changes.
+   *
+   * Only updates if the polled source matches a known switch.
+   * The TV may report system package names (e.g. org.droidtv.playtv) that
+   * don't match the URI-based IDs used by Watch TV / Home sources — in that
+   * case we keep the current state so switches don't bounce off.
    */
   updateFromPoll(currentSourceId: string | null): void {
     if (currentSourceId === this.activeSourceId) {
+      return;
+    }
+    // Only update if the source matches a registered switch
+    if (currentSourceId !== null && !this.switches.some(s => s.id === currentSourceId)) {
       return;
     }
     this.setActiveSource(currentSourceId);

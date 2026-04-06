@@ -231,6 +231,26 @@ describe('SourceSwitchService', () => {
       expect(netflixSwitch.updateCharacteristic).toHaveBeenCalledWith({ UUID: 'on' }, true);
     });
 
+    it('should ignore unrecognized source IDs from poll', () => {
+      const deps = createMockDeps();
+      const service = new SourceSwitchService(deps);
+      const accessory = createMockAccessory();
+
+      service.configureSwitches(accessory as never, TEST_SOURCES, 'TV');
+
+      // Activate Netflix via poll
+      service.updateFromPoll('com.netflix.ninja');
+      accessory.services.forEach(s => s.updateCharacteristic.mockClear());
+
+      // Poll returns a system package name that doesn't match any switch
+      service.updateFromPoll('org.droidtv.playtv');
+
+      // Should not change any switch state — Netflix stays ON
+      accessory.services.forEach(s => {
+        expect(s.updateCharacteristic).not.toHaveBeenCalled();
+      });
+    });
+
     it('should not update if source has not changed', () => {
       const deps = createMockDeps();
       const service = new SourceSwitchService(deps);
