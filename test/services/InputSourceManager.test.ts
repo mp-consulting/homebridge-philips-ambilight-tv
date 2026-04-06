@@ -468,4 +468,37 @@ describe('InputSourceManager', () => {
       expect(manager.currentId).toBe(initialId);
     });
   });
+
+  // ==========================================================================
+  // SET ACTIVE INPUT BY ID
+  // ==========================================================================
+
+  describe('setActiveInputById', () => {
+    it('should update ActiveIdentifier from a source ID', () => {
+      const deps = createMockDeps({
+        userInputs: [{ identifier: 'com.netflix.ninja', name: 'Netflix', type: 'app' }],
+      });
+      const manager = new InputSourceManager(deps);
+      const tvService = createMockService();
+      manager.configureInputSources(tvService as never);
+
+      const netflixSource = manager.getSources().find(s => s.id === 'com.netflix.ninja');
+      manager.setActiveInputById('com.netflix.ninja');
+
+      expect(manager.currentId).toBe(netflixSource!.identifier);
+      expect(tvService.updateCharacteristic).toHaveBeenCalled();
+    });
+
+    it('should ignore unknown source IDs', () => {
+      const deps = createMockDeps();
+      const manager = new InputSourceManager(deps);
+      const tvService = createMockService();
+      manager.configureInputSources(tvService as never);
+
+      const initialId = manager.currentId;
+      manager.setActiveInputById('com.unknown.app');
+
+      expect(manager.currentId).toBe(initialId);
+    });
+  });
 });

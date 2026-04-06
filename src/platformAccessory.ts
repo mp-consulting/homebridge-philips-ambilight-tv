@@ -71,6 +71,7 @@ export class PhilipsAmbilightTVAccessory {
       tvClient: this.tvClient,
       communicationError: () => this.communicationError(),
       log: (level, msg) => this.log(level, msg),
+      onSourceSwitch: (sourceId) => this.inputSourceManager.setActiveInputById(sourceId),
     });
 
     this.stateSensorService = new StateSensorService({

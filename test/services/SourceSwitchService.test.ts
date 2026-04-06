@@ -52,6 +52,7 @@ function createMockDeps(): SourceSwitchDeps {
     } as never,
     communicationError: () => new Error('comm error') as never,
     log: vi.fn(),
+    onSourceSwitch: vi.fn(),
   };
 }
 
@@ -156,6 +157,22 @@ describe('SourceSwitchService', () => {
       await onSetHandler(true);
 
       expect(deps.tvClient.launchApplication).toHaveBeenCalledWith('com.netflix.ninja');
+    });
+
+    it('should call onSourceSwitch callback after successful switch', async () => {
+      const deps = createMockDeps();
+      const service = new SourceSwitchService(deps);
+      const accessory = createMockAccessory();
+
+      service.configureSwitches(accessory as never, TEST_SOURCES, 'TV');
+
+      const netflixSwitch = accessory.services.find(s => s.subtype === 'source-switch-com.netflix.ninja')!;
+      const onChar = netflixSwitch.getCharacteristic({ UUID: 'on' });
+      const onSetHandler = onChar.onSet.mock.calls[0][0] as (v: unknown) => Promise<void>;
+
+      await onSetHandler(true);
+
+      expect(deps.onSourceSwitch).toHaveBeenCalledWith('com.netflix.ninja');
     });
 
     it('should set source when an HDMI switch is turned on', async () => {

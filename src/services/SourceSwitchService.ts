@@ -13,6 +13,7 @@ export interface SourceSwitchDeps {
   readonly tvClient: PhilipsTVClient;
   readonly communicationError: () => HapStatusError;
   readonly log: (level: 'debug' | 'info' | 'warn' | 'error', message: string) => void;
+  readonly onSourceSwitch?: (sourceId: string) => void;
 }
 
 /** A registered source switch with its associated HomeKit service */
@@ -131,6 +132,7 @@ export class SourceSwitchService {
       const success = await this.launchSource(sw);
       if (success) {
         this.setActiveSource(sourceId);
+        this.deps.onSourceSwitch?.(sourceId);
       } else {
         throw this.deps.communicationError();
       }

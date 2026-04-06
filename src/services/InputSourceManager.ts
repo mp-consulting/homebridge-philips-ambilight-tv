@@ -150,6 +150,18 @@ export class InputSourceManager {
     return this.inputSources;
   }
 
+  /** Update ActiveIdentifier on the Television service from a source ID (e.g. from a source switch). */
+  setActiveInputById(sourceId: string): void {
+    const inputSource = this.inputSources.find(i => i.id === sourceId);
+    if (inputSource && inputSource.identifier !== this.currentInputId) {
+      this.currentInputId = inputSource.identifier;
+      if (this.tvService) {
+        this.tvService.updateCharacteristic(this.deps.Characteristic.ActiveIdentifier, this.currentInputId);
+      }
+      this.deps.log('debug', `Input updated: ${inputSource.name}`);
+    }
+  }
+
   getVisibleSources(): readonly InputSource[] {
     const { Characteristic: Char } = this.deps;
     return this.inputSources.filter(s =>

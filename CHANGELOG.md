@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.3] - 2026-04-06
+
+### Fixed
+
+- **Source switch state sync**: Switching via a source switch now updates the TV accessory tile label (ActiveIdentifier) in HomeKit, keeping the input wheel and tile subtitle in sync with the active source
+
 ## [1.3.2] - 2026-04-06
 
 ### Fixed
