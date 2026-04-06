@@ -145,6 +145,7 @@ export class AmbilightService {
         // TV restores its own default mode async after power ON; re-apply in background
         this.scheduleStyleRetry(style as AmbilightStyleName, algorithm || undefined);
       } else {
+        this.cancelStyleRetry();
         success = await this.deps.tvClient.setAmbilightOff();
       }
 
@@ -238,10 +239,15 @@ export class AmbilightService {
    * TV restores its own default ambilight mode asynchronously after power ON.
    * Re-send the desired style after delays to override it.
    */
-  private scheduleStyleRetry(style: AmbilightStyleName, algorithm?: string): void {
+  private cancelStyleRetry(): void {
     if (this.styleRetryTimer) {
       clearTimeout(this.styleRetryTimer);
+      this.styleRetryTimer = undefined;
     }
+  }
+
+  private scheduleStyleRetry(style: AmbilightStyleName, algorithm?: string): void {
+    this.cancelStyleRetry();
 
     const delays = [3000, 6000];
     let attempt = 0;
@@ -252,6 +258,9 @@ export class AmbilightService {
       }
 
       this.styleRetryTimer = setTimeout(async () => {
+        if (!this.isOn) {
+          return;
+        }
         try {
           const current = await this.deps.tvClient.getAmbilightStyle();
           if (current?.styleName?.toUpperCase() !== style.toUpperCase()) {

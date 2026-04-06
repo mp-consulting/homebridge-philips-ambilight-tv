@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.4] - 2026-04-06
+
+### Fixed
+
+- **Ambilight switch bounce**: Fix Ambilight turning back on a few seconds after being switched off — the style-retry timer from a prior ON action was not cancelled, causing it to misinterpret the OFF state as drift and re-apply the ON style
+
 ## [1.3.3] - 2026-04-06
 
 ### Fixed
