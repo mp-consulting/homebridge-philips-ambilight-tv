@@ -221,6 +221,49 @@ describe('InputSourceManager', () => {
       // Should be capped at 30 (6 static + 24 apps)
       expect(manager.getSources().length).toBeLessThanOrEqual(30);
     });
+
+    it('should prioritize user-configured visible sources within the MAX_INPUT_SOURCES cap', () => {
+      // 25 regular cached apps would fill all 24 available app slots (30 cap - 6 static),
+      // leaving no room for the 3 visible apps at the end without priority sorting.
+      const regularApps = Array.from({ length: 25 }, (_, i) => ({
+        id: `com.app.${String(i).padStart(3, '0')}`,
+        name: `App ${i}`,
+        configuredName: `App ${i}`,
+        type: 'app' as const,
+        identifier: 10 + i,
+        visibility: 0,
+      }));
+      const visibleIds = ['com.important.a', 'com.important.b', 'com.important.c'];
+      const allCached = [
+        ...regularApps,
+        ...visibleIds.map((id, i) => ({
+          id,
+          name: `Important ${i}`,
+          configuredName: `Important ${i}`,
+          type: 'app' as const,
+          identifier: 100 + i,
+          visibility: 0,
+        })),
+      ];
+
+      mockReadFileSync.mockReturnValue(JSON.stringify(allCached));
+
+      const deps = createMockDeps({
+        sourceConfigs: visibleIds.map(id => ({ id, visible: true })),
+      });
+      const manager = new InputSourceManager(deps);
+      const tvService = createMockService();
+
+      manager.configureInputSources(tvService as never);
+
+      const sources = manager.getSources();
+      expect(sources.length).toBeLessThanOrEqual(30);
+
+      // All 3 explicitly-visible sources must be registered despite being last in cache order
+      for (const id of visibleIds) {
+        expect(sources.some(s => s.id === id)).toBe(true);
+      }
+    });
   });
 
   // ==========================================================================

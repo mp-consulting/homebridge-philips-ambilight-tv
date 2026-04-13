@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.5] - 2026-04-13
+
+### Fixed
+
+- **Power-on retry**: Fix turn-on commands being silently ignored after the first failed attempt — the optimistic `isPoweredOn = true` after sending a WoL packet caused the poll manager's state to diverge from the accessory's state, so subsequent turn-on taps hit the "already on" early-exit and did nothing. The TV now only reports confirmed power-on when the API responds; if only WoL was sent (TV in deep standby), `isPoweredOn` stays false and retries work correctly ([#10](https://github.com/mp-consulting/homebridge-philips-ambilight-tv/issues/10))
+- **Source count mismatch**: User-configured visible sources now take priority within the 30-source cap — previously, sources marked visible in the Homebridge UI could be silently dropped if they fell beyond the 24th app slot in alphabetical order, causing HomeKit to show fewer sources than configured ([#9](https://github.com/mp-consulting/homebridge-philips-ambilight-tv/issues/9))
+
+### Changed
+
+- **Setup wizard**: The sources configuration screen now appears immediately after completing the pairing wizard, so visibility and order can be set before adding the TV to HomeKit ([#8](https://github.com/mp-consulting/homebridge-philips-ambilight-tv/issues/8))
+
 ## [1.3.4] - 2026-04-06
 
 ### Fixed

@@ -306,12 +306,15 @@ export class PhilipsTVClient {
 
   async setPowerState(on: boolean): Promise<boolean> {
     if (on) {
-      // Send WoL first — if the TV is fully off, the API POST will fail
-      // because the network stack isn't up yet. Return success optimistically
-      // after WoL; the polling service will reconcile the actual state.
-      const wolSent = await this.tryWakeOnLan();
+      // Send WoL first — if the TV is in deep standby its network stack may
+      // be down and the API POST will fail. WoL gives the TV the chance to
+      // wake, but we only return true when the API confirms the state change.
+      // Returning false here lets the caller keep isPoweredOn = false so the
+      // next attempt is not silently skipped — the poll will reconcile once
+      // the TV responds.
+      await this.tryWakeOnLan();
       const result = await this.post('/powerstate', { powerstate: 'On' });
-      return result !== null || wolSent;
+      return result !== null;
     }
 
     const result = await this.post('/powerstate', { powerstate: 'Standby' });

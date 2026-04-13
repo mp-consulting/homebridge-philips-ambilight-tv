@@ -113,15 +113,19 @@ describe('PhilipsTVClient', () => {
       expect(mockWol).not.toHaveBeenCalled();
     });
 
-    it('should return true when WOL succeeds but API POST fails', async () => {
-      mockFetch.mockReturnValue(mockResponse(null));
+    it('should return false when WOL succeeds but API POST fails (TV in deep standby)', async () => {
+      // Simulate TV in deep standby: network stack unreachable, API returns error
+      mockFetch.mockReturnValue(mockResponse(null, 503));
 
       const promise = client.setPowerState(true);
       await vi.runAllTimersAsync();
       const result = await promise;
 
+      // WoL is still sent (best-effort wake), but we return false because the
+      // TV did not confirm via API. This keeps isPoweredOn = false so the next
+      // turn-on attempt is not silently skipped.
       expect(mockWol).toHaveBeenCalled();
-      expect(result).toBe(true);
+      expect(result).toBe(false);
     });
 
     it('should return false when both WOL and API POST fail', async () => {

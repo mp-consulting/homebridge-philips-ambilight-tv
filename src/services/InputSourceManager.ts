@@ -186,7 +186,13 @@ export class InputSourceManager {
 
     const staticInputs = this.getStaticSources();
     const appInputs = this.getInitialAppInputs();
-    const allInputs = [...staticInputs, ...appInputs].slice(0, MAX_INPUT_SOURCES);
+    // Sort app inputs so user-configured visible sources are always registered
+    // first within the MAX_INPUT_SOURCES cap. Skip sorting when the user has
+    // an explicit inputs[] in their config (that list has a deliberate order).
+    const sortedAppInputs = (this.deps.userInputs?.length ?? 0) > 0
+      ? appInputs
+      : this.sortBySourcePriority(appInputs);
+    const allInputs = [...staticInputs, ...sortedAppInputs].slice(0, MAX_INPUT_SOURCES);
 
     const cachedConfigs = this.getCachedInputConfigs();
     this.removeStaleInputSources(allInputs);
@@ -246,7 +252,7 @@ export class InputSourceManager {
       }
 
       const available = MAX_INPUT_SOURCES - this.inputSources.length;
-      const appsToAdd = newApps.slice(0, available);
+      const appsToAdd = this.sortBySourcePriority(newApps).slice(0, available);
 
       if (appsToAdd.length === 0) {
         this.deps.log('debug', `Input source limit reached (${MAX_INPUT_SOURCES})`);
@@ -408,6 +414,25 @@ export class InputSourceManager {
   // ==========================================================================
   // PRIVATE — INPUT DATA BUILDERS
   // ==========================================================================
+
+  /**
+   * Sort inputs so user-configured visible sources come first, pushing
+   * explicitly-hidden and unconfigured sources toward the end. This ensures
+   * visible sources are never accidentally dropped when the list is truncated
+   * at MAX_INPUT_SOURCES.
+   *
+   * Priority order: explicitly visible (0) → no config entry (1) → explicitly hidden (2).
+   * Sort is stable — relative order within each priority group is preserved.
+   */
+  private sortBySourcePriority(inputs: InputData[]): InputData[] {
+    return [...inputs].sort((a, b) => {
+      const configA = this.sourceConfigMap.get(a.id);
+      const configB = this.sourceConfigMap.get(b.id);
+      const priorityA = configA === undefined ? 1 : configA.visible === true ? 0 : 2;
+      const priorityB = configB === undefined ? 1 : configB.visible === true ? 0 : 2;
+      return priorityA - priorityB;
+    });
+  }
 
   /** Static sources that are always present: Watch TV + HDMI 1-4 */
   private getStaticSources(): InputData[] {

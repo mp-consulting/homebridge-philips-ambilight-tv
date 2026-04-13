@@ -530,9 +530,12 @@
 
     try {
       await addTv();
-      homebridge.toast.success('TV saved successfully!');
+      homebridge.toast.success('TV saved! Configure which sources to show in HomeKit.');
       form.classList.remove('was-validated');
-      showScreen('successScreen');
+      // Go directly to the sources screen so the user can configure visibility
+      // before adding the accessory to HomeKit. The "Done" button exits to the
+      // success screen as usual.
+      openEditSourcesScreen(state.configuredTvs.length - 1);
     } catch (e) {
       homebridge.toast.error('Failed to save: ' + e.message);
     }
