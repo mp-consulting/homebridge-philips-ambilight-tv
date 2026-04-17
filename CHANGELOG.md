@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.6] - 2026-04-17
+
+### Changed
+
+- **Dependencies**: Updated all dependencies to latest versions, including major bump for `undici` (7→8)
+
 ## [1.3.5] - 2026-04-13
 
 ### Fixed
