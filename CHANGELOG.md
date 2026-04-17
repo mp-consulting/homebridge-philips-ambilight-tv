@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.7] - 2026-04-17
+
+### Fixed
+
+- **Node 20.x compatibility**: Pin `undici` back to 7.x — v8 requires a Node 20 minor that ships `webidl.util.markAsUncloneable`, causing `TypeError: webidl.util.markAsUncloneable is not a function` on older 20.x. Keeps the plugin working across `^20.18.0 || ^22.10.0 || ^24.0.0`
+
 ## [1.3.6] - 2026-04-17
 
 ### Changed
