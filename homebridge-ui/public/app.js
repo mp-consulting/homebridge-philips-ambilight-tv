@@ -401,6 +401,7 @@
     $('editBackButtonKey').value = tv.backButtonKey || 'Back';
     $('editPlayPauseButtonKey').value = tv.playPauseButtonKey || 'PlayPause';
     $('editSourceSwitches').checked = tv.sourceSwitches || false;
+    $('editAmbilightHueSwitch').checked = tv.ambilightHueSwitch || false;
     const editSensors = tv.stateSensors || [];
     $('editSensorPower').checked = editSensors.includes('power');
     $('editSensorAmbilight').checked = editSensors.includes('ambilight');
@@ -443,6 +444,7 @@
         backButtonKey: $('editBackButtonKey').value,
         playPauseButtonKey: $('editPlayPauseButtonKey').value,
         sourceSwitches: $('editSourceSwitches').checked,
+        ambilightHueSwitch: $('editAmbilightHueSwitch').checked,
         stateSensors: editStateSensors,
       });
       homebridge.toast.success('TV configuration updated');
@@ -490,6 +492,7 @@
     $('confirmBackButtonKey').value = state.currentConfig.backButtonKey || 'Back';
     $('confirmPlayPauseButtonKey').value = state.currentConfig.playPauseButtonKey || 'PlayPause';
     $('confirmSourceSwitches').checked = state.currentConfig.sourceSwitches || false;
+    $('confirmAmbilightHueSwitch').checked = state.currentConfig.ambilightHueSwitch || false;
     const confirmSensors = state.currentConfig.stateSensors || [];
     $('confirmSensorPower').checked = confirmSensors.includes('power');
     $('confirmSensorAmbilight').checked = confirmSensors.includes('ambilight');
@@ -516,6 +519,7 @@
     state.currentConfig.backButtonKey = $('confirmBackButtonKey').value;
     state.currentConfig.playPauseButtonKey = $('confirmPlayPauseButtonKey').value;
     state.currentConfig.sourceSwitches = $('confirmSourceSwitches').checked;
+    state.currentConfig.ambilightHueSwitch = $('confirmAmbilightHueSwitch').checked;
     const confirmStateSensors = [];
     if ($('confirmSensorPower').checked) {
       confirmStateSensors.push('power');
