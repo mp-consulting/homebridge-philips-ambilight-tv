@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.3] - 2026-05-30
+
+### Fixed
+
+- **Ambilight tile stayed on after power-off**: When the TV powered off, the Ambilight lightbulb in HomeKit kept showing "On" (only the Ambilight state sensor was updated). The lightbulb now switches to Off when the TV powers off
+
 ## [1.5.2] - 2026-05-30
 
 ### Fixed
