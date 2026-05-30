@@ -328,6 +328,7 @@ export interface TVDeviceConfig {
   pollingInterval?: number;
   wakeOnLanEnabled?: boolean;
   ambilightMode?: string;
+  ambilightOnStart?: boolean;
   inputs?: InputConfig[];
   sources?: SourceConfig[];
   stateSensors?: ('power' | 'ambilight' | 'mute')[];

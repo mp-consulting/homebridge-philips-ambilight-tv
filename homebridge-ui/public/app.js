@@ -398,6 +398,7 @@
     $('editTvIp').value = tv.ip || '';
     $('editTvMac').value = tv.mac || '';
     $('editAmbilightMode').value = tv.ambilightMode || 'FOLLOW_VIDEO/NATURAL';
+    $('editAmbilightOnStart').checked = tv.ambilightOnStart || false;
     $('editInfoButtonKey').value = tv.infoButtonKey || 'Source';
     $('editBackButtonKey').value = tv.backButtonKey || 'Back';
     $('editPlayPauseButtonKey').value = tv.playPauseButtonKey || 'PlayPause';
@@ -559,6 +560,7 @@
         ip: $('editTvIp').value.trim(),
         mac: $('editTvMac').value.trim(),
         ambilightMode: $('editAmbilightMode').value,
+        ambilightOnStart: $('editAmbilightOnStart').checked,
         infoButtonKey: $('editInfoButtonKey').value,
         backButtonKey: $('editBackButtonKey').value,
         playPauseButtonKey: $('editPlayPauseButtonKey').value,
@@ -608,6 +610,7 @@
     $('confirmTvIp').value = state.currentConfig.ip || '';
     $('confirmTvMac').value = state.currentConfig.mac || '';
     $('confirmAmbilightMode').value = state.currentConfig.ambilightMode || 'FOLLOW_VIDEO/NATURAL';
+    $('confirmAmbilightOnStart').checked = state.currentConfig.ambilightOnStart || false;
     $('confirmInfoButtonKey').value = state.currentConfig.infoButtonKey || 'Source';
     $('confirmBackButtonKey').value = state.currentConfig.backButtonKey || 'Back';
     $('confirmPlayPauseButtonKey').value = state.currentConfig.playPauseButtonKey || 'PlayPause';
@@ -635,6 +638,7 @@
     state.currentConfig.name = $('confirmTvName').value.trim();
     state.currentConfig.mac = $('confirmTvMac').value.trim();
     state.currentConfig.ambilightMode = $('confirmAmbilightMode').value;
+    state.currentConfig.ambilightOnStart = $('confirmAmbilightOnStart').checked;
     state.currentConfig.infoButtonKey = $('confirmInfoButtonKey').value;
     state.currentConfig.backButtonKey = $('confirmBackButtonKey').value;
     state.currentConfig.playPauseButtonKey = $('confirmPlayPauseButtonKey').value;

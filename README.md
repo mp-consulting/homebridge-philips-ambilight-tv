@@ -147,6 +147,7 @@ Add the following to your `config.json`:
 | `devices[].password` | Auth key from pairing | Yes |
 | `devices[].sources` | Custom source configuration | No |
 | `devices[].ambilightMode` | Ambilight mode on turn-on (e.g. `"FOLLOW_VIDEO/NATURAL"`) | No |
+| `devices[].ambilightOnStart` | Automatically turn Ambilight on (in `ambilightMode`) when the TV powers on | No |
 | `devices[].stateSensors` | Array of state sensors: `"power"`, `"ambilight"`, `"mute"` | No |
 | `devices[].ambilightHueSwitch` | Expose the Ambilight + Hue integration as a separate switch | No |
 | `devices[].customApps` | Apps the TV doesn't report (added on top of discovered apps); each has `name`, `packageName`, optional `className`/`action` | No |

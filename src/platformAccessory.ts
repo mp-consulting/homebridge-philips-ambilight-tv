@@ -30,6 +30,7 @@ export class PhilipsAmbilightTVAccessory {
 
   private isPoweredOn = false;
   private isMuted = false;
+  private powerSynced = false;
 
   constructor(
     private readonly platform: PhilipsAmbilightTVPlatform,
@@ -278,6 +279,10 @@ export class PhilipsAmbilightTVAccessory {
   // ==========================================================================
 
   private onPowerChange(isOn: boolean): void {
+    // Skip the first sync so a Homebridge restart while the TV is already on
+    // doesn't count as a power-on event (which would force Ambilight on).
+    const isInitialSync = !this.powerSynced;
+    this.powerSynced = true;
     this.isPoweredOn = isOn;
     this.tvService.updateCharacteristic(
       this.Characteristic.Active,
@@ -289,6 +294,9 @@ export class PhilipsAmbilightTVAccessory {
       this.stateSensorService.update('mute', false);
       this.sourceSwitchService.resetAll();
       this.ambilightHueSwitchService.reset();
+    } else if (!isInitialSync && this.config.ambilightOnStart) {
+      // TV just powered on — auto-start Ambilight in the configured mode.
+      void this.ambilightService.startWithConfiguredMode();
     }
     this.log('debug', `Power state updated: ${isOn ? 'ON' : 'OFF'}`);
   }

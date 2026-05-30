@@ -307,3 +307,39 @@ describe('AmbilightService ambilight mode', () => {
     expect(deps.tvClient.setAmbilightStyle).toHaveBeenCalledWith('FOLLOW_AUDIO', 'ENERGY_ADAPTIVE_BRIGHTNESS');
   });
 });
+
+describe('AmbilightService startWithConfiguredMode', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('should power on and apply the configured mode', async () => {
+    const deps = createMockDeps({ ambilightMode: 'FOLLOW_VIDEO/GAME' });
+    const service = new AmbilightService(deps);
+    const tvService = createMockService();
+    service.configureService(deps.accessory as never, tvService as never);
+
+    await service.startWithConfiguredMode();
+
+    expect(deps.tvClient.setAmbilightPower).toHaveBeenCalledWith(true);
+    expect(deps.tvClient.setAmbilightStyle).toHaveBeenCalledWith('FOLLOW_VIDEO', 'GAME');
+    expect(service.isAmbilightOn).toBe(true);
+  });
+
+  it('should not apply a style if power-on is rejected', async () => {
+    const deps = createMockDeps();
+    (deps.tvClient.setAmbilightPower as ReturnType<typeof vi.fn>).mockResolvedValue(false);
+    const service = new AmbilightService(deps);
+    const tvService = createMockService();
+    service.configureService(deps.accessory as never, tvService as never);
+
+    await service.startWithConfiguredMode();
+
+    expect(deps.tvClient.setAmbilightStyle).not.toHaveBeenCalled();
+    expect(service.isAmbilightOn).toBe(false);
+  });
+});

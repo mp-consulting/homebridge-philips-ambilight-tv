@@ -91,6 +91,12 @@
                 { "title": "Lounge Light", "enum": ["Lounge light"] }
               ]
             },
+            "ambilightOnStart": {
+              "title": "Start Ambilight when TV turns on",
+              "type": "boolean",
+              "default": false,
+              "description": "Automatically turn Ambilight on (in the mode above) whenever the TV powers on."
+            },
             "infoButtonKey": {
               "title": "Info Button Key",
               "type": "string",
@@ -289,6 +295,7 @@
             },
             "devices[].wakeOnLanEnabled",
             "devices[].ambilightMode",
+            "devices[].ambilightOnStart",
             "devices[].infoButtonKey",
             "devices[].backButtonKey",
             "devices[].playPauseButtonKey",

@@ -117,6 +117,32 @@ export class AmbilightService {
   // HANDLERS
   // ==========================================================================
 
+  /**
+   * Turn Ambilight on using the configured mode. Used to auto-start Ambilight
+   * when the TV powers on (the `ambilightOnStart` option).
+   */
+  async startWithConfiguredMode(): Promise<void> {
+    const { style, algorithm } = this.parseAmbilightMode();
+    this.deps.log('info', `Auto-starting Ambilight (${style}${algorithm ? '/' + algorithm : ''})`);
+
+    try {
+      const powerOn = await this.deps.tvClient.setAmbilightPower(true);
+      if (!powerOn) {
+        this.deps.log('warn', 'Failed to auto-start Ambilight: power on rejected');
+        return;
+      }
+      const success = await this.deps.tvClient.setAmbilightStyle(style as AmbilightStyleName, algorithm || undefined);
+      if (success) {
+        this.isOn = true;
+        this.service.updateCharacteristic(this.deps.Characteristic.On, true);
+      }
+      // TV restores its own default mode async after power ON; re-apply in background
+      this.scheduleStyleRetry(style as AmbilightStyleName, algorithm || undefined);
+    } catch {
+      this.deps.log('warn', 'Failed to auto-start Ambilight on TV power-on');
+    }
+  }
+
   private parseAmbilightMode(): { style: string; algorithm: string } {
     const mode = this.deps.ambilightMode || DEFAULT_AMBILIGHT_MODE;
     const [style, algorithm = ''] = mode.split('/');
