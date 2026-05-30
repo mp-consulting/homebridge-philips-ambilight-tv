@@ -336,6 +336,24 @@ export interface TVDeviceConfig {
   playPauseButtonKey?: RemoteKey;
   sourceSwitches?: boolean;
   ambilightHueSwitch?: boolean;
+  customApps?: CustomAppConfig[];
+}
+
+/**
+ * A user-defined app that the TV's `/applications` endpoint does not report
+ * (e.g. sideloaded or Play-Store apps such as EON). These are added *in
+ * addition* to auto-discovered apps and are launched by their explicit intent
+ * (`className`/`action`), since no intent can be discovered from the TV.
+ */
+export interface CustomAppConfig {
+  /** Display name shown in HomeKit. */
+  name: string;
+  /** Android package name, e.g. `com.ug.eon.android.tv`. */
+  packageName: string;
+  /** Launch activity class name. Required for reliable launching. */
+  className?: string;
+  /** Intent action (defaults to `android.intent.action.MAIN`). */
+  action?: string;
 }
 
 export interface InputConfig {

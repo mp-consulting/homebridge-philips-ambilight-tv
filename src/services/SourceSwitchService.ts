@@ -23,6 +23,8 @@ interface SourceSwitch {
   readonly type: 'app' | 'source' | 'channel';
   readonly service: Service;
   readonly channelListId?: string;
+  readonly className?: string;
+  readonly action?: string;
 }
 
 // ============================================================================
@@ -49,7 +51,7 @@ export class SourceSwitchService {
 
   configureSwitches(
     accessory: PlatformAccessory,
-    sources: ReadonlyArray<{ id: string; name: string; type: 'app' | 'source' | 'channel'; channelListId?: string }>,
+    sources: ReadonlyArray<{ id: string; name: string; type: 'app' | 'source' | 'channel'; channelListId?: string; className?: string; action?: string }>,
     tvName: string,
   ): void {
     const { Service: Svc, Characteristic: Char } = this.deps;
@@ -87,6 +89,8 @@ export class SourceSwitchService {
         type: source.type,
         service,
         channelListId: source.channelListId,
+        className: source.className,
+        action: source.action,
       });
     }
 
@@ -194,7 +198,7 @@ export class SourceSwitchService {
   private async launchSource(sw: SourceSwitch): Promise<boolean> {
     switch (sw.type) {
       case 'app':
-        return this.deps.tvClient.launchApplication(sw.id);
+        return this.deps.tvClient.launchApplication(sw.id, sw.className, sw.action);
       case 'source':
         if (sw.id === WATCH_TV_URI) {
           return this.deps.tvClient.launchWatchTV();

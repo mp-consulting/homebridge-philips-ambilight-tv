@@ -180,6 +180,40 @@
               "default": false,
               "description": "Expose the Ambilight + Hue integration (Philips Hue lamps following Ambilight) as a separate Switch, toggleable independently of the main Ambilight controls."
             },
+            "customApps": {
+              "title": "Custom Apps",
+              "type": "array",
+              "description": "Apps the TV does not report via its app list (e.g. sideloaded apps). Added in addition to auto-discovered apps. Tip: open the app on your TV and use \"Detect from TV\" to fill these in automatically.",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "title": "Name",
+                    "type": "string",
+                    "description": "Display name shown in HomeKit."
+                  },
+                  "packageName": {
+                    "title": "Package Name",
+                    "type": "string",
+                    "description": "Android package name, e.g. com.ug.eon.android.tv"
+                  },
+                  "className": {
+                    "title": "Launch Activity",
+                    "type": "string",
+                    "description": "Launch activity class name. Required for reliable launching."
+                  },
+                  "action": {
+                    "title": "Intent Action",
+                    "type": "string",
+                    "description": "Intent action (defaults to android.intent.action.MAIN)."
+                  }
+                },
+                "required": [
+                  "name",
+                  "packageName"
+                ]
+              }
+            },
             "stateSensors": {
               "title": "State Sensors",
               "type": "array",

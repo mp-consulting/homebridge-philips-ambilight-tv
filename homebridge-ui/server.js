@@ -42,6 +42,7 @@ class UiServer extends HomebridgePluginUiServer {
     this.onRequest('/pair-grant', this.pairGrant.bind(this));
     this.onRequest('/system-info', this.getSystemInfo.bind(this));
     this.onRequest('/get-sources', this.getSources.bind(this));
+    this.onRequest('/current-app', this.getCurrentApp.bind(this));
 
     this.ready();
   }
@@ -396,6 +397,44 @@ class UiServer extends HomebridgePluginUiServer {
     } catch (error) {
       console.log('[Sources] Error:', error.message);
       return { success: false, error: error.message || 'Failed to get sources' };
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // Detect Currently-Open App (for adding custom apps)
+  // --------------------------------------------------------------------------
+
+  async getCurrentApp(data) {
+    const { ip, username, password, mac } = data;
+
+    if (!ip) {
+      return { success: false, error: 'IP address is required' };
+    }
+
+    try {
+      console.log(`[CurrentApp] Detecting current app on ${ip}`);
+
+      const client = new PhilipsTVClient({
+        ip,
+        mac: mac || '',
+        username: username || '',
+        password: password || '',
+      });
+
+      const app = await client.getCurrentActivityIntent();
+
+      if (!app) {
+        return {
+          success: false,
+          error: 'No app detected. Open the app on your TV first, then try again.',
+        };
+      }
+
+      console.log(`[CurrentApp] Detected ${app.packageName} (${app.className || 'no class'})`);
+      return { success: true, app };
+    } catch (error) {
+      console.log('[CurrentApp] Error:', error.message);
+      return { success: false, error: error.message || 'Failed to detect current app' };
     }
   }
 }

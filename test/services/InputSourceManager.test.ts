@@ -365,6 +365,71 @@ describe('InputSourceManager', () => {
   });
 
   // ==========================================================================
+  // CUSTOM APPS
+  // ==========================================================================
+
+  describe('custom apps', () => {
+    const EON = { name: 'EON', packageName: 'com.ug.eon.android.tv', className: 'com.ug.eon.android.tv.MainActivity' };
+
+    it('should expose custom apps additively alongside discovered apps', async () => {
+      const deps = createMockDeps({ customApps: [EON] });
+      (deps.tvClient.getApplications as ReturnType<typeof vi.fn>).mockResolvedValue([
+        { label: 'Netflix', intent: { component: { packageName: 'com.netflix.ninja' } } },
+      ]);
+
+      const manager = new InputSourceManager(deps);
+      const tvService = createMockService();
+      manager.configureInputSources(tvService as never);
+      await manager.fetchAppsFromTV();
+
+      const appIds = manager.getSources().filter(s => s.type === 'app').map(s => s.id);
+      expect(appIds).toContain('com.ug.eon.android.tv'); // custom app
+      expect(appIds).toContain('com.netflix.ninja'); // discovered app
+    });
+
+    it('should expose custom apps even before the TV is reachable', () => {
+      const deps = createMockDeps({ customApps: [EON] });
+      const manager = new InputSourceManager(deps);
+      const tvService = createMockService();
+      manager.configureInputSources(tvService as never);
+
+      const appIds = manager.getSources().filter(s => s.type === 'app').map(s => s.id);
+      expect(appIds).toContain('com.ug.eon.android.tv');
+    });
+
+    it('should launch a custom app with its explicit className and action', async () => {
+      const deps = createMockDeps({ customApps: [{ ...EON, action: 'android.intent.action.VIEW' }] });
+      const manager = new InputSourceManager(deps);
+      const tvService = createMockService();
+      manager.configureInputSources(tvService as never);
+
+      const eon = manager.getSources().find(s => s.id === 'com.ug.eon.android.tv')!;
+      await manager.handleSetInput(eon.identifier);
+
+      expect(deps.tvClient.launchApplication).toHaveBeenCalledWith(
+        'com.ug.eon.android.tv',
+        'com.ug.eon.android.tv.MainActivity',
+        'android.intent.action.VIEW',
+      );
+    });
+
+    it('should not duplicate a custom app the TV also reports', async () => {
+      const deps = createMockDeps({ customApps: [EON] });
+      (deps.tvClient.getApplications as ReturnType<typeof vi.fn>).mockResolvedValue([
+        { label: 'EON (TV)', intent: { component: { packageName: 'com.ug.eon.android.tv' } } },
+      ]);
+
+      const manager = new InputSourceManager(deps);
+      const tvService = createMockService();
+      manager.configureInputSources(tvService as never);
+      await manager.fetchAppsFromTV();
+
+      const eonInputs = manager.getSources().filter(s => s.id === 'com.ug.eon.android.tv');
+      expect(eonInputs.length).toBe(1);
+    });
+  });
+
+  // ==========================================================================
   // INPUT HANDLERS
   // ==========================================================================
 

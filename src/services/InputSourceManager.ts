@@ -5,7 +5,7 @@ import path from 'path';
 
 import type { PhilipsTVClient } from '../api/PhilipsTVClient.js';
 import { HDMI_SOURCES, HOME_URI, WATCH_TV_URI } from '../api/PhilipsTVClient.js';
-import type { InputConfig, RemoteKey, SourceConfig } from '../api/types.js';
+import type { CustomAppConfig, InputConfig, RemoteKey, SourceConfig } from '../api/types.js';
 import { sanitizeForHomeKit } from '../api/utils.js';
 
 // ============================================================================
@@ -65,6 +65,10 @@ interface InputSource {
   readonly identifier: number;
   readonly service: Service;
   readonly channelListId?: string;
+  /** Explicit launch activity for custom apps (apps the TV does not report). */
+  readonly className?: string;
+  /** Explicit launch intent action for custom apps. */
+  readonly action?: string;
 }
 
 /** Persisted input source configuration (stored in accessory context) */
@@ -84,6 +88,8 @@ interface InputData {
   readonly name: string;
   readonly type: InputType;
   readonly channelListId?: string;
+  readonly className?: string;
+  readonly action?: string;
 }
 
 // ============================================================================
@@ -98,6 +104,7 @@ export interface InputSourceManagerDeps {
   readonly storagePath: string;
   readonly deviceId: string;
   readonly userInputs?: InputConfig[];
+  readonly customApps?: CustomAppConfig[];
   readonly sourceConfigs?: SourceConfig[];
   readonly infoButtonKey?: RemoteKey;
   readonly backButtonKey?: RemoteKey;
@@ -461,28 +468,59 @@ export class InputSourceManager {
    * 3. Else → empty (apps will be discovered when TV becomes reachable)
    */
   private getInitialAppInputs(): InputData[] {
-    // User-configured inputs take priority
+    const customApps = this.getCustomAppInputs();
+
+    // User-configured inputs take priority for the explicit list
     if (this.deps.userInputs && this.deps.userInputs.length > 0) {
-      return this.deps.userInputs.map(i => ({
+      const inputs = this.deps.userInputs.map(i => ({
         id: i.identifier,
         name: i.name,
         type: i.type,
       }));
+      return this.mergeCustomApps(inputs, customApps);
     }
 
     // Use cached apps from a previous session (apps discovered from TV)
     const cachedApps = this.getCachedInputConfigs().filter(c => c.type === 'app');
     if (cachedApps.length > 0) {
-      return cachedApps.map(c => ({
+      const inputs = cachedApps.map(c => ({
         id: c.id,
         name: c.name,
         type: c.type as InputType,
         channelListId: c.channelListId,
       }));
+      return this.mergeCustomApps(inputs, customApps);
     }
 
-    // No cache — start with static sources only; apps added once TV is reachable
-    return [];
+    // No cache — expose custom apps immediately; discovered apps added once
+    // the TV is reachable.
+    return customApps;
+  }
+
+  /** Map the user's custom-app config entries to app inputs. */
+  private getCustomAppInputs(): InputData[] {
+    return (this.deps.customApps ?? [])
+      .filter(a => a.packageName)
+      .map(a => ({
+        id: a.packageName,
+        name: a.name || a.packageName,
+        type: 'app' as const,
+        className: a.className,
+        action: a.action,
+      }));
+  }
+
+  /**
+   * Merge custom apps into a base app list. Custom apps win on id collision
+   * (so their explicit launch intent overrides any cached/discovered entry)
+   * and are placed first so they are never dropped by the MAX_INPUT_SOURCES cap.
+   */
+  private mergeCustomApps(base: InputData[], customApps: InputData[]): InputData[] {
+    if (customApps.length === 0) {
+      return base;
+    }
+    const customIds = new Set(customApps.map(a => a.id));
+    return [...customApps, ...base.filter(b => !customIds.has(b.id))];
   }
 
   // ==========================================================================
@@ -651,7 +689,16 @@ export class InputSourceManager {
 
     this.setupInputSourceHandlers(service, defaultName);
 
-    return { id: input.id, name: defaultName, type: input.type, identifier, service, channelListId: input.channelListId };
+    return {
+      id: input.id,
+      name: defaultName,
+      type: input.type,
+      identifier,
+      service,
+      channelListId: input.channelListId,
+      className: input.className,
+      action: input.action,
+    };
   }
 
   private createInputSourceService(
@@ -709,7 +756,7 @@ export class InputSourceManager {
   private async switchInput(input: InputSource): Promise<boolean> {
     switch (input.type) {
       case 'app':
-        return this.deps.tvClient.launchApplication(input.id);
+        return this.deps.tvClient.launchApplication(input.id, input.className, input.action);
       case 'source':
         if (input.id === WATCH_TV_URI) {
           return this.deps.tvClient.launchWatchTV();

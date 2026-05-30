@@ -417,13 +417,29 @@ export class PhilipsTVClient {
     return apps;
   }
 
-  async launchApplication(packageName: string): Promise<boolean> {
-    // Use cached intent from getApplications() if available
-    const cached = this.appIntents.get(packageName);
-    const intent: ApplicationIntent = cached ?? {
-      component: { packageName, className: 'MainActivity' },
-      action: 'android.intent.action.MAIN',
-    };
+  /**
+   * Launch an app by package name.
+   *
+   * @param className - Explicit launch activity. Required to reliably launch
+   *   apps the TV's `/applications` endpoint does not report (e.g. sideloaded
+   *   apps). When omitted, a cached intent from {@link getApplications} is used,
+   *   falling back to a best-effort `MainActivity` guess.
+   * @param action - Intent action (defaults to `android.intent.action.MAIN`).
+   */
+  async launchApplication(packageName: string, className?: string, action?: string): Promise<boolean> {
+    let intent: ApplicationIntent;
+    if (className) {
+      intent = {
+        component: { packageName, className },
+        action: action ?? 'android.intent.action.MAIN',
+      };
+    } else {
+      // Use cached intent from getApplications() if available, else best-effort
+      intent = this.appIntents.get(packageName) ?? {
+        component: { packageName, className: 'MainActivity' },
+        action: 'android.intent.action.MAIN',
+      };
+    }
 
     return this.launchIntent(intent);
   }
@@ -431,6 +447,26 @@ export class PhilipsTVClient {
   async getCurrentActivity(): Promise<string | null> {
     const result = await this.get<{ component?: { packageName?: string } }>('/activities/current');
     return result?.component?.packageName ?? null;
+  }
+
+  /**
+   * Get the full launch intent of the app currently open on the TV.
+   * Used to capture the package/class/action of an app for a custom-app entry.
+   */
+  async getCurrentActivityIntent(): Promise<{ packageName: string; className: string | null; action: string | null } | null> {
+    const result = await this.get<{ component?: { packageName?: string; className?: string }; action?: string }>('/activities/current');
+    const packageName = result?.component?.packageName;
+    // The TV reports the literal "NA" when no trackable app is in the foreground
+    // (e.g. on Home or while watching TV).
+    if (!packageName || packageName === 'NA') {
+      return null;
+    }
+    const className = result?.component?.className;
+    return {
+      packageName,
+      className: className && className !== 'NA' ? className : null,
+      action: result?.action ?? null,
+    };
   }
 
   private async launchIntent(intent: ApplicationIntent): Promise<boolean> {

@@ -59,6 +59,7 @@ export class PhilipsAmbilightTVAccessory {
       storagePath: platform.api.user.storagePath(),
       deviceId: this.config.mac,
       userInputs: this.config.inputs,
+      customApps: this.config.customApps,
       sourceConfigs: this.config.sources,
       infoButtonKey: this.config.infoButtonKey,
       backButtonKey: this.config.backButtonKey,
@@ -117,7 +118,7 @@ export class PhilipsAmbilightTVAccessory {
     if (this.config.sourceSwitches) {
       const tvName = sanitizeForHomeKit(this.config.name);
       const sources = this.inputSourceManager.getVisibleSources().map(s => ({
-        id: s.id, name: s.name, type: s.type, channelListId: s.channelListId,
+        id: s.id, name: s.name, type: s.type, channelListId: s.channelListId, className: s.className, action: s.action,
       }));
       this.sourceSwitchService.configureSwitches(this.accessory, sources, tvName);
     }

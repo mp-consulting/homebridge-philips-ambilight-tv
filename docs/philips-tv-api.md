@@ -290,6 +290,17 @@ the Ambilight power/style controls above.
 }
 ```
 
+> **`/applications` does not list everything.** On many models this endpoint
+> only returns Philips/system apps plus a subset of installed apps — sideloaded
+> or Play-Store apps (e.g. `com.ug.eon.android.tv`) may be absent. To launch such
+> an app you need its full intent (`packageName` + `className` + `action`), which
+> can be captured by opening the app on the TV and reading `/activities/current`.
+
+> **`/activities/current` sentinel.** When no trackable app is in the foreground
+> (e.g. on Home or while watching TV) the endpoint returns the literal string
+> `"NA"` for `packageName`/`className` rather than omitting them. Treat `"NA"` as
+> "nothing detected".
+
 ### Switch to TV Channel
 
 ```json

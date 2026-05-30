@@ -46,6 +46,28 @@ If your TV is paired with Philips Hue lamps, you can enable an extra switch that
 
 This appears as a separate Switch accessory in HomeKit, usable in scenes and automations. It is backed by the TV's `/HueLamp/power` endpoint.
 
+### Custom Apps
+
+Some TVs don't report every installed app through their app list — sideloaded or region-specific apps (e.g. EON) can be missing, so they never appear as sources. You can add these manually, **in addition** to auto-discovered apps.
+
+The easiest way is the config UI: edit a TV → **General** tab → **Custom Apps**. Open the app on your TV, click **Detect from TV**, and the package name and launch activity are filled in automatically — then click **Add**.
+
+You can also configure them directly:
+
+```json
+{
+  "customApps": [
+    {
+      "name": "EON",
+      "packageName": "com.ug.eon.android.tv",
+      "className": "com.ug.eon.android.tv.MainActivity"
+    }
+  ]
+}
+```
+
+The `className` (launch activity) is needed for reliable launching, since it can't be discovered from the TV for apps it doesn't report. "Detect from TV" captures it for you; otherwise the plugin falls back to a best-effort guess.
+
 ### State Sensors
 
 You can enable optional MotionSensor services that expose TV state for HomeKit automations:
@@ -127,6 +149,7 @@ Add the following to your `config.json`:
 | `devices[].ambilightMode` | Ambilight mode on turn-on (e.g. `"FOLLOW_VIDEO/NATURAL"`) | No |
 | `devices[].stateSensors` | Array of state sensors: `"power"`, `"ambilight"`, `"mute"` | No |
 | `devices[].ambilightHueSwitch` | Expose the Ambilight + Hue integration as a separate switch | No |
+| `devices[].customApps` | Apps the TV doesn't report (added on top of discovered apps); each has `name`, `packageName`, optional `className`/`action` | No |
 | `devices[].pollingInterval` | Polling interval in ms (1000-60000, default: 10000) | No |
 
 ### Getting Credentials

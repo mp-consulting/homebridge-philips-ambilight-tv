@@ -113,6 +113,7 @@
     getMac: (ip) => homebridge.request('/get-mac', ip),
     wakeOnLan: (mac) => homebridge.request('/wake-on-lan', { mac }),
     getSources: (ip, username, password, mac) => homebridge.request('/get-sources', { ip, username, password, mac }),
+    currentApp: (ip, username, password, mac) => homebridge.request('/current-app', { ip, username, password, mac }),
   };
 
   // ============================================================================
@@ -406,12 +407,130 @@
     $('editSensorPower').checked = editSensors.includes('power');
     $('editSensorAmbilight').checked = editSensors.includes('ambilight');
     $('editSensorMute').checked = editSensors.includes('mute');
+    // Custom apps — work on a copy until the form is saved
+    state.editCustomApps = Array.isArray(tv.customApps) ? tv.customApps.map(a => ({ ...a })) : [];
+    clearCustomAppInputs();
+    renderCustomApps();
     // Reset to General tab
     const generalTab = $('editGeneralTab');
     if (generalTab) {
       new bootstrap.Tab(generalTab).show();
     }
     showScreen('editScreen');
+  };
+
+  // ============================================================================
+  // CUSTOM APPS
+  // ============================================================================
+
+  const clearCustomAppInputs = () => {
+    $('customAppName').value = '';
+    $('customAppPackage').value = '';
+    $('customAppClassName').value = '';
+    $('customAppAction').value = '';
+    $('customAppDetectInfo').textContent = '';
+  };
+
+  const renderCustomApps = () => {
+    const list = $('editCustomAppsList');
+    const apps = state.editCustomApps || [];
+    list.innerHTML = '';
+    if (apps.length === 0) {
+      const empty = document.createElement('li');
+      empty.className = 'list-group-item text-muted small';
+      empty.textContent = 'No custom apps yet.';
+      list.appendChild(empty);
+      return;
+    }
+    apps.forEach((app, i) => {
+      const li = document.createElement('li');
+      li.className = 'list-group-item d-flex justify-content-between align-items-center';
+      const info = document.createElement('div');
+      const title = document.createElement('div');
+      title.textContent = app.name;
+      const sub = document.createElement('small');
+      sub.className = 'text-muted';
+      sub.textContent = app.className ? `${app.packageName} · ${app.className}` : app.packageName;
+      info.appendChild(title);
+      info.appendChild(sub);
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'btn btn-sm btn-outline-danger';
+      remove.innerHTML = '<i class="bi bi-trash"></i>';
+      remove.addEventListener('click', () => {
+        state.editCustomApps.splice(i, 1);
+        renderCustomApps();
+      });
+      li.appendChild(info);
+      li.appendChild(remove);
+      list.appendChild(li);
+    });
+  };
+
+  const addCustomApp = () => {
+    const name = $('customAppName').value.trim();
+    const packageName = $('customAppPackage').value.trim();
+    if (!packageName) {
+      homebridge.toast.error('Package name is required');
+      return;
+    }
+    const app = { name: name || packageName, packageName };
+    const className = $('customAppClassName').value.trim();
+    const action = $('customAppAction').value.trim();
+    if (className) {
+      app.className = className;
+    }
+    if (action) {
+      app.action = action;
+    }
+    if (!state.editCustomApps) {
+      state.editCustomApps = [];
+    }
+    const existing = state.editCustomApps.findIndex(a => a.packageName === packageName);
+    if (existing >= 0) {
+      state.editCustomApps[existing] = app; // update in place
+    } else {
+      state.editCustomApps.push(app);
+    }
+    clearCustomAppInputs();
+    renderCustomApps();
+  };
+
+  const detectCurrentApp = async () => {
+    const tv = state.configuredTvs[state.editingTvIndex] || {};
+    const ip = $('editTvIp').value.trim() || tv.ip;
+    const mac = $('editTvMac').value.trim() || tv.mac;
+    if (!ip) {
+      homebridge.toast.error('TV IP address is required');
+      return;
+    }
+    const btn = $('detectCurrentAppBtn');
+    const original = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Detecting...';
+    try {
+      const res = await api.currentApp(ip, tv.username, tv.password, mac);
+      if (res && res.success && res.app) {
+        const { packageName, className, action } = res.app;
+        $('customAppPackage').value = packageName || '';
+        $('customAppClassName').value = className || '';
+        $('customAppAction').value = action || '';
+        if (!$('customAppName').value.trim()) {
+          // Best-effort friendly name from the package's last segment
+          const guess = (packageName || '').split('.').filter(Boolean).pop() || '';
+          $('customAppName').value = guess.charAt(0).toUpperCase() + guess.slice(1);
+        }
+        $('customAppDetectInfo').textContent = `Detected ${packageName}${className ? ' · ' + className : ''}. Review the name, then click Add.`;
+      } else {
+        homebridge.toast.error((res && res.error) || 'No app detected');
+        $('customAppDetectInfo').textContent = '';
+      }
+    } catch (e) {
+      homebridge.toast.error('Detection failed: ' + e.message);
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = original;
+    }
   };
 
   const handleEditSubmit = async (event) => {
@@ -446,6 +565,7 @@
         sourceSwitches: $('editSourceSwitches').checked,
         ambilightHueSwitch: $('editAmbilightHueSwitch').checked,
         stateSensors: editStateSensors,
+        customApps: state.editCustomApps || [],
       });
       homebridge.toast.success('TV configuration updated');
       form.classList.remove('was-validated');
@@ -568,9 +688,11 @@
       const result = await api.getSources(tv.ip, tv.username, tv.password, tv.mac);
 
       if (result.success) {
-        // Merge with existing source config (order and visibility)
+        // Inject configured custom apps (the TV doesn't report these), then
+        // merge with existing source config (order and visibility)
+        const withCustom = injectCustomApps(result.sources, tv.customApps);
         const existingConfig = tv.sources || [];
-        state.sources = mergeSourcesWithConfig(result.sources, existingConfig);
+        state.sources = mergeSourcesWithConfig(withCustom, existingConfig);
         renderSourcesList();
 
         $('sourcesLoadingSpinner').style.display = 'none';
@@ -581,6 +703,17 @@
     } catch (e) {
       showSourcesError(e.message);
     }
+  };
+
+  const injectCustomApps = (sources, customApps) => {
+    if (!Array.isArray(customApps) || customApps.length === 0) {
+      return sources;
+    }
+    const existingIds = new Set(sources.map(s => s.id));
+    const extra = customApps
+      .filter(a => a.packageName && !existingIds.has(a.packageName))
+      .map(a => ({ id: a.packageName, name: a.name || a.packageName, type: 'app', icon: 'app', custom: true }));
+    return [...sources, ...extra];
   };
 
   const mergeSourcesWithConfig = (fetchedSources, existingConfig) => {
@@ -635,6 +768,9 @@
     }
     if (source.icon === 'tv') {
       return '<span class="badge bg-secondary rounded-pill source-type-badge">TV</span>';
+    }
+    if (source.custom) {
+      return '<span class="badge bg-warning text-dark rounded-pill source-type-badge" title="Added via the Apps tab"><i class="bi bi-stars"></i> Custom</span>';
     }
     return '<span class="badge bg-success rounded-pill source-type-badge">App</span>';
   };
@@ -908,6 +1044,10 @@
   $('editTvForm').addEventListener('submit', handleEditSubmit);
   $('cancelEditBtn').addEventListener('click', () => showScreen('successScreen'));
   $('cancelDiscoveryBtn').addEventListener('click', () => showScreen('successScreen'));
+
+  // Custom apps
+  $('addCustomAppBtn').addEventListener('click', addCustomApp);
+  $('detectCurrentAppBtn').addEventListener('click', detectCurrentApp);
 
   // Step 3 confirm screen
   $('confirmTvForm').addEventListener('submit', handleConfirmSubmit);

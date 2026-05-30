@@ -273,6 +273,9 @@
         <li class="nav-item" role="presentation">
           <button class="nav-link" id="editAutomationsTab" data-bs-toggle="tab" data-bs-target="#editAutomationsPane" type="button" role="tab"><i class="bi bi-gear-wide-connected me-1"></i>Automations</button>
         </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link" id="editAppsTab" data-bs-toggle="tab" data-bs-target="#editAppsPane" type="button" role="tab"><i class="bi bi-grid-1x2 me-1"></i>Apps</button>
+        </li>
       </ul>
       <form id="editTvForm" class="needs-validation" novalidate>
         <div class="tab-content">
@@ -409,6 +412,29 @@
                 </div>
               </div>
             </div>
+          </div>
+          <!-- Apps tab -->
+          <div class="tab-pane fade" id="editAppsPane" role="tabpanel">
+            <p class="text-muted small mb-1">Add apps your TV doesn't list (e.g. sideloaded apps). These appear in addition to auto-discovered apps.</p>
+            <p class="text-muted small mb-3">Open the app on your TV, then click <strong>Detect from TV</strong> to fill in the package name and launch activity automatically.</p>
+            <ul id="editCustomAppsList" class="list-group mb-3"></ul>
+            <div class="row g-2 align-items-end">
+              <div class="col-md-4">
+                <label for="customAppName" class="form-label small mb-1">Name</label>
+                <input type="text" class="form-control form-control-sm" id="customAppName" placeholder="EON">
+              </div>
+              <div class="col-md-4">
+                <label for="customAppPackage" class="form-label small mb-1">Package name</label>
+                <input type="text" class="form-control form-control-sm" id="customAppPackage" placeholder="com.ug.eon.android.tv">
+              </div>
+              <div class="col-md-4 d-flex gap-2">
+                <button type="button" class="btn btn-sm btn-outline-secondary text-nowrap" id="detectCurrentAppBtn"><i class="bi bi-broadcast"></i> Detect from TV</button>
+                <button type="button" class="btn btn-sm btn-primary text-nowrap" id="addCustomAppBtn"><i class="bi bi-plus-lg"></i> Add</button>
+              </div>
+            </div>
+            <input type="hidden" id="customAppClassName">
+            <input type="hidden" id="customAppAction">
+            <div id="customAppDetectInfo" class="form-text mt-1"></div>
           </div>
         </div>
         <hr>

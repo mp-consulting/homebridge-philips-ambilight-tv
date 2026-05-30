@@ -156,7 +156,7 @@ describe('SourceSwitchService', () => {
 
       await onSetHandler(true);
 
-      expect(deps.tvClient.launchApplication).toHaveBeenCalledWith('com.netflix.ninja');
+      expect(deps.tvClient.launchApplication).toHaveBeenCalledWith('com.netflix.ninja', undefined, undefined);
     });
 
     it('should call onSourceSwitch callback after successful switch', async () => {
