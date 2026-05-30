@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.0] - 2026-05-30
+
+### Added
+
+- **Ambilight + Hue switch**: Optional switch to toggle the Philips Hue integration (Hue lamps following Ambilight) independently of the main Ambilight controls, for use in HomeKit scenes and automations. Enable via the new `ambilightHueSwitch` option (config UI: Automations tab). Backed by the TV's `/HueLamp/power` endpoint ([#12](https://github.com/mp-consulting/homebridge-philips-ambilight-tv/issues/12))
+
+### Fixed
+
+- **Visible apps dropped from sources**: Apps explicitly marked visible in the sources config were silently discarded at runtime by the system/launcher package exclusion list, even though the config UI showed them as available. An app set visible now always overrides the exclusion list ([#11](https://github.com/mp-consulting/homebridge-philips-ambilight-tv/issues/11))
+
 ## [1.3.7] - 2026-04-17
 
 ### Fixed
