@@ -322,6 +322,29 @@ describe('InputSourceManager', () => {
       expect(appSources[0].id).toBe('com.netflix.ninja');
     });
 
+    it('should keep an excluded package when the user marks it visible', async () => {
+      const deps = createMockDeps({
+        sourceConfigs: [{ id: 'com.android.vending', visible: true }],
+      });
+      (deps.tvClient.getApplications as ReturnType<typeof vi.fn>).mockResolvedValue([
+        { label: 'Netflix', intent: { component: { packageName: 'com.netflix.ninja' } } },
+        { label: 'Google Play', intent: { component: { packageName: 'com.android.vending' } } },
+        { label: 'Launcher', intent: { component: { packageName: 'com.google.android.tvlauncher' } } },
+      ]);
+
+      const manager = new InputSourceManager(deps);
+      const tvService = createMockService();
+      manager.configureInputSources(tvService as never);
+
+      await manager.fetchAppsFromTV();
+
+      const appIds = manager.getSources().filter(s => s.type === 'app').map(s => s.id);
+      // Explicitly-visible excluded package is kept; non-configured excluded one is still dropped
+      expect(appIds).toContain('com.android.vending');
+      expect(appIds).toContain('com.netflix.ninja');
+      expect(appIds).not.toContain('com.google.android.tvlauncher');
+    });
+
     it('should not add duplicate apps', async () => {
       const deps = createMockDeps();
       (deps.tvClient.getApplications as ReturnType<typeof vi.fn>).mockResolvedValue([

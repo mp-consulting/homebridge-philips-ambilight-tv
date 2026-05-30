@@ -233,7 +233,16 @@ export class InputSourceManager {
       const tvAppInputs: InputData[] = tvApps
         .filter(app => {
           const pkg = app.intent?.component?.packageName;
-          return pkg && !EXCLUDED_PACKAGES.has(pkg);
+          if (!pkg) {
+            return false;
+          }
+          // User intent wins: never drop a package the user has explicitly
+          // marked visible in the sources config, even if it's a system/launcher
+          // package in EXCLUDED_PACKAGES.
+          if (this.sourceConfigMap.get(pkg)?.visible === true) {
+            return true;
+          }
+          return !EXCLUDED_PACKAGES.has(pkg);
         })
         .map(app => ({
           id: app.intent!.component!.packageName!,
