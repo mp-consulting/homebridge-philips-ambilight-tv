@@ -9,6 +9,7 @@ import { InputSourceManager } from './services/InputSourceManager.js';
 import { StatePollManager } from './services/StatePollManager.js';
 import { SourceSwitchService } from './services/SourceSwitchService.js';
 import { StateSensorService } from './services/StateSensorService.js';
+import { AmbilightHueSwitchService } from './services/AmbilightHueSwitchService.js';
 
 // ============================================================================
 // PHILIPS AMBILIGHT TV ACCESSORY
@@ -25,6 +26,7 @@ export class PhilipsAmbilightTVAccessory {
   private readonly sourceSwitchService: SourceSwitchService;
   private readonly statePollManager: StatePollManager;
   private readonly stateSensorService: StateSensorService;
+  private readonly ambilightHueSwitchService: AmbilightHueSwitchService;
 
   private isPoweredOn = false;
   private isMuted = false;
@@ -80,6 +82,14 @@ export class PhilipsAmbilightTVAccessory {
       log: (level, msg) => this.log(level, msg),
     });
 
+    this.ambilightHueSwitchService = new AmbilightHueSwitchService({
+      Service: this.Service,
+      Characteristic: this.Characteristic,
+      tvClient: this.tvClient,
+      communicationError: () => this.communicationError(),
+      log: (level, msg) => this.log(level, msg),
+    });
+
     this.statePollManager = new StatePollManager(
       this.tvClient,
       this.config,
@@ -115,6 +125,13 @@ export class PhilipsAmbilightTVAccessory {
     // Configure state sensors (MotionSensor services for HomeKit automations)
     const sensorTypes = this.config.stateSensors ?? [];
     this.stateSensorService.configureSensors(this.accessory, sensorTypes, sanitizeForHomeKit(this.config.name));
+
+    // Configure the Ambilight + Hue switch (independent toggle for Hue integration)
+    if (this.config.ambilightHueSwitch) {
+      this.ambilightHueSwitchService.configureSwitch(this.accessory, sanitizeForHomeKit(this.config.name));
+    } else {
+      this.ambilightHueSwitchService.removeSwitch(this.accessory);
+    }
 
     this.statePollManager.start();
   }
@@ -270,6 +287,7 @@ export class PhilipsAmbilightTVAccessory {
       this.stateSensorService.update('ambilight', false);
       this.stateSensorService.update('mute', false);
       this.sourceSwitchService.resetAll();
+      this.ambilightHueSwitchService.reset();
     }
     this.log('debug', `Power state updated: ${isOn ? 'ON' : 'OFF'}`);
   }

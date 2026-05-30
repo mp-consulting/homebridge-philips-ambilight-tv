@@ -211,6 +211,42 @@ The app sends **burst** magic packets:
 - Saturation: `2131230771`
 - Range: `0-10`
 
+> **Caveat:** These node IDs are **not stable across TVs/firmware**. The official
+> app does not hardcode them — it fetches `/menuitems/settings/structure` and maps
+> each node by its `context` string (e.g. `ambilight_brightness`,
+> `ambilight_saturation`, `ambilight_style`, `ambilight_lounge_light`,
+> `ambilight_lounge_light_hue`) to the node ID reported by that TV. The hardcoded
+> values above happen to work on the models tested but should ideally be resolved
+> dynamically.
+
+### Ambilight + Hue
+
+Toggles the **Ambilight + Hue** integration (Philips Hue lamps following Ambilight).
+This is a dedicated endpoint — **not** a menu settings node — and is independent of
+the Ambilight power/style controls above.
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/HueLamp/power` | Get Ambilight+Hue state (`{"power":"On"\|"Off"}`) |
+| POST | `/HueLamp/power` | Enable/disable Ambilight+Hue (`{"power":"On"\|"Off"}`) |
+| GET/POST | `/HueLamp/Lock` | Lock state |
+| GET | `/HueLamp/Identifier` | Paired bridge identifier |
+| GET/POST | `/HueLamp/Config/{id}` | Per-bridge configuration |
+
+```json
+// POST /HueLamp/power
+{ "power": "On" }   // enable   ("Off" to disable)
+
+// GET /HueLamp/power
+{ "power": "On" }   // enabled when power === "On"
+```
+
+> **Note:** `/HueLamp/*` is the TV-side toggle for "the TV drives my Hue lamps from
+> Ambilight". It is distinct from the [Hue Bridge Integration](#hue-bridge-integration)
+> endpoints below, which are the standard Hue bridge REST API the app talks to
+> directly. The value encoding is a capitalized string enum (`"On"`/`"Off"`), like
+> `/ambilight/power` — not a boolean or integer.
+
 ## Input / Remote Control
 
 | Method | Endpoint | Description |
@@ -336,7 +372,9 @@ The function `listenForTVEventsAndNotify()` posts to the endpoint and blocks unt
 
 ## Hue Bridge Integration
 
-The app directly communicates with Philips Hue bridges:
+The app directly communicates with Philips Hue bridges (standard Hue bridge REST
+API, served by the bridge — **not** the TV). To toggle the TV's "Ambilight + Hue"
+feature itself, use the TV-side [`/HueLamp/power`](#ambilight--hue) endpoint instead.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|

@@ -16,6 +16,7 @@ A Homebridge plugin to control Philips Android TVs with Ambilight as HomeKit Tel
 - Volume control and mute
 - Remote control (D-Pad, Back, Menu, Play/Pause, etc.)
 - **Ambilight color control** with brightness, color picker, and **Adaptive Lighting**
+- **Ambilight + Hue switch** — optional switch to toggle the Philips Hue integration independently
 - **Long-poll state detection** — near-instant updates when TV state changes, with interval polling fallback
 - **State sensors** — optional MotionSensor services for power, ambilight, and mute (for HomeKit automations)
 - Multi-TV support
@@ -32,6 +33,18 @@ The Ambilight appears as a color lightbulb in HomeKit with:
 - **Color temperature slider** - Manual control from 140 mireds (cool) to 500 mireds (warm)
 
 When you select a color in HomeKit, the TV switches to "Follow Color" mode with your chosen color. The plugin also syncs the current color state from the TV back to HomeKit.
+
+### Ambilight + Hue
+
+If your TV is paired with Philips Hue lamps, you can enable an extra switch that toggles the **Ambilight + Hue** integration (Hue lamps following Ambilight) independently of the main Ambilight controls:
+
+```json
+{
+  "ambilightHueSwitch": true
+}
+```
+
+This appears as a separate Switch accessory in HomeKit, usable in scenes and automations. It is backed by the TV's `/HueLamp/power` endpoint.
 
 ### State Sensors
 
@@ -113,6 +126,7 @@ Add the following to your `config.json`:
 | `devices[].sources` | Custom source configuration | No |
 | `devices[].ambilightMode` | Ambilight mode on turn-on (e.g. `"FOLLOW_VIDEO/NATURAL"`) | No |
 | `devices[].stateSensors` | Array of state sensors: `"power"`, `"ambilight"`, `"mute"` | No |
+| `devices[].ambilightHueSwitch` | Expose the Ambilight + Hue integration as a separate switch | No |
 | `devices[].pollingInterval` | Polling interval in ms (1000-60000, default: 10000) | No |
 
 ### Getting Credentials

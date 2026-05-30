@@ -655,6 +655,22 @@ export class PhilipsTVClient {
     return result !== null;
   }
 
+  /**
+   * Get whether the Ambilight+Hue integration (Hue lamps follow Ambilight) is on.
+   */
+  async getAmbilightHue(): Promise<boolean> {
+    const result = await this.get<{ power?: string }>('/HueLamp/power');
+    return result?.power === 'On';
+  }
+
+  /**
+   * Enable or disable the Ambilight+Hue integration (Hue lamps follow Ambilight).
+   */
+  async setAmbilightHue(on: boolean): Promise<boolean> {
+    const result = await this.post('/HueLamp/power', { power: on ? 'On' : 'Off' });
+    return result !== null;
+  }
+
   // ==========================================================================
   // UTILITIES
   // ==========================================================================
