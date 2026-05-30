@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.1] - 2026-05-30
+
+### Fixed
+
+- **Custom app launching**: Philips firmware rejects a launch without a valid launch activity (`className`), so custom apps could fail to start. The fallback now uses `<packageName>.MainActivity` (the common Android convention) instead of a bare `MainActivity`. For apps that use a different launcher (e.g. YouTube, Prime Video), capture the exact activity with **Detect from TV** or set it in the new optional **Launch activity** field ([#11](https://github.com/mp-consulting/homebridge-philips-ambilight-tv/issues/11))
+
+### Changed
+
+- **Detect from TV**: The launch activity is now a visible optional field, and detection captures the app's real launch activity (which often differs from `<package>.MainActivity`). When the TV is on live TV or the home screen, detection now tells you to open the target app first instead of returning the system activity
+
 ## [1.5.0] - 2026-05-30
 
 ### Added
