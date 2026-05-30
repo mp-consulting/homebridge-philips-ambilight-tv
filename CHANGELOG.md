@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.2] - 2026-05-30
+
+### Fixed
+
+- **Start Ambilight on power-on**: The `ambilightOnStart` option never triggered when the TV was off at Homebridge startup (the common case) — the first power-on after startup was mistaken for the initial state sync and skipped. The power poll now reports its initial state at startup, so a genuine off→on transition correctly auto-starts Ambilight (while a Homebridge restart with the TV already on still skips it)
+
 ## [1.5.1] - 2026-05-30
 
 ### Fixed
