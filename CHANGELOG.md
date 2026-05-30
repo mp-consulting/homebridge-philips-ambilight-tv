@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.0] - 2026-05-30
+
+### Added
+
+- **Custom apps**: Add apps your TV doesn't report through its app list (e.g. sideloaded or region-specific apps like EON), in addition to auto-discovered apps. A dedicated **Apps** tab in the config UI lets you add them, with a **Detect from TV** button that auto-fills the package name and launch activity from whatever app is open on the TV. Custom apps appear in the sources list with a distinct "Custom" badge so their visibility and order can be managed like any other source ([#11](https://github.com/mp-consulting/homebridge-philips-ambilight-tv/issues/11))
+- **Start Ambilight on power-on**: New `ambilightOnStart` option (toggle next to Ambilight Mode) automatically turns Ambilight on, in the configured mode, whenever the TV powers on
+
 ## [1.4.0] - 2026-05-30
 
 ### Added
