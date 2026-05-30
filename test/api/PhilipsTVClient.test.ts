@@ -604,6 +604,38 @@ describe('PhilipsTVClient', () => {
       );
     });
 
+    it('should fall back to <package>.MainActivity when no className is known', async () => {
+      mockFetch.mockReturnValue(mockResponse({}));
+
+      const promise = client.launchApplication('com.ug.eon.android.tv');
+      await vi.runAllTimersAsync();
+      await promise;
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('/activities/launch'),
+        expect.objectContaining({
+          body: expect.stringContaining('com.ug.eon.android.tv.MainActivity'),
+        }),
+        expect.any(Number),
+      );
+    });
+
+    it('should use an explicit className when provided', async () => {
+      mockFetch.mockReturnValue(mockResponse({}));
+
+      const promise = client.launchApplication('com.ug.eon.android.tv', 'com.ug.eon.android.tv.SplashActivity');
+      await vi.runAllTimersAsync();
+      await promise;
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('/activities/launch'),
+        expect.objectContaining({
+          body: expect.stringContaining('com.ug.eon.android.tv.SplashActivity'),
+        }),
+        expect.any(Number),
+      );
+    });
+
     it('should use cached intent from getApplications', async () => {
       // First call: getApplications caches the intent
       mockFetch.mockReturnValue(mockResponse({

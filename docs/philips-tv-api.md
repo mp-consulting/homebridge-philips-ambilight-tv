@@ -301,6 +301,21 @@ the Ambilight power/style controls above.
 > `"NA"` for `packageName`/`className` rather than omitting them. Treat `"NA"` as
 > "nothing detected".
 
+> **`/activities/current` reflects the actual foreground.** It returns the real
+> open app with its true launch activity (e.g. Prime Video →
+> `com.amazon.ignition.IgnitionActivity`). When the TV is on live TV or the home
+> screen it reports the corresponding system activity instead
+> (`org.droidtv.playtv`, `org.droidtv.contentexplorer`, a launcher) — so to detect
+> a specific app, that app must be in the foreground when you read the endpoint.
+> Note the real className often differs from `<package>.MainActivity`, so reading
+> it here is more reliable than guessing.
+
+> **Launch requires a valid `className`.** Philips firmware rejects a launch with
+> a package-only component (or empty `className`) with `400 Bad Request`. For apps
+> not in `/applications`, supply the launch activity; the conventional
+> `<packageName>.MainActivity` works for most apps (e.g. `com.netflix.ninja` →
+> `com.netflix.ninja.MainActivity`).
+
 ### Switch to TV Channel
 
 ```json

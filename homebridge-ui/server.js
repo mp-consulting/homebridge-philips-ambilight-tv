@@ -430,6 +430,27 @@ class UiServer extends HomebridgePluginUiServer {
         };
       }
 
+      // These are the TV's own live-TV / home / launcher activities — not a
+      // user app. If detect lands on one, the wanted app isn't in the
+      // foreground, so guide the user to open it first.
+      const SYSTEM_FOREGROUND = new Set([
+        'org.droidtv.playtv',
+        'org.droidtv.contentexplorer',
+        'org.droidtv.channels',
+        'com.google.android.tvlauncher',
+        'com.google.android.leanbacklauncher',
+      ]);
+      if (SYSTEM_FOREGROUND.has(app.packageName)) {
+        console.log(`[CurrentApp] Foreground is system activity ${app.packageName}, not a user app`);
+        return {
+          success: false,
+          notAnApp: true,
+          detected: app.packageName,
+          error: `The TV is currently on live TV or the home screen (${app.packageName}). `
+            + 'Open the app you want to add on the TV, then click Detect again.',
+        };
+      }
+
       console.log(`[CurrentApp] Detected ${app.packageName} (${app.className || 'no class'})`);
       return { success: true, app };
     } catch (error) {

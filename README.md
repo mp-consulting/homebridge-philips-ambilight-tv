@@ -50,23 +50,21 @@ This appears as a separate Switch accessory in HomeKit, usable in scenes and aut
 
 Some TVs don't report every installed app through their app list — sideloaded or region-specific apps (e.g. EON) can be missing, so they never appear as sources. You can add these manually, **in addition** to auto-discovered apps.
 
-The easiest way is the config UI: edit a TV → **General** tab → **Custom Apps**. Open the app on your TV, click **Detect from TV**, and the package name and launch activity are filled in automatically — then click **Add**.
+The easiest way is the config UI: edit a TV → **Apps** tab. Usually the **package name** is all you need — click **Add**.
 
 You can also configure them directly:
 
 ```json
 {
   "customApps": [
-    {
-      "name": "EON",
-      "packageName": "com.ug.eon.android.tv",
-      "className": "com.ug.eon.android.tv.MainActivity"
-    }
+    { "name": "EON", "packageName": "com.ug.eon.android.tv" }
   ]
 }
 ```
 
-The `className` (launch activity) is needed for reliable launching, since it can't be discovered from the TV for apps it doesn't report. "Detect from TV" captures it for you; otherwise the plugin falls back to a best-effort guess.
+When no launch activity is given, the plugin launches `<packageName>.MainActivity` (the common Android convention, e.g. `com.netflix.ninja.MainActivity`), which works for most apps. Some apps use a different launcher (e.g. Prime Video is `com.amazon.ignition.IgnitionActivity`) — for those, set the exact **launch activity** (`className`) in the optional field, or capture it with **Detect from TV**.
+
+> **Detect from TV** reads the app currently open on the TV and fills in its package name and exact launch activity. Make sure the app is in the foreground first — if the TV is on live TV or the home screen, it reports that system activity instead.
 
 ### State Sensors
 

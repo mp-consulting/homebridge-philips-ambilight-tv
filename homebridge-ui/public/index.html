@@ -430,10 +430,10 @@
           <!-- Apps tab -->
           <div class="tab-pane fade" id="editAppsPane" role="tabpanel">
             <p class="text-muted small mb-1">Add apps your TV doesn't list (e.g. sideloaded apps). These appear in addition to auto-discovered apps.</p>
-            <p class="text-muted small mb-3">Open the app on your TV, then click <strong>Detect from TV</strong> to fill in the package name and launch activity automatically.</p>
+            <p class="text-muted small mb-3"><strong>Open the app on your TV</strong>, then click <strong>Detect from TV</strong> to capture its package name and launch activity. If it reports live TV or the home screen, make sure the app is actually in the foreground first. You can also just type the package name manually.</p>
             <ul id="editCustomAppsList" class="list-group mb-3"></ul>
-            <div class="row g-2 align-items-end">
-              <div class="col-md-4">
+            <div class="row g-2">
+              <div class="col-md-3">
                 <label for="customAppName" class="form-label small mb-1">Name</label>
                 <input type="text" class="form-control form-control-sm" id="customAppName" placeholder="EON">
               </div>
@@ -441,12 +441,15 @@
                 <label for="customAppPackage" class="form-label small mb-1">Package name</label>
                 <input type="text" class="form-control form-control-sm" id="customAppPackage" placeholder="com.ug.eon.android.tv">
               </div>
-              <div class="col-md-4 d-flex gap-2">
-                <button type="button" class="btn btn-sm btn-outline-secondary text-nowrap" id="detectCurrentAppBtn"><i class="bi bi-broadcast"></i> Detect from TV</button>
-                <button type="button" class="btn btn-sm btn-primary text-nowrap" id="addCustomAppBtn"><i class="bi bi-plus-lg"></i> Add</button>
+              <div class="col-md-5">
+                <label for="customAppClassName" class="form-label small mb-1">Launch activity <span class="text-muted">(optional)</span></label>
+                <input type="text" class="form-control form-control-sm" id="customAppClassName" placeholder="auto: com.ug.eon.android.tv.MainActivity">
               </div>
             </div>
-            <input type="hidden" id="customAppClassName">
+            <div class="d-flex gap-2 mt-2">
+              <button type="button" class="btn btn-sm btn-outline-secondary text-nowrap" id="detectCurrentAppBtn"><i class="bi bi-broadcast"></i> Detect from TV</button>
+              <button type="button" class="btn btn-sm btn-primary text-nowrap" id="addCustomAppBtn"><i class="bi bi-plus-lg"></i> Add</button>
+            </div>
             <input type="hidden" id="customAppAction">
             <div id="customAppDetectInfo" class="form-text mt-1"></div>
           </div>

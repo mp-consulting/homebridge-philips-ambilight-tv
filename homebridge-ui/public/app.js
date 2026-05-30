@@ -522,6 +522,10 @@
           $('customAppName').value = guess.charAt(0).toUpperCase() + guess.slice(1);
         }
         $('customAppDetectInfo').textContent = `Detected ${packageName}${className ? ' · ' + className : ''}. Review the name, then click Add.`;
+      } else if (res && res.notAnApp) {
+        // Foreground is live TV / home — the wanted app isn't open yet
+        homebridge.toast.error('Open the app on the TV first');
+        $('customAppDetectInfo').textContent = res.error;
       } else {
         homebridge.toast.error((res && res.error) || 'No app detected');
         $('customAppDetectInfo').textContent = '';

@@ -422,8 +422,10 @@ export class PhilipsTVClient {
    *
    * @param className - Explicit launch activity. Required to reliably launch
    *   apps the TV's `/applications` endpoint does not report (e.g. sideloaded
-   *   apps). When omitted, a cached intent from {@link getApplications} is used,
-   *   falling back to a best-effort `MainActivity` guess.
+   *   apps) — Philips firmware rejects a launch without a valid className.
+   *   When omitted, a cached intent from {@link getApplications} is used,
+   *   falling back to a best-effort `<package>.MainActivity` guess (the common
+   *   Android convention, e.g. `com.netflix.ninja.MainActivity`).
    * @param action - Intent action (defaults to `android.intent.action.MAIN`).
    */
   async launchApplication(packageName: string, className?: string, action?: string): Promise<boolean> {
@@ -434,9 +436,11 @@ export class PhilipsTVClient {
         action: action ?? 'android.intent.action.MAIN',
       };
     } else {
-      // Use cached intent from getApplications() if available, else best-effort
+      // Use cached intent from getApplications() if available, else best-effort.
+      // The TV rejects a package-only launch, so guess the conventional
+      // `<package>.MainActivity` launcher activity.
       intent = this.appIntents.get(packageName) ?? {
-        component: { packageName, className: 'MainActivity' },
+        component: { packageName, className: `${packageName}.MainActivity` },
         action: 'android.intent.action.MAIN',
       };
     }
