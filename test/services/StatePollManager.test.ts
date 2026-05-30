@@ -129,15 +129,34 @@ describe('StatePollManager', () => {
       expect(callbacks.onPowerChange).toHaveBeenCalledWith(true);
     });
 
-    it('should not notify when power state unchanged', async () => {
+    it('should report the initial state once, then not re-notify when unchanged', async () => {
       (tvClient.getPowerState as ReturnType<typeof vi.fn>).mockResolvedValue(false);
       manager = new StatePollManager(tvClient, TEST_CONFIG, callbacks, debugLog);
       manager.start();
 
       await vi.advanceTimersByTimeAsync(5100);
+      // First poll reports the baseline (off) so consumers can sync state
+      expect(callbacks.onPowerChange).toHaveBeenCalledTimes(1);
+      expect(callbacks.onPowerChange).toHaveBeenCalledWith(false);
 
-      // Power is already false (default), so no change notification
-      expect(callbacks.onPowerChange).not.toHaveBeenCalled();
+      // Further polls with the same state must not notify again
+      await vi.advanceTimersByTimeAsync(20_000);
+      expect(callbacks.onPowerChange).toHaveBeenCalledTimes(1);
+    });
+
+    it('should report a genuine power-on after being off at startup', async () => {
+      const getPower = tvClient.getPowerState as ReturnType<typeof vi.fn>;
+      getPower.mockResolvedValue(false);
+      manager = new StatePollManager(tvClient, TEST_CONFIG, callbacks, debugLog);
+      manager.start();
+
+      await vi.advanceTimersByTimeAsync(5100);
+      expect(callbacks.onPowerChange).toHaveBeenLastCalledWith(false);
+
+      // TV turns on later — must fire onPowerChange(true) as a real transition
+      getPower.mockResolvedValue(true);
+      await vi.advanceTimersByTimeAsync(10_100);
+      expect(callbacks.onPowerChange).toHaveBeenLastCalledWith(true);
     });
 
     it('should skip ambilight/volume/input polls when TV is off', async () => {

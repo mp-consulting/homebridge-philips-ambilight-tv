@@ -33,6 +33,7 @@ export interface PollCallbacks {
 
 export class StatePollManager {
   private isPoweredOn = false;
+  private initialPowerReported = false;
   private lastAmbilight: string | null = null;
   private lastMuted: boolean | null = null;
   private lastVolume: number | null = null;
@@ -185,9 +186,17 @@ export class StatePollManager {
   private async pollState(): Promise<void> {
     try {
       const isOn = await this.tvClient.getPowerState();
-      if (isOn !== this.isPoweredOn) {
+      const changed = isOn !== this.isPoweredOn;
+      // Always report the very first observed state so consumers can establish
+      // a baseline (otherwise a TV that is off at startup never reports until
+      // it turns on, which then looks like the initial sync rather than a
+      // genuine power-on — breaking auto-start-on-power-on).
+      if (changed || !this.initialPowerReported) {
         this.isPoweredOn = isOn;
-        this.log('info', `Power: ${isOn ? 'On' : 'Standby'}`);
+        this.initialPowerReported = true;
+        if (changed) {
+          this.log('info', `Power: ${isOn ? 'On' : 'Standby'}`);
+        }
         this.callbacks.onPowerChange(isOn);
 
         if (isOn && !this.notifyClient) {
