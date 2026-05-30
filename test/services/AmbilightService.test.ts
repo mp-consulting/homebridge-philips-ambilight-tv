@@ -343,3 +343,35 @@ describe('AmbilightService startWithConfiguredMode', () => {
     expect(service.isAmbilightOn).toBe(false);
   });
 });
+
+describe('AmbilightService reflectPowerOff', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('should turn the Ambilight lightbulb off without calling the TV', async () => {
+    const deps = createMockDeps();
+    const service = new AmbilightService(deps);
+    const tvService = createMockService();
+    const hkService = service.configureService(deps.accessory as never, tvService as never);
+
+    // Turn it on first
+    await service.startWithConfiguredMode();
+    expect(service.isAmbilightOn).toBe(true);
+
+    const updateSpy = hkService.updateCharacteristic;
+    updateSpy.mockClear();
+    (deps.tvClient.setAmbilightPower as ReturnType<typeof vi.fn>).mockClear();
+
+    service.reflectPowerOff();
+
+    expect(service.isAmbilightOn).toBe(false);
+    expect(updateSpy).toHaveBeenCalledWith((deps.Characteristic as { On: unknown }).On, false);
+    expect(deps.tvClient.setAmbilightPower).not.toHaveBeenCalled();
+    expect(deps.tvClient.setAmbilightOff).not.toHaveBeenCalled();
+  });
+});

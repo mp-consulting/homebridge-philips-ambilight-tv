@@ -290,6 +290,7 @@ export class PhilipsAmbilightTVAccessory {
     );
     this.stateSensorService.update('power', isOn);
     if (!isOn) {
+      this.ambilightService.reflectPowerOff();
       this.stateSensorService.update('ambilight', false);
       this.stateSensorService.update('mute', false);
       this.sourceSwitchService.resetAll();

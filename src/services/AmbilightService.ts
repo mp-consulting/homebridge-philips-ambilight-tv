@@ -143,6 +143,19 @@ export class AmbilightService {
     }
   }
 
+  /**
+   * Reflect the TV powering off: Ambilight is off, so update the HomeKit
+   * Lightbulb to Off without sending a command to the (now unreachable) TV.
+   */
+  reflectPowerOff(): void {
+    this.cancelStyleRetry();
+    if (this.isOn) {
+      this.isOn = false;
+      this.service.updateCharacteristic(this.deps.Characteristic.On, false);
+      this.deps.log('debug', 'Ambilight set to OFF (TV powered off)');
+    }
+  }
+
   private parseAmbilightMode(): { style: string; algorithm: string } {
     const mode = this.deps.ambilightMode || DEFAULT_AMBILIGHT_MODE;
     const [style, algorithm = ''] = mode.split('/');
