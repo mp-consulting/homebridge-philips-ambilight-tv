@@ -325,6 +325,20 @@
                 "devices[].inputs[].identifier",
                 "devices[].inputs[].displayOrder"
               ]
+            },
+            {
+              "key": "devices[].customApps",
+              "type": "array",
+              "title": "Custom Apps (Optional)",
+              "expandable": true,
+              "expanded": false,
+              "buttonText": "Add App",
+              "items": [
+                "devices[].customApps[].name",
+                "devices[].customApps[].packageName",
+                "devices[].customApps[].className",
+                "devices[].customApps[].action"
+              ]
             }
           ]
         }
