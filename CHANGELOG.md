@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.4] - 2026-05-31
+
+### Fixed
+
+- **Custom apps dropped on save**: `customApps` was defined in the config schema but missing from the schema layout, so saving the plugin config through Homebridge's standard settings form could drop the custom apps. They are now part of the layout and survive a save ([#11](https://github.com/mp-consulting/homebridge-philips-ambilight-tv/issues/11))
+
 ## [1.5.3] - 2026-05-30
 
 ### Fixed
