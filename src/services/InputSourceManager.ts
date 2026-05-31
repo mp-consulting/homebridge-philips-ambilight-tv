@@ -325,7 +325,16 @@ export class InputSourceManager {
         throw this.deps.communicationError();
       }
     } catch (error) {
-      this.deps.log('warn', 'Failed to switch input');
+      if (inputSource.type === 'app') {
+        // The TV rejects a launch with the wrong activity — a common cause for
+        // custom apps whose launch activity isn't the guessed default.
+        const attempted = inputSource.className ?? `${inputSource.id}.MainActivity`;
+        this.deps.log('warn',
+          `Failed to launch ${inputSource.name} (${inputSource.id}). The TV rejected the launch activity "${attempted}" — `
+          + 'set the correct "Launch activity" for this custom app if it is wrong.');
+      } else {
+        this.deps.log('warn', `Failed to switch to ${inputSource.name}`);
+      }
       throw error instanceof Error && 'hapStatus' in error ? error : this.deps.communicationError();
     }
   }
