@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.5] - 2026-05-31
+
+### Changed
+
+- **Clearer launch failures**: When a custom app fails to launch, the log now names the app and the launch activity that was tried (and hints to set the correct one) instead of a generic "Failed to switch input" — the usual cause is a wrong launch activity that the TV rejects ([#11](https://github.com/mp-consulting/homebridge-philips-ambilight-tv/issues/11))
+
 ## [1.5.4] - 2026-05-31
 
 ### Fixed
