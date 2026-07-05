@@ -44,24 +44,24 @@
     "test:tv": "npm run build && node test/test-tv-endpoints.js"
   },
   "dependencies": {
-    "@homebridge/plugin-ui-utils": "^2.2.3",
-    "bonjour-service": "^1.3.0",
+    "@homebridge/plugin-ui-utils": "^2.2.4",
+    "bonjour-service": "^1.4.2",
     "class-validator": "^0.15.1",
     "node-arp": "^1.0.6",
-    "undici": "^7.25.0"
+    "undici": "^7.28.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@mp-consulting/homebridge-ui-kit": "^1.0.0",
-    "@types/node": "^25.6.0",
+    "@types/node": "^25.9.4",
     "@vitest/coverage-v8": "^4.1.5",
-    "eslint": "^10.2.1",
-    "homebridge": "^2.0.0-beta.55",
-    "homebridge-config-ui-x": "^5.22.0",
+    "eslint": "^10.6.0",
+    "homebridge": "^2.1.0",
+    "homebridge-config-ui-x": "^5.24.0",
     "nodemon": "^3.1.14",
     "rimraf": "^6.1.3",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.59.1",
+    "typescript-eslint": "^8.62.1",
     "vitest": "^4.1.5"
   },
   "files": [
