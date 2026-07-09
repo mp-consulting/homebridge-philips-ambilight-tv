@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.8] - 2026-07-09
+
+### Fixed
+
+- **Setup wizard still hangs / shows no sources on a slow TV**: A follow-up to the v1.5.7 fix. The wizard reused the runtime client's deliberately short 2 s per-request timeout (tuned to stay under HomeKit's characteristic-callback deadline), so a Philips TV that was slow to answer — typically one freshly woken from standby, which is slow to serve `/applications` — tripped the timeout and the wizard quietly fell back to the generic built-in list, or kept spinning. The setup source fetch now uses a longer 6 s per-request timeout, is bounded by a single shared 15 s deadline across the sources and apps requests so the "Fetching sources" step can never hang, and the settings page shows a retryable error instead of an endless spinner if the request is wedged ([#14](https://github.com/mp-consulting/homebridge-philips-ambilight-tv/issues/14)).
+
 ## [1.5.7] - 2026-07-09
 
 ### Fixed
