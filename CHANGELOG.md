@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.7] - 2026-07-09
+
+### Fixed
+
+- **Setup wizard hangs on "Fetching sources from TV"**: The wizard could spin indefinitely and never list the TV's sources. The HTTP timeout only covered the connection and response headers, not the response *body* — so a TV that returned `200` headers but then stalled the body left the sources request unresolved forever, and the built-in-sources fallback was never reached. The request now buffers the body while the abort timer is still armed, so a stalled body is aborted at the deadline and the wizard falls back to the built-in sources ([#14](https://github.com/mp-consulting/homebridge-philips-ambilight-tv/issues/14)). This also hardens the pairing and system-info requests against the same failure.
+
+## [1.5.6] - 2026-07-05
+
+### Changed
+
+- **Dependencies**: Updated dependencies to their latest compatible versions and regenerated the lockfile.
+
 ## [1.5.5] - 2026-05-31
 
 ### Changed
