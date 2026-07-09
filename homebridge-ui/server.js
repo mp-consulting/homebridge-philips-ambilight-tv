@@ -25,6 +25,37 @@ import { PhilipsTVClient, HOME_URI, WATCH_TV_URI } from '../dist/api/PhilipsTVCl
 const getMAC = promisify(arp.getMAC);
 
 // ============================================================================
+// HELPERS
+// ============================================================================
+
+/**
+ * Races a promise against an overall deadline. If the deadline passes first,
+ * the returned promise rejects so the caller can fall back — guaranteeing a
+ * bounded response even if the underlying work never settles. The timer is
+ * unref'd so it never keeps the process alive on its own.
+ */
+function withDeadline(promise, ms) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`Timed out after ${ms}ms`));
+    }, ms);
+    if (typeof timer.unref === 'function') {
+      timer.unref();
+    }
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
+// ============================================================================
 // UI SERVER CLASS
 // ============================================================================
 
@@ -344,10 +375,29 @@ class UiServer extends HomebridgePluginUiServer {
         password: password || '',
       });
 
-      // Fetch sources from TV API (async call)
+      // The runtime client uses a short (2s) per-request timeout so it never
+      // exceeds HomeKit's characteristic callback deadline. The setup wizard
+      // has no such constraint and the user is actively waiting, so give a
+      // momentarily-slow TV a longer chance to return its real source/app
+      // list before falling back to the generic built-in list.
+      const WIZARD_REQUEST_TIMEOUT_MS = 6000;
+      // Hard ceiling on the whole fetch (sources + apps combined) so the
+      // "Fetching sources" spinner can never hang: whatever we have — or the
+      // built-in fallback — is returned once this budget is spent, even if the
+      // TV never answers. A TV freshly woken from standby can be slow to serve
+      // /applications (this reporter's TV returns 47 apps), so the budget is
+      // shared across both calls rather than applied to each.
+      const WIZARD_TOTAL_DEADLINE_MS = 15000;
+      const deadline = Date.now() + WIZARD_TOTAL_DEADLINE_MS;
+      const remaining = () => Math.max(0, deadline - Date.now());
+
+      // Fetch sources from TV API (async call), bounded by the overall budget
       let tvSources = [];
       try {
-        tvSources = await client.getSources();
+        tvSources = await withDeadline(
+          client.getSources(WIZARD_REQUEST_TIMEOUT_MS),
+          remaining(),
+        );
         console.log(`[Sources] Fetched ${tvSources.length} sources from TV API`);
       } catch (sourceError) {
         console.log('[Sources] Could not fetch sources from TV, using built-in:', sourceError.message);
@@ -365,7 +415,10 @@ class UiServer extends HomebridgePluginUiServer {
       // Try to get apps from TV using the client
       let apps = [];
       try {
-        apps = await client.getApplications();
+        apps = await withDeadline(
+          client.getApplications(WIZARD_REQUEST_TIMEOUT_MS),
+          remaining(),
+        );
       } catch (appError) {
         console.log('[Sources] Could not fetch apps:', appError.message);
       }

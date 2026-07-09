@@ -584,6 +584,62 @@ describe('PhilipsTVClient', () => {
 
       expect(result).toEqual([]);
     });
+
+    it('should forward a caller-supplied timeout to fetchWithTimeout', async () => {
+      mockFetch.mockReturnValue(mockResponse({ applications: [] }));
+
+      const promise = client.getApplications(6000);
+      await vi.runAllTimersAsync();
+      await promise;
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('/applications'),
+        expect.any(Object),
+        6000,
+      );
+    });
+  });
+
+  // ==========================================================================
+  // SOURCES
+  // ==========================================================================
+
+  describe('getSources', () => {
+    it('should return the TV source list', async () => {
+      const sources = { sources: [{ id: 'hdmi1', name: 'HDMI 1' }] };
+      mockFetch.mockReturnValue(mockResponse(sources));
+
+      const promise = client.getSources();
+      await vi.runAllTimersAsync();
+      const result = await promise;
+
+      expect(result).toEqual([{ id: 'hdmi1', name: 'HDMI 1' }]);
+    });
+
+    it('should fall back to built-in sources when the TV returns none', async () => {
+      mockFetch.mockReturnValue(mockResponse(null, 500));
+
+      const promise = client.getSources();
+      await vi.runAllTimersAsync();
+      const result = await promise;
+
+      expect(result).toEqual(client.getBuiltInSources());
+      expect(result.length).toBeGreaterThan(0);
+    });
+
+    it('should forward a caller-supplied timeout to fetchWithTimeout', async () => {
+      mockFetch.mockReturnValue(mockResponse({ sources: [] }));
+
+      const promise = client.getSources(6000);
+      await vi.runAllTimersAsync();
+      await promise;
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('/sources'),
+        expect.any(Object),
+        6000,
+      );
+    });
   });
 
   describe('launchApplication', () => {

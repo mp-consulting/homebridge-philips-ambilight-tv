@@ -355,9 +355,14 @@ export class PhilipsTVClient {
   /**
    * Fetches available sources from the TV API.
    * Falls back to built-in sources if the API call fails.
+   *
+   * An optional timeout override lets callers that are not bound by
+   * HomeKit's characteristic callback deadline (e.g. the setup wizard)
+   * give a momentarily-slow TV a longer chance to return real sources
+   * before falling back.
    */
-  async getSources(): Promise<TVSource[]> {
-    const result = await this.get<TVSourceList>('/sources');
+  async getSources(timeout?: number): Promise<TVSource[]> {
+    const result = await this.get<TVSourceList>('/sources', timeout);
     if (result?.sources && result.sources.length > 0) {
       return result.sources;
     }
@@ -399,8 +404,8 @@ export class PhilipsTVClient {
   // APPLICATIONS
   // ==========================================================================
 
-  async getApplications(): Promise<TVApplication[]> {
-    const result = await this.get<TVApplicationList>('/applications');
+  async getApplications(timeout?: number): Promise<TVApplication[]> {
+    const result = await this.get<TVApplicationList>('/applications', timeout);
     const apps = result?.applications ?? [];
 
     // Cache intents so launchApplication can use the correct className/action

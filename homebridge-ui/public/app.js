@@ -106,6 +106,24 @@
   // API HELPERS
   // ============================================================================
 
+  /**
+   * Rejects with a friendly message if the wrapped promise doesn't settle in
+   * time. Used to guard IPC requests so the UI can never spin indefinitely.
+   */
+  const withTimeout = (promise, ms, message) => new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+
   const api = {
     discover: () => homebridge.request('/discover'),
     pair: (ip, deviceName) => homebridge.request('/pair', { ip, deviceName }),
@@ -693,7 +711,14 @@
 
   const loadSources = async (tv) => {
     try {
-      const result = await api.getSources(tv.ip, tv.username, tv.password, tv.mac);
+      // The server bounds its own fetch (~15s); this client-side guard is a
+      // last resort so a wedged request can never leave the spinner running
+      // forever — the user gets a retryable error instead.
+      const result = await withTimeout(
+        api.getSources(tv.ip, tv.username, tv.password, tv.mac),
+        20000,
+        'Timed out fetching sources from the TV. Make sure it is powered on, then retry.',
+      );
 
       if (result.success) {
         // Inject configured custom apps (the TV doesn't report these), then
