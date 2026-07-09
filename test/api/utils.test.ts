@@ -1,9 +1,17 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import crypto from 'crypto';
+
+vi.mock('undici', async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  return { ...actual, fetch: vi.fn() };
+});
+
+import { fetch as undiciFetch } from 'undici';
 import {
   md5,
   hmacSignature,
   buildUrl,
+  fetchWithTimeout,
   parseWwwAuthenticate,
   createDigestAuth,
   parseErrorResponse,
@@ -338,5 +346,59 @@ describe('createDeviceInfo', () => {
     const info1 = createDeviceInfo('Bridge1');
     const info2 = createDeviceInfo('Bridge2');
     expect(info1.id).not.toBe(info2.id);
+  });
+});
+
+// ============================================================================
+// fetchWithTimeout — body read must stay under the deadline (issue #14)
+// ============================================================================
+
+describe('fetchWithTimeout', () => {
+  const mockedFetch = vi.mocked(undiciFetch);
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    mockedFetch.mockReset();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('aborts when the TV sends headers then stalls the body', async () => {
+    // Response headers arrive immediately, but the body never completes —
+    // reject only when the request is aborted (as undici would).
+    mockedFetch.mockImplementation((_url, opts) => Promise.resolve({
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      text: () => new Promise((_resolve, reject) => {
+        (opts as { signal: AbortSignal }).signal.addEventListener(
+          'abort',
+          () => reject(new Error('The operation was aborted')),
+        );
+      }),
+    } as never));
+
+    const promise = fetchWithTimeout('https://tv/6/sources', { method: 'GET' }, 2000);
+    const assertion = expect(promise).rejects.toThrow();
+    await vi.advanceTimersByTimeAsync(2000);
+    await assertion;
+  });
+
+  it('buffers the body and resolves on a normal response', async () => {
+    mockedFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      text: () => Promise.resolve('{"sources":[{"id":"hdmi1"}]}'),
+    } as never);
+
+    const res = await fetchWithTimeout('https://tv/6/sources', { method: 'GET' }, 2000);
+
+    expect(res.ok).toBe(true);
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe('{"sources":[{"id":"hdmi1"}]}');
+    expect(await res.json()).toEqual({ sources: [{ id: 'hdmi1' }] });
   });
 });
