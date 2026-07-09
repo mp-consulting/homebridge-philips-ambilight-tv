@@ -381,17 +381,22 @@ class UiServer extends HomebridgePluginUiServer {
       // momentarily-slow TV a longer chance to return its real source/app
       // list before falling back to the generic built-in list.
       const WIZARD_REQUEST_TIMEOUT_MS = 6000;
-      // Hard ceiling on the whole fetch so the "Fetching sources" spinner can
-      // never hang: whatever we have (or the built-in fallback) is returned
-      // once this deadline passes, even if the TV never answers.
+      // Hard ceiling on the whole fetch (sources + apps combined) so the
+      // "Fetching sources" spinner can never hang: whatever we have — or the
+      // built-in fallback — is returned once this budget is spent, even if the
+      // TV never answers. A TV freshly woken from standby can be slow to serve
+      // /applications (this reporter's TV returns 47 apps), so the budget is
+      // shared across both calls rather than applied to each.
       const WIZARD_TOTAL_DEADLINE_MS = 15000;
+      const deadline = Date.now() + WIZARD_TOTAL_DEADLINE_MS;
+      const remaining = () => Math.max(0, deadline - Date.now());
 
-      // Fetch sources from TV API (async call), bounded by an overall deadline
+      // Fetch sources from TV API (async call), bounded by the overall budget
       let tvSources = [];
       try {
         tvSources = await withDeadline(
           client.getSources(WIZARD_REQUEST_TIMEOUT_MS),
-          WIZARD_TOTAL_DEADLINE_MS,
+          remaining(),
         );
         console.log(`[Sources] Fetched ${tvSources.length} sources from TV API`);
       } catch (sourceError) {
@@ -412,7 +417,7 @@ class UiServer extends HomebridgePluginUiServer {
       try {
         apps = await withDeadline(
           client.getApplications(WIZARD_REQUEST_TIMEOUT_MS),
-          WIZARD_TOTAL_DEADLINE_MS,
+          remaining(),
         );
       } catch (appError) {
         console.log('[Sources] Could not fetch apps:', appError.message);
