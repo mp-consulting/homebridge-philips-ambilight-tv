@@ -4,7 +4,7 @@
 
 import crypto from 'crypto';
 import dgram from 'dgram';
-import { Agent, type Dispatcher, fetch } from 'undici';
+import { Agent, type Dispatcher, type Headers, fetch } from 'undici';
 import {
   TV_API_PORT, TV_API_VERSION, ERROR_MESSAGES, AUTH_SHARED_KEY,
   WOL_PORT, WOL_BROADCAST_IP, WOL_BURST_COUNT, WOL_PACKETS_PER_BURST, WOL_BURST_INTERVAL_MS,
@@ -42,12 +42,24 @@ export const hmacSignature = (timestamp: string, pin: string): string => {
 export const buildUrl = (ip: string, endpoint: string): string =>
   `https://${ip}:${TV_API_PORT}/${TV_API_VERSION}${endpoint}`;
 
+/**
+ * A fully-read HTTP response. The body is buffered before the response is
+ * returned, so `text()`/`json()` resolve from memory and cannot block.
+ */
+export interface TimedResponse {
+  ok: boolean;
+  status: number;
+  headers: Headers;
+  text: () => Promise<string>;
+  json: () => Promise<unknown>;
+}
+
 export const fetchWithTimeout = async (
   url: string,
   options: { method: string; headers?: Record<string, string>; body?: string; dispatcher?: Dispatcher },
   timeout: number,
   externalSignal?: AbortSignal,
-) => {
+): Promise<TimedResponse> => {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeout);
 
@@ -56,11 +68,31 @@ export const fetchWithTimeout = async (
   externalSignal?.addEventListener('abort', onExternalAbort, { once: true });
 
   try {
-    return await fetch(url, {
+    const response = await fetch(url, {
       ...options,
       signal: controller.signal,
       dispatcher: options.dispatcher || httpsAgent,
     });
+
+    // Read the body while the abort timer is still armed. `fetch` resolves as
+    // soon as the response headers arrive, so a TV that sends headers then
+    // stalls the body would otherwise hang an un-guarded `response.text()`
+    // forever. Buffering here keeps the whole exchange under `timeout`.
+    const bodyText = await response.text();
+
+    return {
+      ok: response.ok,
+      status: response.status,
+      headers: response.headers,
+      text: () => Promise.resolve(bodyText),
+      json: () => {
+        try {
+          return Promise.resolve(JSON.parse(bodyText) as unknown);
+        } catch (error) {
+          return Promise.reject(error instanceof Error ? error : new Error(String(error)));
+        }
+      },
+    };
   } finally {
     clearTimeout(timeoutId);
     externalSignal?.removeEventListener('abort', onExternalAbort);
