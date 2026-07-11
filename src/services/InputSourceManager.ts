@@ -111,6 +111,9 @@ export interface InputSourceManagerDeps {
   readonly playPauseButtonKey?: RemoteKey;
   readonly communicationError: () => HapStatusError;
   readonly log: (level: 'debug' | 'info' | 'warn' | 'error', message: string) => void;
+  /** Called after new inputs are discovered so dependent services (e.g. source
+   *  switches) can reconcile with the updated list. */
+  readonly onInputsChanged?: () => void;
 }
 
 // ============================================================================
@@ -293,6 +296,12 @@ export class InputSourceManager {
       this.saveInputConfigs();
       this.updateDisplayOrder();
       this.deps.log('info', `Discovered ${added} app(s) from TV (${this.inputSources.length} total inputs)`);
+      if (added > 0) {
+        // New inputs arrived (e.g. the TV was asleep at boot and has now woken);
+        // let dependent services rebuild — notably the source switches, so their
+        // count always matches the user's visible selection.
+        this.deps.onInputsChanged?.();
+      }
     } catch {
       this.deps.log('debug', 'TV not reachable for app discovery');
     }
@@ -472,9 +481,14 @@ export class InputSourceManager {
 
   /**
    * Returns the initial set of app inputs for startup:
-   * 1. If user configured inputs[] → use those
-   * 2. Else if we have cached apps from a previous TV fetch → use those
-   * 3. Else → empty (apps will be discovered when TV becomes reachable)
+   * 1. If user configured inputs[] → use those (explicit list, self-managed)
+   * 2. Else combine cached apps (previous TV fetch) + custom apps + every source
+   *    the user marked visible in the sources config.
+   *
+   * Seeding from the visible sources config is what guarantees a selected source
+   * always becomes an input even when the TV was asleep/slow at boot and hasn't
+   * been discovered or cached yet — the app label is filled in later when the TV
+   * is reachable.
    */
   private getInitialAppInputs(): InputData[] {
     const customApps = this.getCustomAppInputs();
@@ -489,21 +503,44 @@ export class InputSourceManager {
       return this.mergeCustomApps(inputs, customApps);
     }
 
-    // Use cached apps from a previous session (apps discovered from TV)
+    // Base = cached apps from a previous session (apps discovered from TV)
     const cachedApps = this.getCachedInputConfigs().filter(c => c.type === 'app');
-    if (cachedApps.length > 0) {
-      const inputs = cachedApps.map(c => ({
-        id: c.id,
-        name: c.name,
-        type: c.type as InputType,
-        channelListId: c.channelListId,
-      }));
-      return this.mergeCustomApps(inputs, customApps);
+    const base = cachedApps.map(c => ({
+      id: c.id,
+      name: c.name,
+      type: c.type as InputType,
+      channelListId: c.channelListId,
+    }));
+
+    const withCustom = this.mergeCustomApps(base, customApps);
+    return this.mergeConfiguredVisibleSources(withCustom);
+  }
+
+  /**
+   * Append an app input for every source the user marked visible in the sources
+   * config that isn't already present. Static sources (Watch TV / Home / HDMI)
+   * are skipped — they're always added by getStaticSources(). This decouples the
+   * user's visible selection from the TV's boot-time responsiveness.
+   */
+  private mergeConfiguredVisibleSources(base: InputData[]): InputData[] {
+    const staticIds = new Set<string>([WATCH_TV_URI, HOME_URI, ...Object.keys(HDMI_SOURCES)]);
+    const existing = new Set(base.map(b => b.id));
+    const extra: InputData[] = [];
+
+    for (const cfg of this.sourceConfigMap.values()) {
+      if (cfg.visible !== true || staticIds.has(cfg.id) || existing.has(cfg.id)) {
+        continue;
+      }
+      extra.push({
+        id: cfg.id,
+        // Real label is unknown until the TV is reachable; the customName (if any)
+        // takes over via resolveDisplayName, otherwise fall back to the id.
+        name: cfg.customName ?? cfg.id,
+        type: 'app',
+      });
     }
 
-    // No cache — expose custom apps immediately; discovered apps added once
-    // the TV is reachable.
-    return customApps;
+    return extra.length > 0 ? [...base, ...extra] : base;
   }
 
   /** Map the user's custom-app config entries to app inputs. */

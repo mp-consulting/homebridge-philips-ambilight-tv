@@ -67,6 +67,7 @@ export class PhilipsAmbilightTVAccessory {
       playPauseButtonKey: this.config.playPauseButtonKey,
       communicationError: () => this.communicationError(),
       log: (level, msg) => this.log(level, msg),
+      onInputsChanged: () => this.refreshSourceSwitches(),
     });
 
     this.sourceSwitchService = new SourceSwitchService({
@@ -116,13 +117,7 @@ export class PhilipsAmbilightTVAccessory {
     this.inputSourceManager.configureInputSources(this.tvService);
 
     // Configure source switches (individual Switch services for HomeKit automations)
-    if (this.config.sourceSwitches) {
-      const tvName = sanitizeForHomeKit(this.config.name);
-      const sources = this.inputSourceManager.getVisibleSources().map(s => ({
-        id: s.id, name: s.name, type: s.type, channelListId: s.channelListId, className: s.className, action: s.action,
-      }));
-      this.sourceSwitchService.configureSwitches(this.accessory, sources, tvName);
-    }
+    this.refreshSourceSwitches();
 
     // Configure state sensors (MotionSensor services for HomeKit automations)
     const sensorTypes = this.config.stateSensors ?? [];
@@ -213,6 +208,23 @@ export class PhilipsAmbilightTVAccessory {
     return service;
   }
 
+  /**
+   * (Re)build the source-switch services from the current visible inputs.
+   * Called once at setup and again whenever the input list changes (e.g. apps
+   * discovered after the TV wakes) so the switch count always matches the
+   * user's visible selection.
+   */
+  private refreshSourceSwitches(): void {
+    if (!this.config.sourceSwitches) {
+      return;
+    }
+    const tvName = sanitizeForHomeKit(this.config.name);
+    const sources = this.inputSourceManager.getVisibleSources().map(s => ({
+      id: s.id, name: s.name, type: s.type, channelListId: s.channelListId, className: s.className, action: s.action,
+    }));
+    this.sourceSwitchService.configureSwitches(this.accessory, sources, tvName);
+  }
+
   // ==========================================================================
   // POWER HANDLERS
   // ==========================================================================
@@ -295,9 +307,16 @@ export class PhilipsAmbilightTVAccessory {
       this.stateSensorService.update('mute', false);
       this.sourceSwitchService.resetAll();
       this.ambilightHueSwitchService.reset();
-    } else if (!isInitialSync && this.config.ambilightOnStart) {
-      // TV just powered on — auto-start Ambilight in the configured mode.
-      void this.ambilightService.startWithConfiguredMode();
+    } else if (!isInitialSync) {
+      // TV just powered on. A TV that was asleep at boot may not have reported
+      // its apps yet, so reconcile the input list now that it is reachable —
+      // this backfills any sources that couldn't be discovered at startup and
+      // refreshes the source switches to match (no restart required).
+      void this.inputSourceManager.fetchAppsFromTV();
+      if (this.config.ambilightOnStart) {
+        // Auto-start Ambilight in the configured mode.
+        void this.ambilightService.startWithConfiguredMode();
+      }
     }
     this.log('debug', `Power state updated: ${isOn ? 'ON' : 'OFF'}`);
   }

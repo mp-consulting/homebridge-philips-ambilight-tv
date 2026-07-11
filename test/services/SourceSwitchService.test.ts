@@ -135,6 +135,41 @@ describe('SourceSwitchService', () => {
       // Should only add 2 new services (HDMI and channel), reuse Netflix
       expect(accessory.addService).toHaveBeenCalledTimes(2);
     });
+
+    it('is idempotent when re-run after the input list changes (issue #14)', () => {
+      const deps = createMockDeps();
+      const service = new SourceSwitchService(deps);
+
+      // Stateful accessory: getServiceById returns previously-added services,
+      // like real Homebridge — so a re-run reuses services instead of duplicating.
+      const services: ReturnType<typeof createMockService>[] = [];
+      const accessory = {
+        services,
+        getServiceById: vi.fn().mockImplementation((_svc: unknown, subtype: string) =>
+          services.find(s => s.subtype === subtype) ?? null),
+        addService: vi.fn().mockImplementation((_svc: unknown, _name: string, subtype: string) => {
+          const s = createMockService(subtype);
+          services.push(s);
+          return s;
+        }),
+        removeService: vi.fn(),
+      };
+
+      // First pass: TV asleep, only the HDMI source known.
+      service.configureSwitches(accessory as never, [TEST_SOURCES[1]], 'TV');
+      // Second pass: TV woke, full list discovered — switches refreshed.
+      service.configureSwitches(accessory as never, TEST_SOURCES, 'TV');
+
+      // All three switch services now exist, with no duplicate service objects.
+      expect(services.length).toBe(3);
+
+      // Internal registry must not have accumulated duplicates: resetAll touches
+      // each switch's On characteristic exactly once.
+      service.resetAll();
+      for (const s of services) {
+        expect(s.updateCharacteristic).toHaveBeenCalledTimes(1);
+      }
+    });
   });
 
   // ==========================================================================

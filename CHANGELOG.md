@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.9] - 2026-07-11
+
+### Fixed
+
+- **Selected sources missing after a restart, and fewer source switches than selected**: The v1.5.7/v1.5.8 fixes only covered the setup wizard. At runtime, a TV that was asleep or slow when the child bridge started could still end up with missing inputs and fewer source switches than the number of sources marked visible (e.g. 10 switches for 12 selected sources). Three causes are addressed ([#14](https://github.com/mp-consulting/homebridge-philips-ambilight-tv/issues/14)):
+  - Every source marked **visible** in the sources config is now registered as an input at startup, independent of whether the TV was reachable at that moment — so a selected source is never dropped just because the TV was asleep.
+  - The app list is now **reconciled when the TV wakes** (on power-on), not only once shortly after boot, so apps that couldn't be enumerated on a sleeping TV are backfilled without needing a restart.
+  - **Source switches are rebuilt whenever the input list changes**, so the number of switches always matches the sources you marked visible.
+
 ## [1.5.8] - 2026-07-09
 
 ### Fixed

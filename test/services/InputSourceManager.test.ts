@@ -365,6 +365,105 @@ describe('InputSourceManager', () => {
   });
 
   // ==========================================================================
+  // VISIBLE SOURCE SEEDING (issue #14)
+  // ==========================================================================
+
+  describe('visible source seeding', () => {
+    it('registers a visible source at boot even with no cache and an unreachable TV', () => {
+      // Fresh install, TV asleep: no cache file, getApplications returns nothing.
+      const deps = createMockDeps({
+        sourceConfigs: [{ id: 'com.netflix.ninja', visible: true, customName: 'Netflix' }],
+      });
+      const manager = new InputSourceManager(deps);
+      const tvService = createMockService();
+
+      manager.configureInputSources(tvService as never);
+
+      const seeded = manager.getSources().find(s => s.id === 'com.netflix.ninja');
+      expect(seeded).toBeDefined();
+      expect(seeded!.type).toBe('app');
+      expect(seeded!.name).toBe('Netflix');
+    });
+
+    it('does not seed sources the user marked hidden', () => {
+      const deps = createMockDeps({
+        sourceConfigs: [{ id: 'com.netflix.ninja', visible: false }],
+      });
+      const manager = new InputSourceManager(deps);
+      manager.configureInputSources(createMockService() as never);
+
+      expect(manager.getSources().some(s => s.id === 'com.netflix.ninja')).toBe(false);
+    });
+
+    it('does not double-register static sources present in the sources config', () => {
+      const deps = createMockDeps({
+        sourceConfigs: [
+          { id: 'content://android.media.tv/channel', visible: true }, // Watch TV
+          // HDMI 1 (real passthrough URI as reported by the TV)
+          { id: 'content://android.media.tv/passthrough/com.mediatek.tvinput%2F.hdmi.HDMIInputService%2FHW5', visible: true },
+        ],
+      });
+      const manager = new InputSourceManager(deps);
+      manager.configureInputSources(createMockService() as never);
+
+      // Static sources are added by getStaticSources — the seeding step must not
+      // add a second app-typed copy.
+      const watchTv = manager.getSources().filter(s => s.id === 'content://android.media.tv/channel');
+      expect(watchTv.length).toBe(1);
+      expect(watchTv[0].type).toBe('source');
+      // 6 static sources only, no stray app entries.
+      expect(manager.getSources().filter(s => s.type === 'app').length).toBe(0);
+    });
+
+    it('falls back to the id as the name when no customName is set', () => {
+      const deps = createMockDeps({
+        sourceConfigs: [{ id: 'com.disney.disneyplus', visible: true }],
+      });
+      const manager = new InputSourceManager(deps);
+      manager.configureInputSources(createMockService() as never);
+
+      const seeded = manager.getSources().find(s => s.id === 'com.disney.disneyplus');
+      // The id is the fallback label, sanitized for HomeKit (dots → spaces).
+      expect(seeded?.name).toBe('com disney disneyplus');
+    });
+  });
+
+  // ==========================================================================
+  // INPUT CHANGE NOTIFICATION (issue #14)
+  // ==========================================================================
+
+  describe('onInputsChanged', () => {
+    it('fires once after apps are discovered from the TV', async () => {
+      const onInputsChanged = vi.fn();
+      const deps = createMockDeps({ onInputsChanged });
+      (deps.tvClient.getApplications as ReturnType<typeof vi.fn>).mockResolvedValue([
+        { label: 'Netflix', intent: { component: { packageName: 'com.netflix.ninja' } } },
+      ]);
+
+      const manager = new InputSourceManager(deps);
+      manager.configureInputSources(createMockService() as never);
+
+      await manager.fetchAppsFromTV();
+      expect(onInputsChanged).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not fire when discovery adds no new apps', async () => {
+      const onInputsChanged = vi.fn();
+      const deps = createMockDeps({ onInputsChanged });
+      (deps.tvClient.getApplications as ReturnType<typeof vi.fn>).mockResolvedValue([
+        { label: 'Netflix', intent: { component: { packageName: 'com.netflix.ninja' } } },
+      ]);
+
+      const manager = new InputSourceManager(deps);
+      manager.configureInputSources(createMockService() as never);
+
+      await manager.fetchAppsFromTV(); // adds Netflix → fires
+      await manager.fetchAppsFromTV(); // nothing new → must not fire again
+      expect(onInputsChanged).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // ==========================================================================
   // CUSTOM APPS
   // ==========================================================================
 

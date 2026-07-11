@@ -56,6 +56,11 @@ export class SourceSwitchService {
   ): void {
     const { Service: Svc, Characteristic: Char } = this.deps;
 
+    // Rebuild the internal registry from scratch — this method is re-run when the
+    // input list changes (e.g. apps discovered after the TV wakes), so the array
+    // must not accumulate duplicates. Existing services are reused below.
+    this.switches = [];
+
     // Remove stale switch services that are no longer in the source list
     const validSubtypes = new Set(sources.map(s => `source-switch-${s.id}`));
     accessory.services
