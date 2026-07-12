@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.15] - 2026-07-12
+
+### Changed
+
+- **Removed the session source cache again** (added v1.5.12, restored v1.5.14): by preference, the source-configuration screen always fetches a fresh list on open, matching the pre-cache behaviour of v1.5.11. Note that on **Safari** the Config UI X iframe bridge can still drop the response to a repeated request; use a Chromium-based browser or Firefox for the source-configuration screen ([#14](https://github.com/mp-consulting/homebridge-philips-ambilight-tv/issues/14)).
+
 ## [1.5.14] - 2026-07-12
 
 ### Fixed
