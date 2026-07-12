@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.13] - 2026-07-12
+
+### Changed
+
+- **Reverted the session source cache added in v1.5.12**: The cache (and its "Refresh from TV" button) worked around a Config UI X iframe bug that only affects **Safari** — its `postMessage` bridge drops the response to a repeated request. On Chrome/Edge/Firefox, repeated `/get-sources` requests work fine (verified end-to-end), so the cache added stale-list behaviour (newly-installed apps not appearing until a manual refresh) for no benefit on the browsers that work — and it cannot reliably rescue Safari, where the first request can already fail. The source configuration screen now always fetches a fresh list on open. Safari remains affected by the upstream Config UI X bug; use a Chromium-based browser (or Firefox) for the source-configuration screen ([#14](https://github.com/mp-consulting/homebridge-philips-ambilight-tv/issues/14)).
+
 ## [1.5.12] - 2026-07-12
 
 ### Fixed
