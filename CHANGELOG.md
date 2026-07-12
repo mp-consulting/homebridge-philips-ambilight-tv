@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.14] - 2026-07-12
+
+### Fixed
+
+- **Restored the session source cache (reverted in v1.5.13), because it is required for Safari**: v1.5.13 removed the cache after confirming Chrome doesn't need it — but that broke the source-configuration screen on **Safari**, where the Config UI X iframe bridge drops the response to the *second* `homebridge.request` in a session. The cache renders reopens from the first fetch instead of issuing that second request, so the screen works in Safari again. It's harmless on Chromium/Firefox (reopen is simply instant), and the **"Refresh from TV"** button is back for deliberately re-fetching newly-installed apps ([#14](https://github.com/mp-consulting/homebridge-philips-ambilight-tv/issues/14)).
+
 ## [1.5.13] - 2026-07-12
 
 ### Changed

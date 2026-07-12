@@ -739,26 +739,57 @@
   // EDIT SOURCES SCREEN
   // ============================================================================
 
+  // Session cache of the raw source list fetched from each TV, keyed by a stable
+  // TV id. Reopening the sources screen renders from this cache instead of
+  // issuing another /get-sources request. That sidesteps a Homebridge Config UI
+  // X bug (#14) where the response to a *second* request is dropped — it tries
+  // to postMessage to a stale/detached plugin iframe (contentWindow === null)
+  // and throws — leaving the screen stuck on "Fetching sources". Use "Refresh
+  // from TV" to deliberately re-fetch.
+  const sourcesCache = new Map();
+  const sourcesCacheKey = (tv) => tv.mac || tv.ip;
+
+  /** Merge freshly-fetched (or cached) raw sources with the TV's saved config
+   *  and render the two-column list. */
+  const showSources = (tv, rawSources) => {
+    const withCustom = injectCustomApps(rawSources, tv.customApps);
+    const existingConfig = tv.sources || [];
+    state.sources = mergeSourcesWithConfig(withCustom, existingConfig);
+    renderSourcesList();
+    $('sourcesLoadingSpinner').style.display = 'none';
+    $('sourcesErrorContainer').style.display = 'none';
+    $('sourcesListContainer').style.display = 'block';
+  };
+
   const openEditSourcesScreen = async (index) => {
     state.editingSourcesTvIndex = index;
     const tv = state.configuredTvs[index];
 
     $('editSourcesTvName').textContent = tv.name;
-    $('sourcesLoadingSpinner').style.display = 'block';
     $('sourcesListContainer').style.display = 'none';
     $('sourcesErrorContainer').style.display = 'none';
 
     showScreen('editSourcesScreen');
 
+    // Render from the session cache when we already fetched this TV's sources,
+    // avoiding a second request that Config UI X may fail to deliver (#14).
+    const cached = sourcesCache.get(sourcesCacheKey(tv));
+    if (cached) {
+      $('sourcesLoadingSpinner').style.display = 'none';
+      showSources(tv, cached);
+      return;
+    }
+
+    $('sourcesLoadingSpinner').style.display = 'block';
     await loadSources(tv);
   };
 
   let sourcesLoading = false;
 
   const loadSources = async (tv) => {
-    // Guard against overlapping fetches: a hung request keeps its promise
-    // pending for the full 20s, and firing more only stacks dead requests
-    // behind it. Ignore re-triggers until the current one settles.
+    // Guard against overlapping fetches: a hung request (see #14) keeps its
+    // promise pending for the full 20s, and firing more only stacks dead
+    // requests behind it. Ignore re-triggers until the current one settles.
     if (sourcesLoading) {
       return;
     }
@@ -774,15 +805,9 @@
       );
 
       if (result.success) {
-        // Inject configured custom apps (the TV doesn't report these), then
-        // merge with existing source config (order and visibility).
-        const withCustom = injectCustomApps(result.sources, tv.customApps);
-        const existingConfig = tv.sources || [];
-        state.sources = mergeSourcesWithConfig(withCustom, existingConfig);
-        renderSourcesList();
-
-        $('sourcesLoadingSpinner').style.display = 'none';
-        $('sourcesListContainer').style.display = 'block';
+        // Cache the raw list so reopening the screen doesn't re-request (#14).
+        sourcesCache.set(sourcesCacheKey(tv), result.sources);
+        showSources(tv, result.sources);
       } else {
         showSourcesError(result.error);
       }
@@ -1036,12 +1061,17 @@
     tv.sources = [];
     await saveConfig();
 
-    // Show loading state
-    $('sourcesLoadingSpinner').style.display = 'block';
-    $('sourcesListContainer').style.display = 'none';
-
-    // Re-fetch sources from TV (will use default order since config is cleared)
-    await loadSources(tv);
+    // Re-render with the default order. Prefer the cached list so we don't fire
+    // another /get-sources request (Config UI X may drop its response, #14);
+    // only re-fetch if we somehow have no cache yet.
+    const cached = sourcesCache.get(sourcesCacheKey(tv));
+    if (cached) {
+      showSources(tv, cached);
+    } else {
+      $('sourcesLoadingSpinner').style.display = 'block';
+      $('sourcesListContainer').style.display = 'none';
+      await loadSources(tv);
+    }
 
     homebridge.toast.success('Source order reset to original');
   };
@@ -1170,6 +1200,15 @@
     $('sourcesLoadingSpinner').style.display = 'block';
     $('sourcesErrorContainer').style.display = 'none';
     loadSources(state.configuredTvs[state.editingSourcesTvIndex]);
+  });
+  $('refreshSourcesBtn').addEventListener('click', () => {
+    const tv = state.configuredTvs[state.editingSourcesTvIndex];
+    // Drop the cached list so the user gets a genuine re-fetch from the TV.
+    sourcesCache.delete(sourcesCacheKey(tv));
+    $('sourcesListContainer').style.display = 'none';
+    $('sourcesErrorContainer').style.display = 'none';
+    $('sourcesLoadingSpinner').style.display = 'block';
+    loadSources(tv);
   });
 
   // ============================================================================
