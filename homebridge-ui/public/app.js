@@ -739,17 +739,84 @@
   // EDIT SOURCES SCREEN
   // ============================================================================
 
+  // Persisted cache of each TV's fetched source list. Stored in localStorage
+  // (not just an in-memory variable) so it survives closing and reopening the
+  // plugin config modal — which reloads this iframe and would otherwise wipe an
+  // in-memory cache. Reopening then renders from the cache instead of issuing
+  // another /get-sources request, whose response Config UI X drops after a modal
+  // reopen (it postMessages to the destroyed iframe, contentWindow === null),
+  // hanging the screen (#14). "Refresh from TV" forces a genuine re-fetch.
+  const SOURCES_CACHE_PREFIX = 'philips-tv-sources:';
+  const SOURCES_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+  const sourcesCacheKey = (tv) => SOURCES_CACHE_PREFIX + (tv.mac || tv.ip);
+
+  const readSourcesCache = (tv) => {
+    try {
+      const raw = window.localStorage.getItem(sourcesCacheKey(tv));
+      if (!raw) {
+        return null;
+      }
+      const parsed = JSON.parse(raw);
+      if (!parsed || !Array.isArray(parsed.sources) || typeof parsed.at !== 'number') {
+        return null;
+      }
+      if (Date.now() - parsed.at > SOURCES_CACHE_TTL_MS) {
+        return null;
+      }
+      return parsed.sources;
+    } catch {
+      return null;
+    }
+  };
+
+  const writeSourcesCache = (tv, sources) => {
+    try {
+      window.localStorage.setItem(sourcesCacheKey(tv), JSON.stringify({ at: Date.now(), sources }));
+    } catch {
+      // localStorage unavailable or full — caching is best-effort.
+    }
+  };
+
+  const clearSourcesCache = (tv) => {
+    try {
+      window.localStorage.removeItem(sourcesCacheKey(tv));
+    } catch {
+      // ignore
+    }
+  };
+
+  /** Merge freshly-fetched (or cached) raw sources with the TV's saved config
+   *  and render the two-column list. */
+  const showSources = (tv, rawSources) => {
+    const withCustom = injectCustomApps(rawSources, tv.customApps);
+    const existingConfig = tv.sources || [];
+    state.sources = mergeSourcesWithConfig(withCustom, existingConfig);
+    renderSourcesList();
+    $('sourcesLoadingSpinner').style.display = 'none';
+    $('sourcesErrorContainer').style.display = 'none';
+    $('sourcesListContainer').style.display = 'block';
+  };
+
   const openEditSourcesScreen = async (index) => {
     state.editingSourcesTvIndex = index;
     const tv = state.configuredTvs[index];
 
     $('editSourcesTvName').textContent = tv.name;
-    $('sourcesLoadingSpinner').style.display = 'block';
     $('sourcesListContainer').style.display = 'none';
     $('sourcesErrorContainer').style.display = 'none';
 
     showScreen('editSourcesScreen');
 
+    // Render from the persisted cache when we already fetched this TV's sources —
+    // avoids a re-fetch whose response Config UI X may drop after a modal reopen.
+    const cached = readSourcesCache(tv);
+    if (cached) {
+      $('sourcesLoadingSpinner').style.display = 'none';
+      showSources(tv, cached);
+      return;
+    }
+
+    $('sourcesLoadingSpinner').style.display = 'block';
     await loadSources(tv);
   };
 
@@ -774,15 +841,9 @@
       );
 
       if (result.success) {
-        // Inject configured custom apps (the TV doesn't report these), then
-        // merge with existing source config (order and visibility).
-        const withCustom = injectCustomApps(result.sources, tv.customApps);
-        const existingConfig = tv.sources || [];
-        state.sources = mergeSourcesWithConfig(withCustom, existingConfig);
-        renderSourcesList();
-
-        $('sourcesLoadingSpinner').style.display = 'none';
-        $('sourcesListContainer').style.display = 'block';
+        // Persist the raw list so reopening the modal renders without a re-fetch.
+        writeSourcesCache(tv, result.sources);
+        showSources(tv, result.sources);
       } else {
         showSourcesError(result.error);
       }
@@ -1036,12 +1097,16 @@
     tv.sources = [];
     await saveConfig();
 
-    // Show loading state
-    $('sourcesLoadingSpinner').style.display = 'block';
-    $('sourcesListContainer').style.display = 'none';
-
-    // Re-fetch sources from TV (will use default order since config is cleared)
-    await loadSources(tv);
+    // Re-render in default order. Prefer the cached list so we don't re-issue a
+    // /get-sources request that Config UI X may drop after a modal reopen (#14).
+    const cached = readSourcesCache(tv);
+    if (cached) {
+      showSources(tv, cached);
+    } else {
+      $('sourcesLoadingSpinner').style.display = 'block';
+      $('sourcesListContainer').style.display = 'none';
+      await loadSources(tv);
+    }
 
     homebridge.toast.success('Source order reset to original');
   };
@@ -1170,6 +1235,15 @@
     $('sourcesLoadingSpinner').style.display = 'block';
     $('sourcesErrorContainer').style.display = 'none';
     loadSources(state.configuredTvs[state.editingSourcesTvIndex]);
+  });
+  $('refreshSourcesBtn').addEventListener('click', () => {
+    const tv = state.configuredTvs[state.editingSourcesTvIndex];
+    // Drop the cached list so the user gets a genuine re-fetch from the TV.
+    clearSourcesCache(tv);
+    $('sourcesListContainer').style.display = 'none';
+    $('sourcesErrorContainer').style.display = 'none';
+    $('sourcesLoadingSpinner').style.display = 'block';
+    loadSources(tv);
   });
 
   // ============================================================================

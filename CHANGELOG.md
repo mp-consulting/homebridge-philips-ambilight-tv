@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.19] - 2026-07-12
+
+### Fixed
+
+- **Sources screen hung after closing and reopening the plugin config**: Reproduced on Chrome (and Safari) — after you close the plugin config modal and reopen it, triggering the sources screen would spin forever and log `TypeError: null ... postMessage`. This is a Config UI X bug: closing the modal destroys its iframe but leaves a stale socket subscription, so the TV's `/get-sources` response is delivered to the now-null iframe and dropped. The plugin now caches each TV's fetched source list in **`localStorage`**, which (unlike the previous in-memory cache) survives the modal/iframe reload — so reopening renders from the cache instead of re-requesting, and the hang can't occur. A **"Refresh from TV"** button forces a genuine re-fetch, and the cache expires after 1 hour ([#14](https://github.com/mp-consulting/homebridge-philips-ambilight-tv/issues/14)).
+
 ## [1.5.18] - 2026-07-12
 
 ### Fixed
