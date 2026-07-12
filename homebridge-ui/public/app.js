@@ -4,10 +4,19 @@
  */
 
 (async () => {
-  // NOTE: the plugin config is loaded first (see INITIALIZATION below) so it is
-  // the very first IPC call — Safari's Config UI X iframe can drop the response
-  // to later requests, which would leave the settings screen blank. Theme
-  // refinement via getUserSettings is deferred to the end and made non-blocking.
+  // Confirm theme from Homebridge settings (overrides the early OS-preference detection)
+  try {
+    const settings = await homebridge.getUserSettings();
+    const scheme = settings.colorScheme;
+    if (scheme === 'dark' || scheme === 'light') {
+      document.documentElement.dataset.bsTheme = scheme;
+    } else if (scheme === 'auto') {
+      document.documentElement.dataset.bsTheme =
+        window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+  } catch {
+    // getUserSettings not available in older versions — keep the early-detected theme
+  }
 
   // ============================================================================
   // CONSTANTS & STATE
@@ -114,24 +123,6 @@
       },
     );
   });
-
-  /**
-   * Retry an IPC call that may never settle. Safari's Config UI X iframe can
-   * drop the response to a homebridge.request (its parent-side iframe reference
-   * goes null), leaving the promise pending forever; re-issuing usually recovers
-   * once the iframe re-attaches. Each attempt is raced against a timeout.
-   */
-  const withRetry = async (fn, attempts, ms, message) => {
-    let lastError;
-    for (let attempt = 1; attempt <= attempts; attempt++) {
-      try {
-        return await withTimeout(Promise.resolve().then(fn), ms, message);
-      } catch (error) {
-        lastError = error;
-      }
-    }
-    throw lastError;
-  };
 
   const api = {
     discover: () => homebridge.request('/discover'),
@@ -1185,34 +1176,11 @@
   // INITIALIZATION
   // ============================================================================
 
-  // Load the config as the FIRST IPC call, with retries — a dropped response
-  // (Safari's Config UI X iframe) then self-heals instead of leaving a blank
-  // screen. Falls back to the wizard rather than a blank page if it never loads.
-  try {
-    const config = await withRetry(() => homebridge.getPluginConfig(), 5, 6000, 'Loading configuration timed out');
-    if (config.length && config[0].devices?.length) {
-      state.configuredTvs = config[0].devices;
-      showScreen('successScreen');
-    } else {
-      showScreen('wizardStep1');
-    }
-  } catch {
+  const config = await homebridge.getPluginConfig();
+  if (config.length && config[0].devices?.length) {
+    state.configuredTvs = config[0].devices;
+    showScreen('successScreen');
+  } else {
     showScreen('wizardStep1');
   }
-
-  // Refine the theme from Homebridge settings — best-effort and non-blocking, so
-  // a slow/dropped response can never delay or blank the configuration screen.
-  // (Wrapped so a missing getUserSettings in older versions can't throw here.)
-  Promise.resolve()
-    .then(() => homebridge.getUserSettings())
-    .then((settings) => {
-      const scheme = settings && settings.colorScheme;
-      if (scheme === 'dark' || scheme === 'light') {
-        document.documentElement.dataset.bsTheme = scheme;
-      } else if (scheme === 'auto') {
-        document.documentElement.dataset.bsTheme =
-          window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-      }
-    })
-    .catch(() => { /* keep the early OS-detected theme */ });
 })();

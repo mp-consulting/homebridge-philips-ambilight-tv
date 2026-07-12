@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.18] - 2026-07-12
+
+### Fixed
+
+- **Reverted the v1.5.17 config-load change that broke the settings screen in Safari**: v1.5.17 wrapped the initial `getPluginConfig()` in a retry with a 6s timeout. On Safari that fires too early and stacks concurrent requests, which the Config UI X iframe can't match up — so the screen fell back to the setup wizard instead of showing the configured TV. The config load is back to the simple, reliable single call that worked through v1.5.16 ([#14](https://github.com/mp-consulting/homebridge-philips-ambilight-tv/issues/14)).
+
 ## [1.5.17] - 2026-07-12
 
 ### Fixed
