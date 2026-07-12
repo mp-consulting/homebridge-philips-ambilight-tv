@@ -464,6 +464,74 @@ describe('InputSourceManager', () => {
   });
 
   // ==========================================================================
+  // PLACEHOLDER NAME UPGRADE (issue #14)
+  // ==========================================================================
+
+  describe('upgradePlaceholderNames', () => {
+    const CONFIGURED_NAME = { UUID: 'configured-name' } as never;
+
+    it('upgrades a package-id placeholder to the real app label on discovery', async () => {
+      const onInputsChanged = vi.fn();
+      const deps = createMockDeps({
+        sourceConfigs: [{ id: 'com.netflix.ninja', visible: true }],
+        onInputsChanged,
+      });
+      const manager = new InputSourceManager(deps);
+      manager.configureInputSources(createMockService() as never);
+
+      // Seeded (TV asleep) → name is the sanitized package id, and the
+      // ConfiguredName characteristic holds that same placeholder.
+      const before = manager.getSources().find(s => s.id === 'com.netflix.ninja')!;
+      expect(before.name).toBe('com netflix ninja');
+      before.service.getCharacteristic(CONFIGURED_NAME).value = 'com netflix ninja';
+
+      // TV wakes and reports the real label.
+      (deps.tvClient.getApplications as ReturnType<typeof vi.fn>).mockResolvedValue([
+        { label: 'Netflix', intent: { component: { packageName: 'com.netflix.ninja' } } },
+      ]);
+      await manager.fetchAppsFromTV();
+
+      expect(manager.getSources().find(s => s.id === 'com.netflix.ninja')!.name).toBe('Netflix');
+      expect(onInputsChanged).toHaveBeenCalled(); // switches refresh to pick up the name
+    });
+
+    it('does not override a user-set custom name', async () => {
+      const deps = createMockDeps({
+        sourceConfigs: [{ id: 'com.netflix.ninja', visible: true, customName: 'My Netflix' }],
+      });
+      const manager = new InputSourceManager(deps);
+      manager.configureInputSources(createMockService() as never);
+
+      (deps.tvClient.getApplications as ReturnType<typeof vi.fn>).mockResolvedValue([
+        { label: 'Netflix', intent: { component: { packageName: 'com.netflix.ninja' } } },
+      ]);
+      await manager.fetchAppsFromTV();
+
+      expect(manager.getSources().find(s => s.id === 'com.netflix.ninja')!.name).toBe('My Netflix');
+    });
+
+    it('does not override a name the user changed in HomeKit', async () => {
+      const deps = createMockDeps({
+        sourceConfigs: [{ id: 'com.netflix.ninja', visible: true }],
+      });
+      const manager = new InputSourceManager(deps);
+      manager.configureInputSources(createMockService() as never);
+
+      const before = manager.getSources().find(s => s.id === 'com.netflix.ninja')!;
+      // User renamed the input in HomeKit → ConfiguredName differs from the placeholder.
+      before.service.getCharacteristic(CONFIGURED_NAME).value = 'Films';
+
+      (deps.tvClient.getApplications as ReturnType<typeof vi.fn>).mockResolvedValue([
+        { label: 'Netflix', intent: { component: { packageName: 'com.netflix.ninja' } } },
+      ]);
+      await manager.fetchAppsFromTV();
+
+      // Base name stays the placeholder; the user's HomeKit name is preserved.
+      expect(manager.getSources().find(s => s.id === 'com.netflix.ninja')!.name).toBe('com netflix ninja');
+    });
+  });
+
+  // ==========================================================================
   // CUSTOM APPS
   // ==========================================================================
 

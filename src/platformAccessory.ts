@@ -74,6 +74,8 @@ export class PhilipsAmbilightTVAccessory {
       Service: this.Service,
       Characteristic: this.Characteristic,
       tvClient: this.tvClient,
+      storagePath: platform.api.user.storagePath(),
+      deviceId: this.config.mac,
       communicationError: () => this.communicationError(),
       log: (level, msg) => this.log(level, msg),
       onSourceSwitch: (sourceId) => this.inputSourceManager.setActiveInputById(sourceId),

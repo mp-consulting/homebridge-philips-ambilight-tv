@@ -60,7 +60,10 @@ type InputType = 'app' | 'source' | 'channel';
 /** Runtime input source with associated HomeKit service */
 interface InputSource {
   readonly id: string;
-  readonly name: string;
+  /** Display/base name. Mutable so a package-id placeholder (used when a source
+   *  is registered before the TV reports its label) can be upgraded to the real
+   *  app name once the TV becomes reachable. */
+  name: string;
   readonly type: InputType;
   readonly identifier: number;
   readonly service: Service;
@@ -261,12 +264,24 @@ export class InputSourceManager {
         }))
         .sort((a, b) => a.name.localeCompare(b.name));
 
+      // Upgrade placeholder names: a source registered while the TV was asleep
+      // shows its package id until the TV reports the real app label. Now that we
+      // have labels, replace those placeholders (and persist) so inputs and their
+      // switches show a friendly name.
+      const renamed = this.upgradePlaceholderNames(tvAppInputs);
+
       // Find new apps that aren't already in our input sources
       const existingIds = new Set(this.inputSources.map(s => s.id));
       const newApps = tvAppInputs.filter(app => !existingIds.has(app.id));
 
       if (newApps.length === 0) {
         this.deps.log('debug', 'No new apps to add');
+        if (renamed) {
+          // Names changed even though no inputs were added — persist and let the
+          // source switches pick up the friendly names.
+          this.saveInputConfigs();
+          this.deps.onInputsChanged?.();
+        }
         return;
       }
 
@@ -275,6 +290,10 @@ export class InputSourceManager {
 
       if (appsToAdd.length === 0) {
         this.deps.log('debug', `Input source limit reached (${MAX_INPUT_SOURCES})`);
+        if (renamed) {
+          this.saveInputConfigs();
+          this.deps.onInputsChanged?.();
+        }
         return;
       }
 
@@ -296,15 +315,62 @@ export class InputSourceManager {
       this.saveInputConfigs();
       this.updateDisplayOrder();
       this.deps.log('info', `Discovered ${added} app(s) from TV (${this.inputSources.length} total inputs)`);
-      if (added > 0) {
-        // New inputs arrived (e.g. the TV was asleep at boot and has now woken);
-        // let dependent services rebuild — notably the source switches, so their
-        // count always matches the user's visible selection.
+      if (added > 0 || renamed) {
+        // New inputs arrived (e.g. the TV was asleep at boot and has now woken)
+        // or placeholder names were upgraded; let dependent services rebuild —
+        // notably the source switches, so their count and names stay in sync.
         this.deps.onInputsChanged?.();
       }
     } catch {
       this.deps.log('debug', 'TV not reachable for app discovery');
     }
+  }
+
+  /**
+   * Replace package-id placeholder names with the real app labels the TV now
+   * reports. A source registered before the TV was reachable is named after its
+   * package id; once discovery returns its label we upgrade the input's name and
+   * ConfiguredName in place. Never overrides a user-set custom name (from the
+   * sources config) or a name the user changed in HomeKit. Returns true if any
+   * input was renamed.
+   */
+  private upgradePlaceholderNames(discovered: InputData[]): boolean {
+    const { Characteristic: Char } = this.deps;
+    let changed = false;
+
+    for (const app of discovered) {
+      const input = this.inputSources.find(s => s.id === app.id);
+      if (!input) {
+        continue;
+      }
+
+      const placeholder = sanitizeForHomeKit(input.id);
+      const realName = sanitizeForHomeKit(app.name);
+
+      // Nothing better to offer, or the user pinned a custom name in the config.
+      if (realName === placeholder || this.sourceConfigMap.get(app.id)?.customName) {
+        continue;
+      }
+
+      // Only upgrade a genuine placeholder: the base name must still be the
+      // package id, and the user must not have renamed it in HomeKit (which
+      // would make ConfiguredName differ from the placeholder).
+      const currentConfigured = input.service.getCharacteristic(Char.ConfiguredName).value;
+      if (input.name !== placeholder || currentConfigured !== placeholder) {
+        continue;
+      }
+
+      input.name = realName;
+      input.service
+        .setCharacteristic(Char.ConfiguredName, realName)
+        .setCharacteristic(Char.Name, realName);
+      // Re-bind the ConfiguredName get/set handlers so their cached name matches.
+      this.setupInputSourceHandlers(input.service, realName);
+      this.deps.log('debug', `Input name upgraded: ${placeholder} → ${realName}`);
+      changed = true;
+    }
+
+    return changed;
   }
 
   // ==========================================================================

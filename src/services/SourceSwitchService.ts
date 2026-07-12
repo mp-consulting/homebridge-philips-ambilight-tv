@@ -1,4 +1,7 @@
 import type { Characteristic, CharacteristicValue, HapStatusError, PlatformAccessory, Service } from 'homebridge';
+import fs from 'fs';
+import { writeFile } from 'fs/promises';
+import path from 'path';
 
 import type { PhilipsTVClient } from '../api/PhilipsTVClient.js';
 import { HOME_URI, WATCH_TV_URI } from '../api/PhilipsTVClient.js';
@@ -11,6 +14,10 @@ export interface SourceSwitchDeps {
   readonly Service: typeof Service;
   readonly Characteristic: typeof Characteristic;
   readonly tvClient: PhilipsTVClient;
+  /** Homebridge storage path for persisting user switch renames. */
+  readonly storagePath: string;
+  /** Device id (MAC) used to key the persisted rename file. */
+  readonly deviceId: string;
   readonly communicationError: () => HapStatusError;
   readonly log: (level: 'debug' | 'info' | 'warn' | 'error', message: string) => void;
   readonly onSourceSwitch?: (sourceId: string) => void;
@@ -43,7 +50,30 @@ export class SourceSwitchService {
   private switches: SourceSwitch[] = [];
   private activeSourceId: string | null = null;
 
-  constructor(private readonly deps: SourceSwitchDeps) {}
+  /** User-set switch names, keyed by source id. Persisted to disk because the
+   *  TV accessory is external and its context is not saved across restarts. */
+  private customNames: Record<string, string> = {};
+  private readonly namesCachePath: string;
+
+  constructor(private readonly deps: SourceSwitchDeps) {
+    const safeId = deps.deviceId.replace(/[:-]/g, '').toLowerCase();
+    this.namesCachePath = path.join(deps.storagePath, `philips-tv-switch-names-${safeId}.json`);
+    this.loadCustomNames();
+  }
+
+  private loadCustomNames(): void {
+    try {
+      this.customNames = JSON.parse(fs.readFileSync(this.namesCachePath, 'utf-8'));
+    } catch {
+      // No file yet — normal on first run.
+      this.customNames = {};
+    }
+  }
+
+  private saveCustomNames(): void {
+    writeFile(this.namesCachePath, JSON.stringify(this.customNames), 'utf-8')
+      .catch(() => this.deps.log('warn', 'Failed to persist source switch names to disk'));
+  }
 
   // ==========================================================================
   // CONFIGURATION
@@ -74,15 +104,23 @@ export class SourceSwitchService {
     for (const source of sources) {
       const subtype = `source-switch-${source.id}`;
       const displayName = `${tvName} ${source.name}`;
+      // A name the user set in HomeKit wins over the source's default name and
+      // survives restarts / name upgrades.
+      const configuredName = this.customNames[source.id] ?? source.name;
 
       let service = accessory.getServiceById(Svc.Switch, subtype);
       if (!service) {
         service = accessory.addService(Svc.Switch, displayName, subtype);
         service.addOptionalCharacteristic(Char.ConfiguredName);
-        service.setCharacteristic(Char.ConfiguredName, source.name);
       }
 
+      // Always reassert the configured name so a persisted rename is restored on
+      // restart and a friendly name replaces an earlier package-id placeholder.
+      service.setCharacteristic(Char.ConfiguredName, configuredName);
       service.setCharacteristic(Char.Name, displayName);
+
+      service.getCharacteristic(Char.ConfiguredName)
+        .onSet((value) => this.handleRenameSwitch(source.id, value));
 
       service.getCharacteristic(Char.On)
         .onGet(() => this.handleGetSwitch(source.id))
@@ -107,6 +145,20 @@ export class SourceSwitchService {
   // ==========================================================================
   // HANDLERS
   // ==========================================================================
+
+  /** Persist a switch name the user changed in HomeKit so it survives restarts. */
+  private handleRenameSwitch(sourceId: string, value: CharacteristicValue): void {
+    const newName = (typeof value === 'string' ? value : '').trim();
+    if (!newName) {
+      return;
+    }
+    if (this.customNames[sourceId] === newName) {
+      return;
+    }
+    this.customNames[sourceId] = newName;
+    this.saveCustomNames();
+    this.deps.log('debug', `Source switch renamed: ${sourceId} → ${newName}`);
+  }
 
   private handleGetSwitch(sourceId: string): CharacteristicValue {
     return this.activeSourceId === sourceId;

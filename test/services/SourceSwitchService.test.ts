@@ -6,6 +6,24 @@ import type { SourceSwitchDeps } from '../../src/services/SourceSwitchService.js
 // MOCKS
 // ============================================================================
 
+vi.mock('fs', () => ({
+  default: {
+    readFileSync: vi.fn().mockImplementation(() => {
+      throw new Error('ENOENT');
+    }),
+  },
+}));
+
+vi.mock('fs/promises', () => ({
+  writeFile: vi.fn().mockResolvedValue(undefined),
+}));
+
+import fs from 'fs';
+import { writeFile } from 'fs/promises';
+
+const mockReadFileSync = vi.mocked(fs.readFileSync);
+const mockWriteFile = vi.mocked(writeFile);
+
 function createMockService(subtype?: string) {
   const characteristics = new Map<string, { value: unknown; onGet: ReturnType<typeof vi.fn>; onSet: ReturnType<typeof vi.fn> }>();
 
@@ -50,6 +68,8 @@ function createMockDeps(): SourceSwitchDeps {
       launchWatchTV: vi.fn().mockResolvedValue(true),
       launchHome: vi.fn().mockResolvedValue(true),
     } as never,
+    storagePath: '/tmp/test',
+    deviceId: 'AA:BB:CC:DD:EE:FF',
     communicationError: () => new Error('comm error') as never,
     log: vi.fn(),
     onSourceSwitch: vi.fn(),
@@ -83,6 +103,10 @@ const TEST_SOURCES = [
 describe('SourceSwitchService', () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    mockReadFileSync.mockReset().mockImplementation(() => {
+      throw new Error('ENOENT');
+    });
+    mockWriteFile.mockReset().mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -169,6 +193,57 @@ describe('SourceSwitchService', () => {
       for (const s of services) {
         expect(s.updateCharacteristic).toHaveBeenCalledTimes(1);
       }
+    });
+  });
+
+  // ==========================================================================
+  // NAME PERSISTENCE (issue #14)
+  // ==========================================================================
+
+  describe('switch name persistence', () => {
+    const CONFIGURED_NAME = { UUID: 'configured-name' };
+
+    it('persists a switch name the user changes in HomeKit', () => {
+      const deps = createMockDeps();
+      const service = new SourceSwitchService(deps);
+      const accessory = createMockAccessory();
+      service.configureSwitches(accessory as never, TEST_SOURCES, 'TV');
+
+      const netflix = accessory.services.find(s => s.subtype === 'source-switch-com.netflix.ninja')!;
+      const onSet = netflix.getCharacteristic(CONFIGURED_NAME).onSet.mock.calls[0][0] as (v: unknown) => void;
+      onSet('My Netflix');
+
+      expect(mockWriteFile).toHaveBeenCalled();
+      const written = JSON.parse(mockWriteFile.mock.calls.at(-1)![1] as string);
+      expect(written['com.netflix.ninja']).toBe('My Netflix');
+    });
+
+    it('ignores an empty rename', () => {
+      const deps = createMockDeps();
+      const service = new SourceSwitchService(deps);
+      const accessory = createMockAccessory();
+      service.configureSwitches(accessory as never, TEST_SOURCES, 'TV');
+
+      const netflix = accessory.services.find(s => s.subtype === 'source-switch-com.netflix.ninja')!;
+      const onSet = netflix.getCharacteristic(CONFIGURED_NAME).onSet.mock.calls[0][0] as (v: unknown) => void;
+      onSet('   ');
+
+      expect(mockWriteFile).not.toHaveBeenCalled();
+    });
+
+    it('restores a persisted switch name on (re)configure', () => {
+      mockReadFileSync.mockReturnValue(JSON.stringify({ 'com.netflix.ninja': 'My Netflix' }));
+      const deps = createMockDeps();
+      const service = new SourceSwitchService(deps);
+      const accessory = createMockAccessory();
+      service.configureSwitches(accessory as never, TEST_SOURCES, 'TV');
+
+      const netflix = accessory.services.find(s => s.subtype === 'source-switch-com.netflix.ninja')!;
+      // The persisted name is reasserted on ConfiguredName, not the source default.
+      expect(netflix.setCharacteristic).toHaveBeenCalledWith(
+        expect.objectContaining({ UUID: 'configured-name' }),
+        'My Netflix',
+      );
     });
   });
 

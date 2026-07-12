@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.16] - 2026-07-12
+
+### Fixed
+
+- **Sources/switches showed a long package id instead of the app name**: A source you selected while the TV was asleep is registered immediately (so it's never dropped) but, before the TV is reachable, it's labelled with the app's package id (e.g. `com.netflix.ninja`). Once the TV wakes and reports its real labels, the plugin now upgrades those placeholder names in place — on both the input and its source switch — without ever overriding a name you set in the sources config or changed in HomeKit ([#14](https://github.com/mp-consulting/homebridge-philips-ambilight-tv/issues/14)).
+- **Source switch renames were not persistent**: Renaming a source **switch** in the Apple Home app is now saved to disk (keyed by the TV's MAC) and restored on restart, so it survives reboots and re-discovery. Previously the name reverted because the accessory is published as external and its context isn't persisted by Homebridge ([#14](https://github.com/mp-consulting/homebridge-philips-ambilight-tv/issues/14)).
+
 ## [1.5.15] - 2026-07-12
 
 ### Changed
