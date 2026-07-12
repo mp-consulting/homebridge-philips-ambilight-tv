@@ -55,6 +55,21 @@ function withDeadline(promise, ms) {
   });
 }
 
+/**
+ * Verbose per-request logging. Config UI X streams the UI server's stdout to
+ * the browser over socket.io, and each line is an event it relays to the plugin
+ * iframe — so chatty handlers add load to the same channel that delivers request
+ * responses. Routine progress lines are gated behind this flag (set
+ * PHILIPS_TV_UI_DEBUG=1) so the default path stays quiet; errors and the final
+ * summary are always logged.
+ */
+const UI_DEBUG = process.env.PHILIPS_TV_UI_DEBUG === '1' || process.env.PHILIPS_TV_UI_DEBUG === 'true';
+function debugLog(...args) {
+  if (UI_DEBUG) {
+    console.log(...args);
+  }
+}
+
 // ============================================================================
 // UI SERVER CLASS
 // ============================================================================
@@ -365,7 +380,7 @@ class UiServer extends HomebridgePluginUiServer {
     }
 
     try {
-      console.log(`[Sources] Getting sources from ${ip}`);
+      debugLog(`[Sources] Getting sources from ${ip}`);
 
       // Create PhilipsTVClient instance
       const client = new PhilipsTVClient({
@@ -398,7 +413,7 @@ class UiServer extends HomebridgePluginUiServer {
           client.getSources(WIZARD_REQUEST_TIMEOUT_MS),
           remaining(),
         );
-        console.log(`[Sources] Fetched ${tvSources.length} sources from TV API`);
+        debugLog(`[Sources] Fetched ${tvSources.length} sources from TV API`);
       } catch (sourceError) {
         console.log('[Sources] Could not fetch sources from TV, using built-in:', sourceError.message);
         tvSources = client.getBuiltInSources();

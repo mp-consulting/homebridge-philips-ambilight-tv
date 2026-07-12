@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.11] - 2026-07-12
+
+### Fixed
+
+- **Source-config screen sometimes hung on "Fetching sources" until a full page reload**: The setup wizard's `/get-sources` request could time out even though the plugin fetched the sources correctly. The root cause is upstream in Homebridge Config UI X (it tries to deliver the response to a plugin iframe whose `contentWindow` is momentarily `null` and throws, dropping the response) — **updating homebridge-config-ui-x is the actual fix**. This release reduces how often the plugin triggers it: source-config changes now debounce their disk save instead of saving on every show/hide toggle and drag (each save re-rendered the settings view and could invalidate the iframe), the routine per-request `[Sources]` log lines are gated behind a `PHILIPS_TV_UI_DEBUG` flag to cut socket-channel chatter, and the sources fetch guards against overlapping requests ([#14](https://github.com/mp-consulting/homebridge-philips-ambilight-tv/issues/14)).
+
 ## [1.5.10] - 2026-07-12
 
 ### Changed

@@ -138,13 +138,57 @@
   // CONFIG MANAGEMENT
   // ============================================================================
 
-  const saveConfig = async () => {
+  /** Push the current config to Config UI X in memory only (no disk write, no
+   *  settings-view re-render). Cheap and safe to call on every keystroke/toggle. */
+  const pushPluginConfig = async () => {
     await homebridge.updatePluginConfig([{
       platform: PLATFORM_NAME,
       devices: state.configuredTvs,
     }]);
+  };
+
+  const saveConfig = async () => {
+    await pushPluginConfig();
     await homebridge.savePluginConfig();
   };
+
+  /**
+   * Debounce a function, coalescing rapid calls into a single trailing
+   * invocation. `.flush()` runs any pending call immediately (e.g. before
+   * leaving a screen) so nothing is lost.
+   */
+  const debounce = (fn, ms) => {
+    let timer = null;
+    const debounced = () => {
+      if (timer) {
+        clearTimeout(timer);
+      }
+      timer = setTimeout(() => {
+        timer = null;
+        fn();
+      }, ms);
+    };
+    debounced.flush = () => {
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+        fn();
+      }
+    };
+    return debounced;
+  };
+
+  /**
+   * Persist the sources config to disk, debounced. Saving on every show/hide
+   * toggle or drag calls savePluginConfig() repeatedly, and each disk-save
+   * re-renders the Config UI X settings view — which can invalidate the plugin
+   * iframe and make Config UI X drop in-flight /get-sources responses (the
+   * "Timed out fetching sources" hang, issue #14). Debouncing the disk write
+   * keeps the churn to a single save after the user stops fiddling.
+   */
+  const flushSourcesSave = debounce(() => {
+    homebridge.savePluginConfig().catch(() => homebridge.toast.error('Failed to save source configuration'));
+  }, 1000);
 
   const addTv = async () => {
     state.configuredTvs.push({ ...state.currentConfig });
@@ -709,7 +753,16 @@
     await loadSources(tv);
   };
 
+  let sourcesLoading = false;
+
   const loadSources = async (tv) => {
+    // Guard against overlapping fetches: a hung request (see #14) keeps its
+    // promise pending for the full 20s, and firing more only stacks dead
+    // requests behind it. Ignore re-triggers until the current one settles.
+    if (sourcesLoading) {
+      return;
+    }
+    sourcesLoading = true;
     try {
       // The server bounds its own fetch (~15s); this client-side guard is a
       // last resort so a wedged request can never leave the spinner running
@@ -735,6 +788,8 @@
       }
     } catch (e) {
       showSourcesError(e.message);
+    } finally {
+      sourcesLoading = false;
     }
   };
 
@@ -968,7 +1023,10 @@
       visible: s.visible,
       customName: s.customName,
     }));
-    await saveConfig();
+    // Update the in-memory config now (cheap, no re-render); debounce the disk
+    // save so a burst of toggles/drags doesn't churn the iframe (issue #14).
+    await pushPluginConfig();
+    flushSourcesSave();
   };
 
   const resetSourcesOrder = async () => {
@@ -1102,7 +1160,11 @@
   });
 
   // Edit Sources screen buttons
-  $('doneEditSourcesBtn').addEventListener('click', () => showScreen('successScreen'));
+  $('doneEditSourcesBtn').addEventListener('click', () => {
+    // Commit any debounced source-config changes before leaving the screen.
+    flushSourcesSave.flush();
+    showScreen('successScreen');
+  });
   $('resetSourcesOrderBtn').addEventListener('click', resetSourcesOrder);
   $('retryLoadSourcesBtn').addEventListener('click', () => {
     $('sourcesLoadingSpinner').style.display = 'block';
