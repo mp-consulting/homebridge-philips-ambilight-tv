@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.17] - 2026-07-12
+
+### Fixed
+
+- **Configuration screen sometimes blank in Safari (incl. iPhone/iPad)**: The settings UI loaded the Homebridge *user settings* (for theme) before the *plugin config*, which made the config the second IPC call — and Safari's Config UI X iframe can drop the response to a later request, leaving the screen blank. The plugin config is now the **first** call, is **retried** if its response is dropped (so it self-heals instead of hanging), and falls back to the setup wizard rather than a blank page if it truly can't load. Theme detection is now deferred and non-blocking. Note: iOS/iPadOS browsers are all Safari/WebKit, so this path matters there; the source-configuration screen's repeated fetches can still hit the same upstream Safari limitation ([#14](https://github.com/mp-consulting/homebridge-philips-ambilight-tv/issues/14)).
+
 ## [1.5.16] - 2026-07-12
 
 ### Fixed
