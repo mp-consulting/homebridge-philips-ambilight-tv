@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.12] - 2026-07-12
+
+### Fixed
+
+- **Sources screen stuck on "Fetching sources" the second time it's opened**: Reopening the source-config screen (or resetting the order) issued another `/get-sources` request, and Homebridge Config UI X drops the response to that second request — it tries to `postMessage` to a plugin iframe whose `contentWindow` has gone `null` and throws, so the screen hangs (reproducible even on Config UI X 5.24.0 / Homebridge 2.1.1; the missing null-check is upstream). The plugin now **caches each TV's fetched source list for the session** and renders reopens and order-resets from that cache instead of re-requesting, so the failing second request never happens. A new **"Refresh from TV"** button performs a deliberate re-fetch when you actually want to pick up newly-installed apps ([#14](https://github.com/mp-consulting/homebridge-philips-ambilight-tv/issues/14)).
+
 ## [1.5.11] - 2026-07-12
 
 ### Fixed
