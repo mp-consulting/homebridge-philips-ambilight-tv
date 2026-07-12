@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.10] - 2026-07-12
+
+### Changed
+
+- **Clearer message when the setup wizard can't fetch sources in time**: If the "Fetching sources" step times out, the retryable error now tells you to turn the TV on and wait until it shows the **Home screen** — a TV freshly woken from standby is still starting its apps, which is the usual cause — instead of only saying to make sure it is powered on ([#14](https://github.com/mp-consulting/homebridge-philips-ambilight-tv/issues/14)).
+
 ## [1.5.9] - 2026-07-11
 
 ### Fixed

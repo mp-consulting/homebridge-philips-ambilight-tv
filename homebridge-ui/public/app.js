@@ -717,7 +717,7 @@
       const result = await withTimeout(
         api.getSources(tv.ip, tv.username, tv.password, tv.mac),
         20000,
-        'Timed out fetching sources from the TV. Make sure it is powered on, then retry.',
+        'Timed out fetching sources from the TV. Turn the TV on and wait until it shows the Home screen (a TV that just woke is still starting its apps), then retry.',
       );
 
       if (result.success) {
