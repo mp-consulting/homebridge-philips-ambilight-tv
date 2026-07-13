@@ -5,6 +5,7 @@ import path from 'path';
 
 import type { PhilipsTVClient } from '../api/PhilipsTVClient.js';
 import { HOME_URI, WATCH_TV_URI } from '../api/PhilipsTVClient.js';
+import { sanitizeForHomeKit } from '../api/utils.js';
 
 // ============================================================================
 // TYPES
@@ -104,20 +105,18 @@ export class SourceSwitchService {
     for (const source of sources) {
       const subtype = `source-switch-${source.id}`;
       const displayName = `${tvName} ${source.name}`;
-      // A name the user set in HomeKit wins over the source's default name and
-      // survives restarts / name upgrades.
-      const configuredName = this.customNames[source.id] ?? source.name;
 
       let service = accessory.getServiceById(Svc.Switch, subtype);
+      const isNew = !service;
       if (!service) {
         service = accessory.addService(Svc.Switch, displayName, subtype);
         service.addOptionalCharacteristic(Char.ConfiguredName);
+        // Seed the base Name once, on creation. Reasserting it on every restart
+        // can make the Home app drop a rename the user made on the tile.
+        service.setCharacteristic(Char.Name, displayName);
       }
 
-      // Always reassert the configured name so a persisted rename is restored on
-      // restart and a friendly name replaces an earlier package-id placeholder.
-      service.setCharacteristic(Char.ConfiguredName, configuredName);
-      service.setCharacteristic(Char.Name, displayName);
+      this.applyConfiguredName(service, source.id, source.name, isNew);
 
       service.getCharacteristic(Char.ConfiguredName)
         .onSet((value) => this.handleRenameSwitch(source.id, value));
@@ -145,6 +144,43 @@ export class SourceSwitchService {
   // ==========================================================================
   // HANDLERS
   // ==========================================================================
+
+  /**
+   * Decide what to write to a switch's ConfiguredName, without clobbering a
+   * rename the user made in the Home app.
+   *
+   * The Home app frequently keeps a switch rename *client-side* and never writes
+   * it back to ConfiguredName, so we can't capture it. Re-asserting our default
+   * name on every restart (the old behaviour) then reset the user's rename. So:
+   *  - a rename we *did* capture (customNames) always wins and is restored;
+   *  - a brand-new switch is seeded with the source's default/label;
+   *  - an existing switch is left untouched, except to upgrade a leftover
+   *    package-id placeholder (e.g. "com netflix ninja") to the real label once
+   *    the TV reports it.
+   */
+  private applyConfiguredName(service: Service, sourceId: string, sourceName: string, isNew: boolean): void {
+    const { Characteristic: Char } = this.deps;
+
+    const stored = this.customNames[sourceId];
+    if (stored) {
+      service.setCharacteristic(Char.ConfiguredName, stored);
+      return;
+    }
+
+    if (isNew) {
+      service.setCharacteristic(Char.ConfiguredName, sourceName);
+      return;
+    }
+
+    // Existing switch, no captured rename: only replace a package-id placeholder
+    // with the friendly label; otherwise leave whatever name is there so a
+    // Home-app rename survives the restart.
+    const current = service.getCharacteristic(Char.ConfiguredName).value;
+    const placeholder = sanitizeForHomeKit(sourceId);
+    if (current === placeholder && sourceName !== placeholder) {
+      service.setCharacteristic(Char.ConfiguredName, sourceName);
+    }
+  }
 
   /** Persist a switch name the user changed in HomeKit so it survives restarts. */
   private handleRenameSwitch(sourceId: string, value: CharacteristicValue): void {

@@ -248,6 +248,68 @@ describe('SourceSwitchService', () => {
   });
 
   // ==========================================================================
+  // NAME CLOBBER GUARD (issue #14)
+  // ==========================================================================
+
+  describe('does not clobber a Home-app rename on restart', () => {
+    const CONFIGURED_NAME = { UUID: 'configured-name' };
+
+    /** Accessory whose Netflix switch already exists with a preset ConfiguredName. */
+    function accessoryWithExistingNetflix(existingName: string) {
+      const existing = createMockService('source-switch-com.netflix.ninja');
+      existing.getCharacteristic(CONFIGURED_NAME).value = existingName;
+      const accessory = createMockAccessory();
+      accessory.getServiceById = vi.fn().mockImplementation((_svc: unknown, subtype: string) =>
+        subtype === 'source-switch-com.netflix.ninja' ? existing : null);
+      return { accessory, existing };
+    }
+
+    it('leaves ConfiguredName untouched when there is no captured rename', () => {
+      // Home renamed the tile client-side (never written back), so our stored
+      // value is still the default. Re-running configure must NOT reassert it,
+      // otherwise the Home-app rename is reset.
+      const deps = createMockDeps();
+      const service = new SourceSwitchService(deps);
+      const { accessory, existing } = accessoryWithExistingNetflix('Netflix');
+
+      service.configureSwitches(accessory as never, [TEST_SOURCES[0]], 'TV');
+
+      expect(existing.setCharacteristic).not.toHaveBeenCalledWith(
+        expect.objectContaining({ UUID: 'configured-name' }),
+        expect.anything(),
+      );
+    });
+
+    it('upgrades a leftover package-id placeholder to the real label', () => {
+      const deps = createMockDeps();
+      const service = new SourceSwitchService(deps);
+      // The switch still shows the sanitized package id from when the TV was asleep.
+      const { accessory, existing } = accessoryWithExistingNetflix('com netflix ninja');
+
+      service.configureSwitches(accessory as never, [TEST_SOURCES[0]], 'TV');
+
+      expect(existing.setCharacteristic).toHaveBeenCalledWith(
+        expect.objectContaining({ UUID: 'configured-name' }),
+        'Netflix',
+      );
+    });
+
+    it('restores a captured rename even on an existing switch', () => {
+      mockReadFileSync.mockReturnValue(JSON.stringify({ 'com.netflix.ninja': 'My Netflix' }));
+      const deps = createMockDeps();
+      const service = new SourceSwitchService(deps);
+      const { accessory, existing } = accessoryWithExistingNetflix('Netflix');
+
+      service.configureSwitches(accessory as never, [TEST_SOURCES[0]], 'TV');
+
+      expect(existing.setCharacteristic).toHaveBeenCalledWith(
+        expect.objectContaining({ UUID: 'configured-name' }),
+        'My Netflix',
+      );
+    });
+  });
+
+  // ==========================================================================
   // SWITCH HANDLERS
   // ==========================================================================
 

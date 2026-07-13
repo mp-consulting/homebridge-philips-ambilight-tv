@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.21] - 2026-07-13
+
+### Fixed
+
+- **Source switch renames didn't survive a restart** ([#14](https://github.com/mp-consulting/homebridge-philips-ambilight-tv/issues/14)): The Apple Home app often keeps a switch rename *client-side* and never writes it back to the accessory, so the plugin couldn't capture it — and then re-asserting the default name on every launch actively reset the user's rename (e.g. "Ver TV" → "Watch TV", "Nintendo" → "HDMI 3"). The plugin no longer overwrites a switch's name on restart: a rename it *did* capture is still restored, a brand-new switch is seeded with the source label, and an existing switch is left alone except to upgrade a leftover package-id placeholder to the real app name.
+- **Input-selector "wheel" would stop updating / bounce back after selecting a source** ([#14](https://github.com/mp-consulting/homebridge-philips-ambilight-tv/issues/14)): Selecting an input now confirms the choice on the Television service, and a state poll that arrives before the TV finishes switching (still reporting the previous app) is ignored for a few cycles instead of bouncing the wheel back off the selection. A switch that genuinely fails is still reflected after a short grace period.
+- **Wrong/no source switch on the first turn-on** ([#14](https://github.com/mp-consulting/homebridge-philips-ambilight-tv/issues/14)): When the TV wakes, the plugin now pulls the current source immediately (after reconciling the input list) so the correct input and switch light up right away instead of after the next poll cycle.
+
 ## [1.5.20] - 2026-07-13
 
 ### Fixed

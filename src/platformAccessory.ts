@@ -319,14 +319,33 @@ export class PhilipsAmbilightTVAccessory {
       // TV just powered on. A TV that was asleep at boot may not have reported
       // its apps yet, so reconcile the input list now that it is reachable —
       // this backfills any sources that couldn't be discovered at startup and
-      // refreshes the source switches to match (no restart required).
-      void this.inputSourceManager.fetchAppsFromTV();
+      // refreshes the source switches to match (no restart required). Then pull
+      // the current source so the right input/switch lights up immediately
+      // rather than after the next poll (which can show the wrong/no switch).
+      void this.syncActiveSourceOnPowerOn();
       if (this.config.ambilightOnStart) {
         // Auto-start Ambilight in the configured mode.
         void this.ambilightService.startWithConfiguredMode();
       }
     }
     this.log('debug', `Power state updated: ${isOn ? 'ON' : 'OFF'}`);
+  }
+
+  /**
+   * On power-on, reconcile the input list and then apply the TV's current
+   * source right away. The source switches were just reset by the preceding
+   * power-off, so without this the correct switch/input only lights up on the
+   * next poll cycle (up to the polling interval away).
+   */
+  private async syncActiveSourceOnPowerOn(): Promise<void> {
+    await this.inputSourceManager.fetchAppsFromTV();
+    try {
+      const currentApp = await this.tvClient.getCurrentActivity();
+      this.inputSourceManager.updateFromPoll(currentApp, this.tvService);
+      this.sourceSwitchService.updateFromPoll(currentApp);
+    } catch {
+      // TV not reachable yet — the periodic poll will sync shortly.
+    }
   }
 
   private onAmbilightUpdate(style: AmbilightCached | null, fallback: boolean): void {

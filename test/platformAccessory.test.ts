@@ -16,11 +16,19 @@ const mocks = vi.hoisted(() => ({
   hueReset: vi.fn(),
   getVisibleSources: vi.fn().mockReturnValue([]),
   setPowerState: vi.fn().mockResolvedValue(true),
+  getCurrentActivity: vi.fn().mockResolvedValue(null),
+  fetchAppsFromTV: vi.fn().mockResolvedValue(undefined),
+  inputUpdateFromPoll: vi.fn(),
+  switchUpdateFromPoll: vi.fn(),
 }));
+
+/** Holder for the poll callbacks the accessory hands to StatePollManager. */
+const capture = vi.hoisted(() => ({ pollCallbacks: null as unknown }));
 
 vi.mock('../src/api/PhilipsTVClient.js', () => ({
   PhilipsTVClient: class {
     setPowerState = mocks.setPowerState;
+    getCurrentActivity = mocks.getCurrentActivity;
   },
   // Re-exported URI constants used elsewhere; unused here but keep the shape.
   HDMI_SOURCES: {},
@@ -44,9 +52,9 @@ vi.mock('../src/services/InputSourceManager.js', () => ({
     handleGetInput = vi.fn();
     handleSetInput = vi.fn();
     handleRemoteKey = vi.fn();
-    updateFromPoll = vi.fn();
+    updateFromPoll = mocks.inputUpdateFromPoll;
     setActiveInputById = vi.fn();
-    fetchAppsFromTV = vi.fn().mockResolvedValue(undefined);
+    fetchAppsFromTV = mocks.fetchAppsFromTV;
   },
 }));
 
@@ -54,7 +62,7 @@ vi.mock('../src/services/SourceSwitchService.js', () => ({
   SourceSwitchService: class {
     resetAll = mocks.resetAll;
     configureSwitches = vi.fn();
-    updateFromPoll = vi.fn();
+    updateFromPoll = mocks.switchUpdateFromPoll;
   },
 }));
 
@@ -78,6 +86,9 @@ vi.mock('../src/services/StatePollManager.js', () => ({
     start = vi.fn();
     stop = vi.fn();
     cleanup = vi.fn();
+    constructor(_client: unknown, _config: unknown, callbacks: unknown) {
+      capture.pollCallbacks = callbacks;
+    }
   },
 }));
 
@@ -201,6 +212,12 @@ describe('PhilipsAmbilightTVAccessory power handling', () => {
     vi.restoreAllMocks();
   });
 
+  /** Let the accessory's fire-and-forget async work (fetch → getCurrentActivity) settle. */
+  const flush = async () => {
+    await new Promise(resolve => setImmediate(resolve));
+    await new Promise(resolve => setImmediate(resolve));
+  };
+
   /** Drive the HomeKit "Active" (power) characteristic through its onSet handler. */
   async function setPower(services: Map<unknown, ReturnType<typeof createMockService>>, on: boolean) {
     const tvService = services.get(Service.Television)!;
@@ -243,5 +260,38 @@ describe('PhilipsAmbilightTVAccessory power handling', () => {
 
     expect(mocks.setPowerState).not.toHaveBeenCalled();
     expect(mocks.resetAll).not.toHaveBeenCalled();
+  });
+
+  describe('active-source sync on power-on', () => {
+    /** Build the accessory and return the poll callbacks it registered. */
+    function build() {
+      const { platform, accessory } = createMocks();
+      new PhilipsAmbilightTVAccessory(platform as never, accessory as never);
+      return capture.pollCallbacks as { onPowerChange: (on: boolean) => void };
+    }
+
+    it('applies the current source to inputs and switches when the TV wakes', async () => {
+      mocks.getCurrentActivity.mockResolvedValue('com.disney.disneyplus');
+      const cb = build();
+
+      // First power event is the initial sync (skipped); the second is a real wake.
+      cb.onPowerChange(true);
+      cb.onPowerChange(true);
+      await flush();
+
+      expect(mocks.fetchAppsFromTV).toHaveBeenCalled();
+      expect(mocks.inputUpdateFromPoll).toHaveBeenCalledWith('com.disney.disneyplus', expect.anything());
+      expect(mocks.switchUpdateFromPoll).toHaveBeenCalledWith('com.disney.disneyplus');
+    });
+
+    it('does not sync on the initial power event (Homebridge restart while TV on)', async () => {
+      mocks.getCurrentActivity.mockResolvedValue('com.disney.disneyplus');
+      const cb = build();
+
+      cb.onPowerChange(true); // initial sync only
+      await flush();
+
+      expect(mocks.switchUpdateFromPoll).not.toHaveBeenCalled();
+    });
   });
 });

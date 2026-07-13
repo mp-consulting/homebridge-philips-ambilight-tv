@@ -844,4 +844,70 @@ describe('InputSourceManager', () => {
       expect(manager.currentId).toBe(initialId);
     });
   });
+
+  // ==========================================================================
+  // MANUAL SWITCH CONFIRMATION (issue #14 — wheel bounce)
+  // ==========================================================================
+
+  describe('manual switch confirmation', () => {
+    const ACTIVE_IDENTIFIER = { UUID: 'active-identifier' } as never;
+
+    function twoAppManager() {
+      const deps = createMockDeps({
+        userInputs: [
+          { identifier: 'com.netflix.ninja', name: 'Netflix', type: 'app' },
+          { identifier: 'com.disney.disneyplus', name: 'Disney+', type: 'app' },
+        ],
+      });
+      const manager = new InputSourceManager(deps);
+      const tvService = createMockService();
+      manager.configureInputSources(tvService as never);
+      const netflix = manager.getSources().find(s => s.id === 'com.netflix.ninja')!;
+      const disney = manager.getSources().find(s => s.id === 'com.disney.disneyplus')!;
+      return { manager, tvService, netflix, disney };
+    }
+
+    it('confirms the selection on ActiveIdentifier after a successful switch', async () => {
+      const { manager, tvService, disney } = twoAppManager();
+      await manager.handleSetInput(disney.identifier);
+      expect(tvService.updateCharacteristic).toHaveBeenCalledWith(ACTIVE_IDENTIFIER, disney.identifier);
+    });
+
+    it('ignores polls reporting the previous app until the TV confirms the switch', async () => {
+      const { manager, tvService, disney } = twoAppManager();
+      await manager.handleSetInput(disney.identifier);
+      expect(manager.currentId).toBe(disney.identifier);
+
+      // TV still reports the old app for a couple of polls — must not bounce back.
+      manager.updateFromPoll('com.netflix.ninja', tvService as never);
+      manager.updateFromPoll('com.netflix.ninja', tvService as never);
+      expect(manager.currentId).toBe(disney.identifier);
+    });
+
+    it('resumes tracking once the TV confirms the pending switch', async () => {
+      const { manager, tvService, netflix, disney } = twoAppManager();
+      await manager.handleSetInput(disney.identifier);
+
+      manager.updateFromPoll('com.disney.disneyplus', tvService as never); // confirmed
+      expect(manager.currentId).toBe(disney.identifier);
+
+      // A genuine change on the TV is reflected again after confirmation.
+      manager.updateFromPoll('com.netflix.ninja', tvService as never);
+      expect(manager.currentId).toBe(netflix.identifier);
+    });
+
+    it('gives up after the grace period so a failed switch is still reflected', async () => {
+      const { manager, tvService, netflix, disney } = twoAppManager();
+      await manager.handleSetInput(disney.identifier);
+
+      // Grace is 3: the first three contradicting polls are ignored...
+      for (let i = 0; i < 3; i++) {
+        manager.updateFromPoll('com.netflix.ninja', tvService as never);
+        expect(manager.currentId).toBe(disney.identifier);
+      }
+      // ...the fourth is accepted.
+      manager.updateFromPoll('com.netflix.ninja', tvService as never);
+      expect(manager.currentId).toBe(netflix.identifier);
+    });
+  });
 });

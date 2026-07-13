@@ -16,6 +16,12 @@ import { sanitizeForHomeKit } from '../api/utils.js';
  *  services per accessory but too many causes performance issues. */
 const MAX_INPUT_SOURCES = 30;
 
+/** How many polls reporting the *previous* app to ignore after a manual switch
+ *  before accepting the TV's report. Guards the wheel against bouncing back off
+ *  the user's selection while the TV is still switching, without masking a
+ *  switch that genuinely failed. */
+const PENDING_CONFIRM_GRACE = 3;
+
 /** TLV8 tags for DisplayOrder encoding */
 const TLV_ELEMENT_START = 0x01;
 const TLV_ELEMENT_END = 0x00;
@@ -152,6 +158,11 @@ export class InputSourceManager {
   private currentInputId = 1;
   private tvService: Service | null = null;
 
+  /** Identifier of a manual switch awaiting confirmation from the TV, and how
+   *  many contradicting polls we've ignored so far. See PENDING_CONFIRM_GRACE. */
+  private pendingInputId: number | null = null;
+  private pendingMisses = 0;
+
   /** Source configs indexed by id for fast lookup */
   private sourceConfigMap: Map<string, SourceConfig>;
 
@@ -192,11 +203,18 @@ export class InputSourceManager {
     const inputSource = this.inputSources.find(i => i.id === sourceId);
     if (inputSource && inputSource.identifier !== this.currentInputId) {
       this.currentInputId = inputSource.identifier;
+      this.markPending(inputSource.identifier);
       if (this.tvService) {
         this.tvService.updateCharacteristic(this.deps.Characteristic.ActiveIdentifier, this.currentInputId);
       }
       this.deps.log('debug', `Input updated: ${inputSource.name}`);
     }
+  }
+
+  /** Record a manual switch so the next few contradicting polls are ignored. */
+  private markPending(identifier: number): void {
+    this.pendingInputId = identifier;
+    this.pendingMisses = 0;
   }
 
   getVisibleSources(): readonly InputSource[] {
@@ -420,6 +438,13 @@ export class InputSourceManager {
       const success = await this.switchInput(inputSource);
       if (success) {
         this.currentInputId = identifier;
+        this.markPending(identifier);
+        // Confirm the selection on the Television service. HomeKit sets
+        // ActiveIdentifier optimistically, but if a subsequent poll runs before
+        // the TV finishes switching it can momentarily report the old app and
+        // bounce the wheel back. Re-asserting the value we just launched keeps
+        // the wheel on the chosen input.
+        this.tvService?.updateCharacteristic(this.deps.Characteristic.ActiveIdentifier, identifier);
       } else {
         throw this.deps.communicationError();
       }
@@ -467,13 +492,35 @@ export class InputSourceManager {
   // ==========================================================================
 
   updateFromPoll(currentApp: string | null, tvService: Service): void {
-    if (currentApp) {
-      const inputSource = this.inputSources.find(i => i.id === currentApp);
-      if (inputSource && inputSource.identifier !== this.currentInputId) {
-        this.currentInputId = inputSource.identifier;
-        tvService.updateCharacteristic(this.deps.Characteristic.ActiveIdentifier, this.currentInputId);
-        this.deps.log('debug', `Input updated: ${inputSource.name}`);
+    if (!currentApp) {
+      return;
+    }
+    const inputSource = this.inputSources.find(i => i.id === currentApp);
+    if (!inputSource) {
+      return;
+    }
+
+    // A manual switch is awaiting confirmation. Ignore a few polls that still
+    // report the previous app so the wheel doesn't bounce off the user's
+    // selection; once the TV reports the pending input (or the grace runs out)
+    // resume normal tracking.
+    if (this.pendingInputId !== null) {
+      if (inputSource.identifier === this.pendingInputId) {
+        this.pendingInputId = null;
+        this.pendingMisses = 0;
+      } else if (this.pendingMisses < PENDING_CONFIRM_GRACE) {
+        this.pendingMisses++;
+        return;
+      } else {
+        this.pendingInputId = null;
+        this.pendingMisses = 0;
       }
+    }
+
+    if (inputSource.identifier !== this.currentInputId) {
+      this.currentInputId = inputSource.identifier;
+      tvService.updateCharacteristic(this.deps.Characteristic.ActiveIdentifier, this.currentInputId);
+      this.deps.log('debug', `Input updated: ${inputSource.name}`);
     }
   }
 
