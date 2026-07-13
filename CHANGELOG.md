@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.20] - 2026-07-13
+
+### Fixed
+
+- **Input-selector "wheel" showed generic names like "Entrada 1, 2, 3" in non-English Home apps**: The workaround for the tvOS HomeHub bug ([homebridge/homebridge#3703](https://github.com/homebridge/homebridge/issues/3703)) — where the controller writes its own generic placeholder back into an input's name — only recognised the **English** string "Input Source". In a localized Home app the controller writes the translated placeholder (Spanish "Entrada 2", German "Eingang 3", etc.), which slipped past the filter and permanently overwrote the real app label on the wheel, so even a manual rename was re-clobbered. The guard now matches the localized generic names across common languages, so friendly names survive. Source **switches** were never affected ([#14](https://github.com/mp-consulting/homebridge-philips-ambilight-tv/issues/14)).
+- **Source switch lingered ON for several seconds after turning the TV off from HomeKit**: The switches were only reset when the next state poll noticed the TV was off — up to the ~10s polling interval away. Turning the TV off from HomeKit now resets the source switches immediately ([#14](https://github.com/mp-consulting/homebridge-philips-ambilight-tv/issues/14)).
+
 ## [1.5.19] - 2026-07-12
 
 ### Fixed

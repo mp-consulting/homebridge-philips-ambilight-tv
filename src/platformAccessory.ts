@@ -250,6 +250,12 @@ export class PhilipsAmbilightTVAccessory {
       const success = await this.tvClient.setPowerState(shouldBeOn);
       if (success) {
         this.isPoweredOn = shouldBeOn;
+        // Reflect a power-off immediately instead of waiting for the next poll
+        // (up to the polling interval away), so the source switches don't linger
+        // ON for several seconds after the user turns the TV off from HomeKit.
+        if (!shouldBeOn) {
+          this.onPowerChange(false);
+        }
         this.log('debug', `Power state changed to ${shouldBeOn ? 'ON' : 'OFF'}`);
       } else {
         throw this.communicationError();

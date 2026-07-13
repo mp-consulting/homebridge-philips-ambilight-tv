@@ -532,6 +532,51 @@ describe('InputSourceManager', () => {
   });
 
   // ==========================================================================
+  // GENERIC-NAME WRITE GUARD (tvOS HomeHub bug, issue #14)
+  // ==========================================================================
+
+  describe('ConfiguredName write guard', () => {
+    const CONFIGURED_NAME = { UUID: 'configured-name' } as never;
+
+    function handlersFor(service: { getCharacteristic: (c: unknown) => { onGet: ReturnType<typeof vi.fn>; onSet: ReturnType<typeof vi.fn> } }) {
+      const char = service.getCharacteristic(CONFIGURED_NAME);
+      return {
+        onGet: char.onGet.mock.calls.at(-1)![0] as () => unknown,
+        onSet: char.onSet.mock.calls.at(-1)![0] as (v: unknown) => void,
+      };
+    }
+
+    function netflixHandlers() {
+      const deps = createMockDeps({ sourceConfigs: [{ id: 'com.netflix.ninja', visible: true, customName: 'Netflix' }] });
+      const manager = new InputSourceManager(deps);
+      manager.configureInputSources(createMockService() as never);
+      const svc = manager.getSources().find(s => s.id === 'com.netflix.ninja')!.service;
+      return handlersFor(svc as never);
+    }
+
+    it.each([
+      'Input Source',
+      'Input Source 2',
+      'Input',
+      'Entrada 2', // Spanish (the string alfonsico reported)
+      'Eingang 3', // German
+      'Ingresso', // Italian, no index
+      'Entrée 4', // French
+      'вход 1', // Russian
+    ])('ignores the localized generic placeholder %j', (generic) => {
+      const { onGet, onSet } = netflixHandlers();
+      onSet(generic);
+      expect(onGet()).toBe('Netflix'); // real label preserved
+    });
+
+    it('accepts a genuine user rename', () => {
+      const { onGet, onSet } = netflixHandlers();
+      onSet('Netflix HD');
+      expect(onGet()).toBe('Netflix HD');
+    });
+  });
+
+  // ==========================================================================
   // CUSTOM APPS
   // ==========================================================================
 

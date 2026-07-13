@@ -36,6 +36,30 @@ const EXCLUDED_PACKAGES = new Set([
   'org.droidtv.contentexplorer',
 ]);
 
+/**
+ * Localized forms of HomeKit's generic "Input"/"Input Source" placeholder,
+ * optionally followed by an index, that tvOS's HomeHub writes back into
+ * ConfiguredName (homebridge/homebridge#3703). The Home app localizes this
+ * placeholder, so an English-only match let a non-English controller silently
+ * overwrite the real app label on the wheel (e.g. Spanish "Entrada 2"). We
+ * ignore any write matching one of these so the friendly name survives.
+ */
+const GENERIC_INPUT_NAMES = [
+  'input source', 'input', // English
+  'entrada', // Spanish / Portuguese
+  'entrée', 'entree', // French
+  'eingang', // German
+  'ingresso', // Italian
+  'ingang', // Dutch
+  'ingång', 'inngang', 'indgang', // Swedish / Norwegian / Danish
+  'tulo', // Finnish
+  'wejście', 'wejscie', // Polish
+  'giriş', 'giris', // Turkish
+  'вход', 'источник', // Russian
+  '入力', '输入', '輸入', '입력', // Japanese / Chinese / Korean
+];
+const GENERIC_INPUT_NAME_RE = new RegExp(`^(?:${GENERIC_INPUT_NAMES.join('|')})\\s*\\d*$`, 'iu');
+
 /** HomeKit RemoteKey to Philips TV key mapping (base, without info key) */
 const HOMEKIT_TO_TV_KEY_BASE: Readonly<Record<number, RemoteKey>> = {
   0: 'Rewind',
@@ -847,8 +871,11 @@ export class InputSourceManager {
       .onSet((value) => {
         const newName = value as string;
 
-        // Workaround for tvOS 18 HomeHub bug (https://github.com/homebridge/homebridge/issues/3703)
-        if (/^Input Source( \d+)?$/.test(newName)) {
+        // Workaround for tvOS 18 HomeHub bug (https://github.com/homebridge/homebridge/issues/3703):
+        // the controller writes its own generic, locale-dependent placeholder
+        // (e.g. "Input Source 2", "Entrada 2") back into ConfiguredName. Ignore
+        // it so it never clobbers the real app label.
+        if (GENERIC_INPUT_NAME_RE.test(newName.trim())) {
           return;
         }
 
