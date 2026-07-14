@@ -22,8 +22,9 @@ const mocks = vi.hoisted(() => ({
   switchUpdateFromPoll: vi.fn(),
 }));
 
-/** Holder for the poll callbacks the accessory hands to StatePollManager. */
-const capture = vi.hoisted(() => ({ pollCallbacks: null as unknown }));
+/** Holder for the poll callbacks the accessory hands to StatePollManager,
+ *  and the deps it hands to InputSourceManager. */
+const capture = vi.hoisted(() => ({ pollCallbacks: null as unknown, inputManagerDeps: null as unknown }));
 
 vi.mock('../src/api/PhilipsTVClient.js', () => ({
   PhilipsTVClient: class {
@@ -55,6 +56,9 @@ vi.mock('../src/services/InputSourceManager.js', () => ({
     updateFromPoll = mocks.inputUpdateFromPoll;
     setActiveInputById = vi.fn();
     fetchAppsFromTV = mocks.fetchAppsFromTV;
+    constructor(deps: unknown) {
+      capture.inputManagerDeps = deps;
+    }
   },
 }));
 
@@ -206,6 +210,8 @@ describe('PhilipsAmbilightTVAccessory power handling', () => {
     Object.values(mocks).forEach(m => m.mockClear());
     mocks.setPowerState.mockResolvedValue(true);
     mocks.getVisibleSources.mockReturnValue([]);
+    // Mirror the real InputSourceManager contract: return the accepted id.
+    mocks.inputUpdateFromPoll.mockImplementation((app: string | null) => app);
   });
 
   afterEach(() => {
@@ -292,6 +298,42 @@ describe('PhilipsAmbilightTVAccessory power handling', () => {
       await flush();
 
       expect(mocks.switchUpdateFromPoll).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('input report routing', () => {
+    /** Build the accessory and return the poll callbacks it registered. */
+    function build() {
+      const { platform, accessory } = createMocks();
+      new PhilipsAmbilightTVAccessory(platform as never, accessory as never);
+      return capture.pollCallbacks as { onInputUpdate: (app: string | null) => void };
+    }
+
+    it('forwards an accepted input report to the source switches', () => {
+      const cb = build();
+
+      cb.onInputUpdate('com.netflix.ninja');
+
+      expect(mocks.inputUpdateFromPoll).toHaveBeenCalledWith('com.netflix.ninja', expect.anything());
+      expect(mocks.switchUpdateFromPoll).toHaveBeenCalledWith('com.netflix.ninja');
+    });
+
+    it('does not touch the switches when the input manager suppresses the report', () => {
+      mocks.inputUpdateFromPoll.mockReturnValue(null);
+      const cb = build();
+
+      cb.onInputUpdate('com.netflix.ninja');
+
+      expect(mocks.switchUpdateFromPoll).not.toHaveBeenCalled();
+    });
+
+    it('updates the switches immediately when the wheel switches an input', () => {
+      build();
+      const deps = capture.inputManagerDeps as { onInputSwitched: (id: string) => void };
+
+      deps.onInputSwitched('com.netflix.ninja');
+
+      expect(mocks.switchUpdateFromPoll).toHaveBeenCalledWith('com.netflix.ninja');
     });
   });
 });

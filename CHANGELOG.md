@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.22] - 2026-07-14
+
+### Fixed
+
+- **Rapid input-wheel selections became unreliable and could leave the wheel showing "No Response"** ([#14](https://github.com/mp-consulting/homebridge-philips-ambilight-tv/issues/14)): Every wheel move launched its source on the TV back-to-back, so a burst of selections piled requests up until the *newest* one — the source the user actually wanted — was dropped by the request queue or blew HomeKit's 10-second callback deadline. Wheel selections are now coalesced: launches run one at a time and a selection that is superseded by a newer one is skipped entirely, so only the final choice is launched and it always fits within the deadline.
+- **Wheel selection didn't light up the matching source switch** ([#14](https://github.com/mp-consulting/homebridge-philips-ambilight-tv/issues/14)): Switching via a source switch updated the wheel, but switching via the wheel left the switches untouched until a later poll — which, arriving while the TV was still mid-switch, could even flip the previous switch back ON. A successful wheel switch now updates the switches immediately, and a state report that contradicts a selection still in flight is withheld from the switches just like it already was from the wheel — so wheel, switches, HomeKit state, and the real TV stay aligned.
+- **Wheel and switches stayed stale after waking the TV from standby** ([#14](https://github.com/mp-consulting/homebridge-philips-ambilight-tv/issues/14)): Right after a wake the TV reports its current activity as `NA`, the Android launcher, or the system `org.droidtv.playtv` package — none of which matched a registered input, so the power-on sync (added in v1.5.21) found nothing to apply. These reports are now resolved: the launcher maps to the **Home** input, `playtv` confirms the current input when it's already Watch TV/HDMI (falling back to **Watch TV** otherwise), and `NA` is treated as "no report" instead of an unknown app.
+- **Wheel could still bounce back mid-switch on long-poll TVs** ([#14](https://github.com/mp-consulting/homebridge-philips-ambilight-tv/issues/14)): The guard that ignores state reports while a selection is being executed counted *polls* (3), but the long-poll connection can deliver several reports within seconds of the launch — expiring the guard while a cold app start (10s+) was still in progress. The guard is now time-based (20s), so slow app launches no longer bounce the wheel, while a genuinely failed switch is still corrected afterwards.
+
 ## [1.5.21] - 2026-07-13
 
 ### Fixed

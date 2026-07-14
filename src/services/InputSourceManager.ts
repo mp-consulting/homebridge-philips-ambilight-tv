@@ -16,11 +16,26 @@ import { sanitizeForHomeKit } from '../api/utils.js';
  *  services per accessory but too many causes performance issues. */
 const MAX_INPUT_SOURCES = 30;
 
-/** How many polls reporting the *previous* app to ignore after a manual switch
+/** How long to ignore polls reporting the *previous* app after a manual switch
  *  before accepting the TV's report. Guards the wheel against bouncing back off
- *  the user's selection while the TV is still switching, without masking a
- *  switch that genuinely failed. */
-const PENDING_CONFIRM_GRACE = 3;
+ *  the user's selection while the TV is still switching (a cold app start can
+ *  take 10s+), without masking a switch that genuinely failed. Time-based
+ *  because the long-poll can deliver several contradicting reports within a
+ *  couple of seconds of the launch. */
+const PENDING_CONFIRM_TIMEOUT_MS = 20_000;
+
+/** Android launcher packages the TV reports as the current activity when it
+ *  sits on the home screen — mapped to the "Home" input so the wheel and
+ *  switches align after a wake from standby. */
+const LAUNCHER_PACKAGES = new Set([
+  'com.google.android.tvlauncher',
+  'com.google.android.leanbacklauncher',
+]);
+
+/** Package the TV reports while showing the tuner or an HDMI passthrough
+ *  source. Ambiguous between Watch TV and HDMI 1-4, so it confirms the current
+ *  input when that is already a source, and falls back to Watch TV otherwise. */
+const PLAYTV_PACKAGE = 'org.droidtv.playtv';
 
 /** TLV8 tags for DisplayOrder encoding */
 const TLV_ELEMENT_START = 0x01;
@@ -147,6 +162,9 @@ export interface InputSourceManagerDeps {
   /** Called after new inputs are discovered so dependent services (e.g. source
    *  switches) can reconcile with the updated list. */
   readonly onInputsChanged?: () => void;
+  /** Called after a wheel selection successfully switched the TV, so the source
+   *  switches light up immediately instead of waiting for the next poll. */
+  readonly onInputSwitched?: (sourceId: string) => void;
 }
 
 // ============================================================================
@@ -158,10 +176,15 @@ export class InputSourceManager {
   private currentInputId = 1;
   private tvService: Service | null = null;
 
-  /** Identifier of a manual switch awaiting confirmation from the TV, and how
-   *  many contradicting polls we've ignored so far. See PENDING_CONFIRM_GRACE. */
+  /** Identifier of a manual switch awaiting confirmation from the TV, and when
+   *  it was requested. See PENDING_CONFIRM_TIMEOUT_MS. */
   private pendingInputId: number | null = null;
-  private pendingMisses = 0;
+  private pendingSince = 0;
+
+  /** Serializes wheel switches and lets a newer selection supersede queued
+   *  ones, so a burst of wheel moves only launches the final choice. */
+  private switchQueue: Promise<void> = Promise.resolve();
+  private switchGeneration = 0;
 
   /** Source configs indexed by id for fast lookup */
   private sourceConfigMap: Map<string, SourceConfig>;
@@ -211,10 +234,10 @@ export class InputSourceManager {
     }
   }
 
-  /** Record a manual switch so the next few contradicting polls are ignored. */
+  /** Record a manual switch so contradicting polls are ignored for a while. */
   private markPending(identifier: number): void {
     this.pendingInputId = identifier;
-    this.pendingMisses = 0;
+    this.pendingSince = Date.now();
   }
 
   getVisibleSources(): readonly InputSource[] {
@@ -434,17 +457,39 @@ export class InputSourceManager {
 
     this.deps.log('info', `Switching to: ${inputSource.name}`);
 
+    // Coalesce bursts of wheel moves: launches run one at a time, and a
+    // selection that is superseded while waiting is skipped entirely. Without
+    // this, every intermediate selection launched on the TV back-to-back —
+    // the requests piled up until the newest (the one the user actually
+    // wanted) was dropped by the client queue or blew HomeKit's 10s callback
+    // deadline, leaving the wheel showing "No Response" until reopened.
+    const generation = ++this.switchGeneration;
+    const task = this.switchQueue.then(async () => {
+      if (generation !== this.switchGeneration) {
+        this.deps.log('debug', `Skipping superseded switch to ${inputSource.name}`);
+        return;
+      }
+      await this.performSwitch(inputSource);
+    });
+    this.switchQueue = task.then(() => {}, () => {});
+    return task;
+  }
+
+  private async performSwitch(inputSource: InputSource): Promise<void> {
     try {
       const success = await this.switchInput(inputSource);
       if (success) {
-        this.currentInputId = identifier;
-        this.markPending(identifier);
+        this.currentInputId = inputSource.identifier;
+        this.markPending(inputSource.identifier);
         // Confirm the selection on the Television service. HomeKit sets
         // ActiveIdentifier optimistically, but if a subsequent poll runs before
         // the TV finishes switching it can momentarily report the old app and
         // bounce the wheel back. Re-asserting the value we just launched keeps
         // the wheel on the chosen input.
-        this.tvService?.updateCharacteristic(this.deps.Characteristic.ActiveIdentifier, identifier);
+        this.tvService?.updateCharacteristic(this.deps.Characteristic.ActiveIdentifier, inputSource.identifier);
+        // Align the source switches with the wheel right away — the poll that
+        // would otherwise update them is suppressed while the switch is pending.
+        this.deps.onInputSwitched?.(inputSource.id);
       } else {
         throw this.deps.communicationError();
       }
@@ -491,29 +536,33 @@ export class InputSourceManager {
   // POLLING UPDATE
   // ==========================================================================
 
-  updateFromPoll(currentApp: string | null, tvService: Service): void {
+  /**
+   * Reconcile the wheel with the app the TV reports. Returns the accepted
+   * input-source id (which the source switches should reflect too), or null
+   * when the report was unusable or suppressed — in that case dependent
+   * services must keep their current state so they don't bounce off a
+   * selection the TV is still executing.
+   */
+  updateFromPoll(currentApp: string | null, tvService: Service): string | null {
     if (!currentApp) {
-      return;
+      return null;
     }
-    const inputSource = this.inputSources.find(i => i.id === currentApp);
+    const inputSource = this.inputSources.find(i => i.id === this.resolveReportedApp(currentApp));
     if (!inputSource) {
-      return;
+      return null;
     }
 
-    // A manual switch is awaiting confirmation. Ignore a few polls that still
-    // report the previous app so the wheel doesn't bounce off the user's
-    // selection; once the TV reports the pending input (or the grace runs out)
-    // resume normal tracking.
+    // A manual switch is awaiting confirmation. Ignore polls that still report
+    // the previous app so the wheel doesn't bounce off the user's selection;
+    // once the TV reports the pending input (or the timeout runs out — the
+    // switch genuinely failed) resume normal tracking.
     if (this.pendingInputId !== null) {
       if (inputSource.identifier === this.pendingInputId) {
         this.pendingInputId = null;
-        this.pendingMisses = 0;
-      } else if (this.pendingMisses < PENDING_CONFIRM_GRACE) {
-        this.pendingMisses++;
-        return;
+      } else if (Date.now() - this.pendingSince < PENDING_CONFIRM_TIMEOUT_MS) {
+        return null;
       } else {
         this.pendingInputId = null;
-        this.pendingMisses = 0;
       }
     }
 
@@ -522,6 +571,30 @@ export class InputSourceManager {
       tvService.updateCharacteristic(this.deps.Characteristic.ActiveIdentifier, this.currentInputId);
       this.deps.log('debug', `Input updated: ${inputSource.name}`);
     }
+    return inputSource.id;
+  }
+
+  /**
+   * Map system packages the TV reports to the input they represent. A TV on
+   * its home screen reports the Android launcher (never registered as an
+   * input), and the tuner/HDMI sources all report org.droidtv.playtv — without
+   * this mapping a wake from standby left the wheel and switches stale because
+   * the reported package matched no input.
+   */
+  private resolveReportedApp(app: string): string {
+    if (LAUNCHER_PACKAGES.has(app)) {
+      return HOME_URI;
+    }
+    if (app === PLAYTV_PACKAGE) {
+      // playtv is ambiguous between Watch TV and HDMI 1-4: trust the current
+      // input when it already is one of those, otherwise assume Watch TV.
+      const current = this.inputSources.find(i => i.identifier === this.currentInputId);
+      if (current && current.type === 'source' && current.id !== HOME_URI) {
+        return current.id;
+      }
+      return WATCH_TV_URI;
+    }
+    return app;
   }
 
   // ==========================================================================

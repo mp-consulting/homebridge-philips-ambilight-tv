@@ -68,6 +68,7 @@ export class PhilipsAmbilightTVAccessory {
       communicationError: () => this.communicationError(),
       log: (level, msg) => this.log(level, msg),
       onInputsChanged: () => this.refreshSourceSwitches(),
+      onInputSwitched: (sourceId) => this.sourceSwitchService.updateFromPoll(sourceId),
     });
 
     this.sourceSwitchService = new SourceSwitchService({
@@ -102,10 +103,7 @@ export class PhilipsAmbilightTVAccessory {
         onPowerChange: (isOn) => this.onPowerChange(isOn),
         onAmbilightUpdate: (style, fallback) => this.onAmbilightUpdate(style, fallback),
         onVolumeUpdate: (muted) => this.onMuteChange(muted),
-        onInputUpdate: (app) => {
-          this.inputSourceManager.updateFromPoll(app, this.tvService);
-          this.sourceSwitchService.updateFromPoll(app);
-        },
+        onInputUpdate: (app) => this.applyInputReport(app),
         onAppsReady: () => this.inputSourceManager.fetchAppsFromTV(),
       },
       (level, msg) => this.log(level, msg),
@@ -341,10 +339,23 @@ export class PhilipsAmbilightTVAccessory {
     await this.inputSourceManager.fetchAppsFromTV();
     try {
       const currentApp = await this.tvClient.getCurrentActivity();
-      this.inputSourceManager.updateFromPoll(currentApp, this.tvService);
-      this.sourceSwitchService.updateFromPoll(currentApp);
+      this.applyInputReport(currentApp);
     } catch {
       // TV not reachable yet — the periodic poll will sync shortly.
+    }
+  }
+
+  /**
+   * Route a reported current app through the input manager, which resolves
+   * system packages (launcher → Home, playtv → Watch TV/HDMI) and suppresses
+   * reports that contradict a manual switch still in flight. Only an accepted
+   * report reaches the source switches, so wheel, switches and TV stay aligned
+   * instead of the switches bouncing back mid-switch.
+   */
+  private applyInputReport(app: string | null): void {
+    const accepted = this.inputSourceManager.updateFromPoll(app, this.tvService);
+    if (accepted) {
+      this.sourceSwitchService.updateFromPoll(accepted);
     }
   }
 

@@ -896,18 +896,147 @@ describe('InputSourceManager', () => {
       expect(manager.currentId).toBe(netflix.identifier);
     });
 
-    it('gives up after the grace period so a failed switch is still reflected', async () => {
+    it('gives up after the confirmation timeout so a failed switch is still reflected', async () => {
       const { manager, tvService, netflix, disney } = twoAppManager();
       await manager.handleSetInput(disney.identifier);
 
-      // Grace is 3: the first three contradicting polls are ignored...
-      for (let i = 0; i < 3; i++) {
+      // Contradicting polls are ignored while the TV may still be switching,
+      // no matter how many arrive (the long-poll can deliver several quickly)...
+      for (let i = 0; i < 10; i++) {
+        vi.advanceTimersByTime(1000);
         manager.updateFromPoll('com.netflix.ninja', tvService as never);
         expect(manager.currentId).toBe(disney.identifier);
       }
-      // ...the fourth is accepted.
+      // ...but once the timeout elapses the TV's report is accepted.
+      vi.advanceTimersByTime(15_000);
       manager.updateFromPoll('com.netflix.ninja', tvService as never);
       expect(manager.currentId).toBe(netflix.identifier);
+    });
+
+    it('reports a successful wheel switch to onInputSwitched so switches align immediately', async () => {
+      const onInputSwitched = vi.fn();
+      const deps = createMockDeps({
+        userInputs: [{ identifier: 'com.netflix.ninja', name: 'Netflix', type: 'app' }],
+        onInputSwitched,
+      });
+      const manager = new InputSourceManager(deps);
+      manager.configureInputSources(createMockService() as never);
+
+      const netflix = manager.getSources().find(s => s.id === 'com.netflix.ninja')!;
+      await manager.handleSetInput(netflix.identifier);
+
+      expect(onInputSwitched).toHaveBeenCalledWith('com.netflix.ninja');
+    });
+  });
+
+  // ==========================================================================
+  // WHEEL BURST COALESCING (issue #14 — rapid selections)
+  // ==========================================================================
+
+  describe('wheel burst coalescing', () => {
+    it('only launches the newest selection when several arrive at once', async () => {
+      const deps = createMockDeps({
+        userInputs: [
+          { identifier: 'com.netflix.ninja', name: 'Netflix', type: 'app' },
+          { identifier: 'com.disney.disneyplus', name: 'Disney+', type: 'app' },
+          { identifier: 'com.hbo.max', name: 'HBO Max', type: 'app' },
+        ],
+      });
+      const manager = new InputSourceManager(deps);
+      const tvService = createMockService();
+      manager.configureInputSources(tvService as never);
+      const ids = ['com.netflix.ninja', 'com.disney.disneyplus', 'com.hbo.max']
+        .map(id => manager.getSources().find(s => s.id === id)!.identifier);
+
+      // A burst of wheel moves in the same tick — only the final choice may launch.
+      const results = await Promise.all(ids.map(id => manager.handleSetInput(id)));
+
+      expect(results).toHaveLength(3); // superseded selections resolve, not reject
+      const launch = deps.tvClient.launchApplication as ReturnType<typeof vi.fn>;
+      expect(launch).toHaveBeenCalledTimes(1);
+      expect(launch).toHaveBeenCalledWith('com.hbo.max', undefined, undefined);
+      expect(manager.currentId).toBe(ids[2]);
+    });
+
+    it('launches selections one at a time when they arrive spaced out', async () => {
+      const deps = createMockDeps({
+        userInputs: [
+          { identifier: 'com.netflix.ninja', name: 'Netflix', type: 'app' },
+          { identifier: 'com.disney.disneyplus', name: 'Disney+', type: 'app' },
+        ],
+      });
+      const manager = new InputSourceManager(deps);
+      manager.configureInputSources(createMockService() as never);
+      const netflix = manager.getSources().find(s => s.id === 'com.netflix.ninja')!;
+      const disney = manager.getSources().find(s => s.id === 'com.disney.disneyplus')!;
+
+      await manager.handleSetInput(netflix.identifier);
+      await manager.handleSetInput(disney.identifier);
+
+      const launch = deps.tvClient.launchApplication as ReturnType<typeof vi.fn>;
+      expect(launch).toHaveBeenCalledTimes(2);
+      expect(manager.currentId).toBe(disney.identifier);
+    });
+  });
+
+  // ==========================================================================
+  // SYSTEM PACKAGE ALIASES (issue #14 — wake-from-standby alignment)
+  // ==========================================================================
+
+  describe('system package aliases in updateFromPoll', () => {
+    function managerWithApp() {
+      const deps = createMockDeps({
+        userInputs: [{ identifier: 'com.netflix.ninja', name: 'Netflix', type: 'app' }],
+      });
+      const manager = new InputSourceManager(deps);
+      const tvService = createMockService();
+      manager.configureInputSources(tvService as never);
+      return { manager, tvService };
+    }
+
+    it('maps the Android launcher to the Home input', () => {
+      const { manager, tvService } = managerWithApp();
+      const home = manager.getSources().find(s => s.name === 'Home')!;
+
+      const accepted = manager.updateFromPoll('com.google.android.tvlauncher', tvService as never);
+
+      expect(accepted).toBe(home.id);
+      expect(manager.currentId).toBe(home.identifier);
+    });
+
+    it('maps playtv to Watch TV when the current input is an app', () => {
+      const { manager, tvService } = managerWithApp();
+      manager.updateFromPoll('com.netflix.ninja', tvService as never);
+      const watchTV = manager.getSources().find(s => s.name === 'Watch TV')!;
+
+      const accepted = manager.updateFromPoll('org.droidtv.playtv', tvService as never);
+
+      expect(accepted).toBe(watchTV.id);
+      expect(manager.currentId).toBe(watchTV.identifier);
+    });
+
+    it('keeps the current HDMI input when playtv is reported', () => {
+      const { manager, tvService } = managerWithApp();
+      const hdmi3 = manager.getSources().find(s => s.name === 'HDMI 3')!;
+      manager.updateFromPoll(hdmi3.id, tvService as never);
+
+      const accepted = manager.updateFromPoll('org.droidtv.playtv', tvService as never);
+
+      expect(accepted).toBe(hdmi3.id);
+      expect(manager.currentId).toBe(hdmi3.identifier);
+    });
+
+    it('returns the accepted id and null for unknown or suppressed reports', async () => {
+      const { manager, tvService } = managerWithApp();
+
+      expect(manager.updateFromPoll('com.netflix.ninja', tvService as never)).toBe('com.netflix.ninja');
+      expect(manager.updateFromPoll('com.unknown.app', tvService as never)).toBeNull();
+      expect(manager.updateFromPoll(null, tvService as never)).toBeNull();
+
+      // While a manual switch is pending, a contradicting report is suppressed.
+      const watchTV = manager.getSources().find(s => s.name === 'Watch TV')!;
+      await manager.handleSetInput(watchTV.identifier);
+      expect(manager.updateFromPoll('com.netflix.ninja', tvService as never)).toBeNull();
     });
   });
 });
