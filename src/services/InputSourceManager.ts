@@ -26,11 +26,19 @@ const PENDING_CONFIRM_TIMEOUT_MS = 20_000;
 
 /** Android launcher packages the TV reports as the current activity when it
  *  sits on the home screen — mapped to the "Home" input so the wheel and
- *  switches align after a wake from standby. */
+ *  switches align after a wake from standby. Newer Philips models run the
+ *  Google TV launcher (launcherx); the substring check in isLauncherPackage
+ *  catches launcher variants that aren't listed here. */
 const LAUNCHER_PACKAGES = new Set([
   'com.google.android.tvlauncher',
   'com.google.android.leanbacklauncher',
+  'com.google.android.apps.tv.launcherx',
 ]);
+
+/** True for any Android home-screen launcher the TV may report. */
+function isLauncherPackage(app: string): boolean {
+  return LAUNCHER_PACKAGES.has(app) || app.toLowerCase().includes('launcher');
+}
 
 /** Package the TV reports while showing the tuner or an HDMI passthrough
  *  source. Ambiguous between Watch TV and HDMI 1-4, so it confirms the current
@@ -48,6 +56,7 @@ const STATIC_SOURCE_COUNT = 2 + Object.keys(HDMI_SOURCES).length;
 const EXCLUDED_PACKAGES = new Set([
   'com.google.android.tvlauncher',
   'com.google.android.leanbacklauncher',
+  'com.google.android.apps.tv.launcherx',
   'com.android.vending',
   'com.android.tv.settings',
   'com.google.android.katniss',
@@ -547,7 +556,10 @@ export class InputSourceManager {
     if (!currentApp) {
       return null;
     }
-    const inputSource = this.inputSources.find(i => i.id === this.resolveReportedApp(currentApp));
+    // A registered input always wins over alias resolution, so a package the
+    // user explicitly configured as an input is never remapped.
+    const inputSource = this.inputSources.find(i => i.id === currentApp)
+      ?? this.inputSources.find(i => i.id === this.resolveReportedApp(currentApp));
     if (!inputSource) {
       return null;
     }
@@ -582,7 +594,7 @@ export class InputSourceManager {
    * the reported package matched no input.
    */
   private resolveReportedApp(app: string): string {
-    if (LAUNCHER_PACKAGES.has(app)) {
+    if (isLauncherPackage(app)) {
       return HOME_URI;
     }
     if (app === PLAYTV_PACKAGE) {
@@ -593,6 +605,18 @@ export class InputSourceManager {
         return current.id;
       }
       return WATCH_TV_URI;
+    }
+    if (app === 'NA') {
+      // Some firmwares report the literal "NA" when nothing trackable is in
+      // the foreground — on the home screen, and on some models while showing
+      // the tuner/HDMI. Trust the current input when it already is one of
+      // those sources; otherwise the TV left a tracked app, which (with no
+      // better signal) means it went back to the home screen.
+      const current = this.inputSources.find(i => i.identifier === this.currentInputId);
+      if (current && current.type === 'source') {
+        return current.id;
+      }
+      return HOME_URI;
     }
     return app;
   }

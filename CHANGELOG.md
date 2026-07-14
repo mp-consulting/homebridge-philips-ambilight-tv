@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.23] - 2026-07-14
+
+### Fixed
+
+- **Returning to the TV's home screen was invisible to HomeKit** ([#14](https://github.com/mp-consulting/homebridge-philips-ambilight-tv/issues/14)): Pressing Home on the TV remote (or the TV waking from standby onto its home screen) never updated the wheel or switches, because the home-screen detection added in v1.5.22 only recognised the classic Android TV launcher package. Newer Philips models run the Google TV launcher (`com.google.android.apps.tv.launcherx`) and some firmwares report the literal `NA` instead — both slipped through. Detection now covers the Google TV launcher, catches unlisted launcher variants by name, and resolves `NA`: when the current input is already Watch TV/HDMI it is confirmed (some firmwares report `NA` on the tuner), otherwise the TV just left a tracked app and the **Home** input is applied. This also fixes the wrong/missing state on the **first turn-on from standby**, which had the same root cause. A package explicitly registered as an input is never remapped, and the Google TV launcher no longer shows up as a discovered app input.
+
 ## [1.5.22] - 2026-07-14
 
 ### Fixed

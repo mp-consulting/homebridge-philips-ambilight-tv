@@ -994,14 +994,55 @@ describe('InputSourceManager', () => {
       return { manager, tvService };
     }
 
-    it('maps the Android launcher to the Home input', () => {
+    it.each([
+      'com.google.android.tvlauncher', // Android TV
+      'com.google.android.apps.tv.launcherx', // Google TV
+      'org.droidtv.customlauncher', // unlisted variant caught by substring
+    ])('maps the launcher %s to the Home input', (launcher) => {
       const { manager, tvService } = managerWithApp();
       const home = manager.getSources().find(s => s.name === 'Home')!;
 
-      const accepted = manager.updateFromPoll('com.google.android.tvlauncher', tvService as never);
+      const accepted = manager.updateFromPoll(launcher, tvService as never);
 
       expect(accepted).toBe(home.id);
       expect(manager.currentId).toBe(home.identifier);
+    });
+
+    it('maps NA to Home when the current input is an app', () => {
+      const { manager, tvService } = managerWithApp();
+      manager.updateFromPoll('com.netflix.ninja', tvService as never);
+      const home = manager.getSources().find(s => s.name === 'Home')!;
+
+      const accepted = manager.updateFromPoll('NA', tvService as never);
+
+      expect(accepted).toBe(home.id);
+      expect(manager.currentId).toBe(home.identifier);
+    });
+
+    it('keeps the current source input when NA is reported', () => {
+      const { manager, tvService } = managerWithApp();
+      const watchTV = manager.getSources().find(s => s.name === 'Watch TV')!;
+      manager.updateFromPoll(watchTV.id, tvService as never);
+
+      const accepted = manager.updateFromPoll('NA', tvService as never);
+
+      expect(accepted).toBe(watchTV.id);
+      expect(manager.currentId).toBe(watchTV.identifier);
+    });
+
+    it('never remaps a package the user registered as an input', () => {
+      const deps = createMockDeps({
+        userInputs: [{ identifier: 'com.custom.launcher', name: 'My Launcher', type: 'app' }],
+      });
+      const manager = new InputSourceManager(deps);
+      const tvService = createMockService();
+      manager.configureInputSources(tvService as never);
+      const custom = manager.getSources().find(s => s.id === 'com.custom.launcher')!;
+
+      const accepted = manager.updateFromPoll('com.custom.launcher', tvService as never);
+
+      expect(accepted).toBe('com.custom.launcher');
+      expect(manager.currentId).toBe(custom.identifier);
     });
 
     it('maps playtv to Watch TV when the current input is an app', () => {

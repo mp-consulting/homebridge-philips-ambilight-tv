@@ -455,10 +455,9 @@ export class PhilipsTVClient {
 
   async getCurrentActivity(): Promise<string | null> {
     const result = await this.get<{ component?: { packageName?: string } }>('/activities/current');
-    const packageName = result?.component?.packageName;
-    // The TV reports the literal "NA" when no trackable app is in the
-    // foreground (e.g. right after waking from standby).
-    return packageName && packageName !== 'NA' ? packageName : null;
+    // The literal "NA" (no trackable app in the foreground) is passed through —
+    // the input manager resolves it against the current input.
+    return result?.component?.packageName ?? null;
   }
 
   /**
