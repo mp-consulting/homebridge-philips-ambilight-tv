@@ -338,8 +338,14 @@ export class PhilipsAmbilightTVAccessory {
   private async syncActiveSourceOnPowerOn(): Promise<void> {
     await this.inputSourceManager.fetchAppsFromTV();
     try {
-      const currentApp = await this.tvClient.getCurrentActivity();
-      this.applyInputReport(currentApp);
+      const accepted = this.applyInputReport(await this.tvClient.getCurrentActivity());
+      if (!accepted) {
+        // An ambiguous system report (NA/playtv) needs a second consecutive
+        // sighting before it is applied — read again after a short settle so
+        // a TV that wakes onto its home screen still aligns right away.
+        await new Promise(resolve => setTimeout(resolve, 2500));
+        this.applyInputReport(await this.tvClient.getCurrentActivity());
+      }
     } catch {
       // TV not reachable yet — the periodic poll will sync shortly.
     }
@@ -350,13 +356,15 @@ export class PhilipsAmbilightTVAccessory {
    * system packages (launcher → Home, playtv → Watch TV/HDMI) and suppresses
    * reports that contradict a manual switch still in flight. Only an accepted
    * report reaches the source switches, so wheel, switches and TV stay aligned
-   * instead of the switches bouncing back mid-switch.
+   * instead of the switches bouncing back mid-switch. Returns the accepted
+   * source id, or null when the report was suppressed or unusable.
    */
-  private applyInputReport(app: string | null): void {
+  private applyInputReport(app: string | null): string | null {
     const accepted = this.inputSourceManager.updateFromPoll(app, this.tvService);
     if (accepted) {
       this.sourceSwitchService.updateFromPoll(accepted);
     }
+    return accepted;
   }
 
   private onAmbilightUpdate(style: AmbilightCached | null, fallback: boolean): void {

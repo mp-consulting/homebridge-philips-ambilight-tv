@@ -724,5 +724,45 @@ describe('PhilipsTVClient', () => {
         expect.any(Number),
       );
     });
+
+    it('refreshes the app list and retries once when the guessed activity is rejected', async () => {
+      mockFetch
+        // Guessed <package>.MainActivity launch — TV rejects it
+        .mockReturnValueOnce(mockResponse(null, 404))
+        // App-list refresh returns the real launch intent
+        .mockReturnValueOnce(mockResponse({
+          applications: [{
+            label: 'Disney+',
+            intent: {
+              component: { packageName: 'com.disney.disneyplus', className: 'com.bamtechmedia.dominguez.main.MainActivity' },
+              action: 'android.intent.action.MAIN',
+            },
+          }],
+        }))
+        // Retry with the learned intent succeeds
+        .mockReturnValueOnce(mockResponse({}));
+
+      const promise = client.launchApplication('com.disney.disneyplus');
+      await vi.runAllTimersAsync();
+      const result = await promise;
+
+      expect(result).toBe(true);
+      expect(mockFetch).toHaveBeenCalledTimes(3);
+      const retryBody = (mockFetch.mock.calls[2][1] as { body: string }).body;
+      expect(retryBody).toContain('com.bamtechmedia.dominguez.main.MainActivity');
+    });
+
+    it('does not retry when the TV does not report the app either', async () => {
+      mockFetch
+        .mockReturnValueOnce(mockResponse(null, 404)) // guessed launch rejected
+        .mockReturnValueOnce(mockResponse({ applications: [] })); // refresh knows nothing
+
+      const promise = client.launchApplication('com.unknown.app');
+      await vi.runAllTimersAsync();
+      const result = await promise;
+
+      expect(result).toBe(false);
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+    });
   });
 });

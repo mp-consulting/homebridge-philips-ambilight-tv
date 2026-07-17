@@ -299,6 +299,27 @@ describe('PhilipsAmbilightTVAccessory power handling', () => {
 
       expect(mocks.switchUpdateFromPoll).not.toHaveBeenCalled();
     });
+
+    it('re-reads an ambiguous wake report so a second sighting can align Home', async () => {
+      vi.useFakeTimers();
+      try {
+        mocks.getCurrentActivity.mockResolvedValue('NA');
+        // First NA sighting is debounced (null); the second is accepted as Home.
+        mocks.inputUpdateFromPoll
+          .mockReturnValueOnce(null)
+          .mockReturnValueOnce('virtual:home');
+        const cb = build();
+
+        cb.onPowerChange(true);
+        cb.onPowerChange(true);
+        await vi.advanceTimersByTimeAsync(3000);
+
+        expect(mocks.getCurrentActivity).toHaveBeenCalledTimes(2);
+        expect(mocks.switchUpdateFromPoll).toHaveBeenCalledWith('virtual:home');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 
   describe('input report routing', () => {

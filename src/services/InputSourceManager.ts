@@ -45,6 +45,15 @@ function isLauncherPackage(app: string): boolean {
  *  input when that is already a source, and falls back to Watch TV otherwise. */
 const PLAYTV_PACKAGE = 'org.droidtv.playtv';
 
+/** How many consecutive sightings an ambiguous system report (NA / playtv)
+ *  needs before it is applied, and how recent the previous sighting must be
+ *  to count as consecutive. The TV emits these transiently while switching
+ *  between apps — acting on a single sighting ratcheted the state onto the
+ *  wrong source (e.g. Disney+ playing but HomeKit stuck on Watch TV). A
+ *  report that directly names a registered input is applied immediately. */
+const AMBIGUOUS_CONFIRM_SIGHTINGS = 2;
+const AMBIGUOUS_CONFIRM_WINDOW_MS = 60_000;
+
 /** TLV8 tags for DisplayOrder encoding */
 const TLV_ELEMENT_START = 0x01;
 const TLV_ELEMENT_END = 0x00;
@@ -194,6 +203,10 @@ export class InputSourceManager {
    *  ones, so a burst of wheel moves only launches the final choice. */
   private switchQueue: Promise<void> = Promise.resolve();
   private switchGeneration = 0;
+
+  /** Tracks consecutive sightings of an ambiguous system report (NA / playtv)
+   *  so a lone transitional report is never applied. See AMBIGUOUS_CONFIRM_*. */
+  private ambiguousReport: { app: string; sightings: number; lastSeen: number } | null = null;
 
   /** Source configs indexed by id for fast lookup */
   private sourceConfigMap: Map<string, SourceConfig>;
@@ -558,10 +571,23 @@ export class InputSourceManager {
     }
     // A registered input always wins over alias resolution, so a package the
     // user explicitly configured as an input is never remapped.
-    const inputSource = this.inputSources.find(i => i.id === currentApp)
+    const direct = this.inputSources.find(i => i.id === currentApp);
+    const inputSource = direct
       ?? this.inputSources.find(i => i.id === this.resolveReportedApp(currentApp));
     if (!inputSource) {
+      this.ambiguousReport = null;
       return null;
+    }
+
+    // NA and playtv are emitted transiently while the TV switches between
+    // apps; require consecutive sightings before applying them so a lone
+    // transitional report can't drag the state onto the wrong source.
+    if (!direct && (currentApp === 'NA' || currentApp === PLAYTV_PACKAGE)) {
+      if (!this.recordAmbiguousSighting(currentApp)) {
+        return null;
+      }
+    } else {
+      this.ambiguousReport = null;
     }
 
     // A manual switch is awaiting confirmation. Ignore polls that still report
@@ -607,18 +633,33 @@ export class InputSourceManager {
       return WATCH_TV_URI;
     }
     if (app === 'NA') {
-      // Some firmwares report the literal "NA" when nothing trackable is in
-      // the foreground — on the home screen, and on some models while showing
-      // the tuner/HDMI. Trust the current input when it already is one of
-      // those sources; otherwise the TV left a tracked app, which (with no
-      // better signal) means it went back to the home screen.
-      const current = this.inputSources.find(i => i.identifier === this.currentInputId);
-      if (current && current.type === 'source') {
-        return current.id;
-      }
+      // Firmwares that don't run a launcher package report the literal "NA"
+      // on the home screen (the tuner reports playtv, tracked apps report
+      // their package) — so a sustained NA means the TV is on Home. The old
+      // "confirm the current source" carve-out made pressing Home from the
+      // tuner invisible: NA just re-confirmed Watch TV.
       return HOME_URI;
     }
     return app;
+  }
+
+  /**
+   * Count a sighting of an ambiguous system report. Returns true once the
+   * report has been seen AMBIGUOUS_CONFIRM_SIGHTINGS times in a row (within
+   * the confirmation window), i.e. it reflects a settled TV state rather
+   * than a transition.
+   */
+  private recordAmbiguousSighting(app: string): boolean {
+    const now = Date.now();
+    if (this.ambiguousReport
+      && this.ambiguousReport.app === app
+      && now - this.ambiguousReport.lastSeen <= AMBIGUOUS_CONFIRM_WINDOW_MS) {
+      this.ambiguousReport.sightings++;
+      this.ambiguousReport.lastSeen = now;
+    } else {
+      this.ambiguousReport = { app, sightings: 1, lastSeen: now };
+    }
+    return this.ambiguousReport.sightings >= AMBIGUOUS_CONFIRM_SIGHTINGS;
   }
 
   // ==========================================================================

@@ -434,23 +434,34 @@ export class PhilipsTVClient {
    * @param action - Intent action (defaults to `android.intent.action.MAIN`).
    */
   async launchApplication(packageName: string, className?: string, action?: string): Promise<boolean> {
-    let intent: ApplicationIntent;
     if (className) {
-      intent = {
+      return this.launchIntent({
         component: { packageName, className },
         action: action ?? 'android.intent.action.MAIN',
-      };
-    } else {
-      // Use cached intent from getApplications() if available, else best-effort.
-      // The TV rejects a package-only launch, so guess the conventional
-      // `<package>.MainActivity` launcher activity.
-      intent = this.appIntents.get(packageName) ?? {
-        component: { packageName, className: `${packageName}.MainActivity` },
-        action: 'android.intent.action.MAIN',
-      };
+      });
     }
 
-    return this.launchIntent(intent);
+    const cached = this.appIntents.get(packageName);
+    if (cached) {
+      return this.launchIntent(cached);
+    }
+
+    // No cached intent (the TV hasn't enumerated its apps since we started).
+    // The TV rejects a package-only launch, so guess the conventional
+    // `<package>.MainActivity` launcher activity.
+    const guessed = await this.launchIntent({
+      component: { packageName, className: `${packageName}.MainActivity` },
+      action: 'android.intent.action.MAIN',
+    });
+    if (guessed) {
+      return true;
+    }
+
+    // Guess rejected — refresh the TV's app list to learn the real launch
+    // intent and retry once (e.g. Disney+ uses a non-conventional activity).
+    await this.getApplications();
+    const learned = this.appIntents.get(packageName);
+    return learned ? this.launchIntent(learned) : false;
   }
 
   async getCurrentActivity(): Promise<string | null> {

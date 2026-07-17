@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.24] - 2026-07-17
+
+### Fixed
+
+- **Pressing Home on the TV remote showed "Watch TV" in HomeKit** ([#14](https://github.com/mp-consulting/homebridge-philips-ambilight-tv/issues/14)): On firmwares that report `NA` for the home screen, v1.5.23's rule "NA confirms the current input when it's already a source" meant going Home from the tuner just re-confirmed Watch TV. A sustained `NA` now always maps to the **Home** input (these firmwares report `org.droidtv.playtv` for the tuner, so `NA` unambiguously means the home screen).
+- **App selected on the TV ended up shown as "Watch TV" in HomeKit** ([#14](https://github.com/mp-consulting/homebridge-philips-ambilight-tv/issues/14)): The TV emits system reports (`org.droidtv.playtv`, `NA`) transiently while switching between apps, and applying one of them instantly could ratchet the state off the real app (Disney+ playing → transient `playtv` → mapped to Watch TV → stuck). Ambiguous system reports now need **two consecutive sightings** before they are applied — a report that directly names an app still applies immediately, and the power-on sync performs a second spaced read so a TV that wakes onto its home screen still aligns right away.
+- **App launches failed with "The TV rejected the launch activity …MainActivity"** ([#14](https://github.com/mp-consulting/homebridge-philips-ambilight-tv/issues/14)): When the plugin had not yet been able to enumerate the TV's apps (e.g. Homebridge restarted while the TV was slow or asleep), launching fell back to a guessed `<package>.MainActivity` activity, which some apps (notably Disney+) reject. On a rejected guess the plugin now refreshes the TV's app list to learn the real launch intent and retries once.
+
 ## [1.5.23] - 2026-07-14
 
 ### Fixed

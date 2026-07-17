@@ -1008,26 +1008,42 @@ describe('InputSourceManager', () => {
       expect(manager.currentId).toBe(home.identifier);
     });
 
-    it('maps NA to Home when the current input is an app', () => {
+    it('maps a sustained NA to Home', () => {
       const { manager, tvService } = managerWithApp();
       manager.updateFromPoll('com.netflix.ninja', tvService as never);
       const home = manager.getSources().find(s => s.name === 'Home')!;
 
+      // First sighting is treated as transitional; the second applies.
+      expect(manager.updateFromPoll('NA', tvService as never)).toBeNull();
+      expect(manager.updateFromPoll('NA', tvService as never)).toBe(home.id);
+      expect(manager.currentId).toBe(home.identifier);
+    });
+
+    it('maps a sustained NA to Home even from a source input (Home button on the remote)', () => {
+      const { manager, tvService } = managerWithApp();
+      const watchTV = manager.getSources().find(s => s.name === 'Watch TV')!;
+      const home = manager.getSources().find(s => s.name === 'Home')!;
+      manager.updateFromPoll(watchTV.id, tvService as never);
+
+      manager.updateFromPoll('NA', tvService as never);
       const accepted = manager.updateFromPoll('NA', tvService as never);
 
       expect(accepted).toBe(home.id);
       expect(manager.currentId).toBe(home.identifier);
     });
 
-    it('keeps the current source input when NA is reported', () => {
+    it('ignores a lone transitional system report between app switches', () => {
       const { manager, tvService } = managerWithApp();
-      const watchTV = manager.getSources().find(s => s.name === 'Watch TV')!;
-      manager.updateFromPoll(watchTV.id, tvService as never);
+      const netflix = manager.getSources().find(s => s.id === 'com.netflix.ninja')!;
+      manager.updateFromPoll('com.netflix.ninja', tvService as never);
 
-      const accepted = manager.updateFromPoll('NA', tvService as never);
+      // A single playtv while the TV transitions must not move the state...
+      expect(manager.updateFromPoll('org.droidtv.playtv', tvService as never)).toBeNull();
+      // ...and the app settling again resets the sighting counter.
+      expect(manager.updateFromPoll('com.netflix.ninja', tvService as never)).toBe('com.netflix.ninja');
+      expect(manager.updateFromPoll('org.droidtv.playtv', tvService as never)).toBeNull();
 
-      expect(accepted).toBe(watchTV.id);
-      expect(manager.currentId).toBe(watchTV.identifier);
+      expect(manager.currentId).toBe(netflix.identifier);
     });
 
     it('never remaps a package the user registered as an input', () => {
@@ -1045,11 +1061,12 @@ describe('InputSourceManager', () => {
       expect(manager.currentId).toBe(custom.identifier);
     });
 
-    it('maps playtv to Watch TV when the current input is an app', () => {
+    it('maps a sustained playtv to Watch TV when the current input is an app', () => {
       const { manager, tvService } = managerWithApp();
       manager.updateFromPoll('com.netflix.ninja', tvService as never);
       const watchTV = manager.getSources().find(s => s.name === 'Watch TV')!;
 
+      manager.updateFromPoll('org.droidtv.playtv', tvService as never);
       const accepted = manager.updateFromPoll('org.droidtv.playtv', tvService as never);
 
       expect(accepted).toBe(watchTV.id);
@@ -1061,6 +1078,7 @@ describe('InputSourceManager', () => {
       const hdmi3 = manager.getSources().find(s => s.name === 'HDMI 3')!;
       manager.updateFromPoll(hdmi3.id, tvService as never);
 
+      manager.updateFromPoll('org.droidtv.playtv', tvService as never);
       const accepted = manager.updateFromPoll('org.droidtv.playtv', tvService as never);
 
       expect(accepted).toBe(hdmi3.id);
