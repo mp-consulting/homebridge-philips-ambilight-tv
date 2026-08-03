@@ -257,6 +257,21 @@ export const extractIpv4 = (service: DiscoveredDevice): string => {
 // ============================================================================
 
 /**
+ * Strip control characters from TV-supplied text before it reaches the log.
+ *
+ * Resource names and error bodies arrive over a connection we cannot
+ * authenticate (`httpsAgent` disables certificate verification because Philips
+ * TVs use self-signed certs), so a newline in one would otherwise let the
+ * device forge extra Homebridge log lines. The character class is written as
+ * the negation of printable ranges so the pattern itself holds no control
+ * characters.
+ */
+export const sanitizeForLog = (text: string, maxLength = 200): string => {
+  const stripped = text.replace(/[^\x20-\x7E\u00A0-\uFFFF]/g, ' ').replace(/\s+/g, ' ').trim();
+  return stripped.length > maxLength ? `${stripped.slice(0, maxLength)}…` : stripped;
+};
+
+/**
  * Sanitize a name for HomeKit compatibility.
  * HomeKit only allows alphanumeric, space, and apostrophe characters.
  */

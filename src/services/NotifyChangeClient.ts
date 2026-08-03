@@ -9,7 +9,7 @@
 
 import { EventEmitter } from 'events';
 import { TV_API_PORT, TV_API_HTTP_PORT, TV_API_VERSION } from '../api/constants.js';
-import { fetchWithTimeout, httpsAgent } from '../api/utils.js';
+import { fetchWithTimeout, httpsAgent, sanitizeForLog } from '../api/utils.js';
 import { DigestAuthSession } from '../api/DigestAuthSession.js';
 
 // ============================================================================
@@ -265,7 +265,7 @@ export class NotifyChangeClient extends EventEmitter {
     try {
       return JSON.parse(text) as Record<string, unknown>;
     } catch {
-      this.debug(`NotifyChange: failed to parse JSON response: ${text.slice(0, 200)}`);
+      this.debug(`NotifyChange: failed to parse JSON response: ${sanitizeForLog(text)}`);
       return null;
     }
   }

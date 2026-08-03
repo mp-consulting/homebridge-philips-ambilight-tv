@@ -494,6 +494,28 @@ describe('StatePollManager', () => {
       expect((tvClient.getCurrentActivity as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(before);
     });
 
+    it('should sanitize TV-supplied resource names before logging them', async () => {
+      (tvClient.getPowerState as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+      (tvClient.getVolume as ReturnType<typeof vi.fn>).mockResolvedValue({ current: 10, muted: false });
+      manager = new StatePollManager(tvClient, TEST_CONFIG, callbacks, debugLog);
+      manager.start();
+      await vi.advanceTimersByTimeAsync(5100);
+
+      // Resource names arrive over a connection with certificate verification
+      // disabled, so a newline in one must not forge an extra log line.
+      const latestClient = notifyInstances[notifyInstances.length - 1];
+      latestClient.emit('notification', { 'audio/volume\n[Homebridge] forged': {} });
+      await vi.advanceTimersByTimeAsync(100);
+
+      const logged = debugLog.mock.calls
+        .filter(([level, message]) => level === 'debug' && String(message).startsWith('NotifyChange trigger:'))
+        .map(([, message]) => String(message));
+
+      expect(logged.length).toBeGreaterThan(0);
+      expect(logged.every(message => !message.includes('\n'))).toBe(true);
+      expect(logged.some(message => message.includes('audio/volume [Homebridge] forged'))).toBe(true);
+    });
+
     it('should ignore an empty notification', async () => {
       (tvClient.getPowerState as ReturnType<typeof vi.fn>).mockResolvedValue(true);
       (tvClient.getVolume as ReturnType<typeof vi.fn>).mockResolvedValue({ current: 10, muted: false });

@@ -1,5 +1,6 @@
 import type { PhilipsTVClient } from '../api/PhilipsTVClient.js';
 import type { TVDeviceConfig, AmbilightCached } from '../api/types.js';
+import { sanitizeForLog } from '../api/utils.js';
 import { NotifyChangeClient } from './NotifyChangeClient.js';
 
 // ============================================================================
@@ -121,10 +122,11 @@ export class StatePollManager {
         this.log('info', 'Long-poll confirmed working, stopped interval polling');
       }
 
-      // A resource we track changed — refresh immediately.
+      // A resource we track changed — refresh immediately. Resource names come
+      // straight off the wire, so sanitize before they reach the log.
       const actionableKeys = keys.filter(k => k !== 'activities/tv');
       if (actionableKeys.length > 0) {
-        this.refresh(`NotifyChange trigger: ${actionableKeys.join(', ')}`);
+        this.refresh(`NotifyChange trigger: ${sanitizeForLog(actionableKeys.join(', '))}`);
         return;
       }
 

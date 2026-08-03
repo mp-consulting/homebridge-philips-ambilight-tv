@@ -17,6 +17,7 @@ import {
   parseErrorResponse,
   extractIpv4,
   sendWakeOnLan,
+  sanitizeForLog,
   sanitizeForHomeKit,
   createDeviceInfo,
 } from '../../src/api/utils.js';
@@ -288,6 +289,47 @@ describe('sendWakeOnLan', () => {
     } catch (error) {
       expect((error as Error).message).not.toContain('Invalid MAC address');
     }
+  });
+});
+
+// ============================================================================
+// sanitizeForLog
+// ============================================================================
+
+describe('sanitizeForLog', () => {
+  it('should strip newlines so a TV cannot forge extra log lines', () => {
+    expect(sanitizeForLog('activities/tv\n[Homebridge] Pairing code: 1234'))
+      .toBe('activities/tv [Homebridge] Pairing code: 1234');
+  });
+
+  it('should strip carriage returns and tabs', () => {
+    expect(sanitizeForLog('a\r\nb\tc')).toBe('a b c');
+  });
+
+  it('should strip C0 and C1 control characters', () => {
+    expect(sanitizeForLog('a\u0000b\u001Fc\u007Fd\u009Fe')).toBe('a b c d e');
+  });
+
+  it('should preserve ordinary printable text', () => {
+    expect(sanitizeForLog('activities/current, audio/volume')).toBe('activities/current, audio/volume');
+  });
+
+  it('should preserve non-ASCII printable characters', () => {
+    expect(sanitizeForLog('Café — Ambilight')).toBe('Café — Ambilight');
+  });
+
+  it('should truncate past the max length', () => {
+    const result = sanitizeForLog('x'.repeat(300));
+    expect(result).toHaveLength(201);
+    expect(result.endsWith('…')).toBe(true);
+  });
+
+  it('should respect a custom max length', () => {
+    expect(sanitizeForLog('abcdef', 3)).toBe('abc…');
+  });
+
+  it('should return an empty string for control-only input', () => {
+    expect(sanitizeForLog('\n\r\t')).toBe('');
   });
 });
 
