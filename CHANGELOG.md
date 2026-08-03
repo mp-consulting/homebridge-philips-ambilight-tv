@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [1.5.26] - 2026-08-02
 
+### Security
+
+- **The TV's certificate is now pinned.** Philips TVs serve self-signed certificates, so ordinary chain verification can never succeed and the plugin previously accepted any certificate — meaning nothing distinguished the real TV from anything else answering on its address. Pairing now records the TV's SHA-256 certificate fingerprint in the device config, and every later connection verifies against it, refusing to connect on a mismatch. Once a fingerprint is stored the plaintext HTTP fallback is skipped too, since downgrading to HTTP would sidestep the pin.
+
+  Existing setups keep working unchanged: a config with no stored fingerprint connects exactly as before and logs a debug note suggesting a re-pair. Re-pair the TV from the plugin settings to enable verification.
+
+- **Text from the TV is sanitized before it reaches the log.** Resource names from `notifychange` and unparseable response bodies were interpolated straight into log lines, so a newline in either could forge additional Homebridge log entries.
+
 ### Fixed
 
 - **Switching source/app with the physical TV remote didn't update HomeKit** ([#14](https://github.com/mp-consulting/homebridge-philips-ambilight-tv/issues/14)): The long-poll subscribes to `activities/tv` because the TV pushes it on every state change, but the plugin discarded it as noise and only refreshed on other resources. Once the long-poll was confirmed working (which stops the interval-poll baseline), a change made from the physical remote — which some models only surface via `activities/tv`, not `activities/current` — never triggered a refresh, so the wheel and switches went stale until an action from the Home app moved them. `activities/tv` is now used as a throttled refresh trigger (at most once every 10s, so the once-a-second tuner ticks don't cause constant polling), so remote-driven changes reach HomeKit within about 10 seconds. A report that directly names a resource still refreshes immediately.

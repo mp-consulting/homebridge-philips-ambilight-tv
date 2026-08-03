@@ -434,6 +434,11 @@
       if (result.success) {
         state.currentConfig.username = result.username;
         state.currentConfig.password = result.password;
+        // Pin the certificate we just paired against, so later connections can
+        // verify they are still talking to this TV.
+        if (result.certFingerprint) {
+          state.currentConfig.certFingerprint = result.certFingerprint;
+        }
         showConfirmScreen();
       } else {
         homebridge.toast.error(result.error);

@@ -4,7 +4,8 @@
 
 import crypto from 'crypto';
 import dgram from 'dgram';
-import { Agent, type Dispatcher, type Headers, fetch } from 'undici';
+import type { TLSSocket } from 'tls';
+import { Agent, buildConnector, type Dispatcher, type Headers, fetch } from 'undici';
 import {
   TV_API_PORT, TV_API_VERSION, ERROR_MESSAGES, AUTH_SHARED_KEY,
   WOL_PORT, WOL_BROADCAST_IP, WOL_BURST_COUNT, WOL_PACKETS_PER_BURST, WOL_BURST_INTERVAL_MS,
@@ -15,11 +16,102 @@ import type { DeviceInfo, DigestAuthParams, FetchOptions, PairingSession, Discov
 // HTTPS AGENT
 // ============================================================================
 
+/**
+ * Unpinned agent, used for discovery and for the pairing exchange itself —
+ * the point at which the TV's certificate is first seen and so cannot yet be
+ * verified against anything. Prefer `createTvAgent` everywhere else.
+ *
+ * Philips TVs serve self-signed certificates, so ordinary chain verification
+ * can never succeed; `createTvAgent` pins the exact certificate instead.
+ */
 export const httpsAgent: Dispatcher = new Agent({
   connect: { rejectUnauthorized: false },
   keepAliveTimeout: 30_000,
   keepAliveMaxTimeout: 30_000,
 });
+
+// ============================================================================
+// CERTIFICATE PINNING
+// ============================================================================
+
+/** Normalize a SHA-256 fingerprint to lowercase hex with no separators. */
+export const normalizeFingerprint = (fingerprint: string): string =>
+  fingerprint.replace(/[:\s]/g, '').toLowerCase();
+
+export interface TvAgentOptions {
+  /** Expected certificate fingerprint. When absent the agent connects unpinned. */
+  certFingerprint?: string;
+  /** Called with the observed fingerprint on each successful TLS connect. */
+  onCertObserved?: (fingerprint: string) => void;
+  /** Called once when connecting without a pin, so the caller can warn. */
+  onUnpinned?: () => void;
+}
+
+/**
+ * Build a dispatcher that pins the TV's certificate.
+ *
+ * Chain verification stays disabled — a self-signed certificate can never
+ * satisfy it — and the exact certificate captured at pairing time is compared
+ * instead. A mismatch fails the connection rather than logging and continuing,
+ * because at that point we are talking to something that is not the TV we
+ * paired with.
+ *
+ * When a fingerprint is configured the connection must be TLS: otherwise an
+ * attacker could sidestep the pin entirely by forcing the plaintext HTTP
+ * fallback. Configs with no fingerprint (paired before pinning existed) keep
+ * the old unverified behaviour so they don't break on upgrade.
+ */
+export const createTvAgent = (options: TvAgentOptions = {}): Dispatcher => {
+  const expected = options.certFingerprint ? normalizeFingerprint(options.certFingerprint) : null;
+  const baseConnector = buildConnector({ rejectUnauthorized: false });
+  let warnedUnpinned = false;
+
+  return new Agent({
+    keepAliveTimeout: 30_000,
+    keepAliveMaxTimeout: 30_000,
+    connect(connectOptions, callback) {
+      baseConnector(connectOptions, (err, socket) => {
+        if (err) {
+          return callback(err, null);
+        }
+
+        const peer = (socket as TLSSocket).getPeerCertificate?.();
+        const observed = peer?.fingerprint256 ? normalizeFingerprint(peer.fingerprint256) : null;
+
+        if (!expected) {
+          if (!warnedUnpinned) {
+            warnedUnpinned = true;
+            options.onUnpinned?.();
+          }
+          if (observed) {
+            options.onCertObserved?.(observed);
+          }
+          return callback(null, socket);
+        }
+
+        if (!observed) {
+          socket.destroy();
+          return callback(
+            new Error('Refusing an unencrypted connection to a TV with a pinned certificate'),
+            null,
+          );
+        }
+
+        if (observed !== expected) {
+          socket.destroy();
+          return callback(
+            new Error(`TV certificate does not match the pinned fingerprint (expected ${expected}, got ${observed})`),
+            null,
+          );
+        }
+
+        options.onCertObserved?.(observed);
+        return callback(null, socket);
+      });
+    },
+  });
+};
+
 
 // ============================================================================
 // CRYPTO UTILITIES
@@ -131,6 +223,26 @@ export const getFromTv = (
     options.timeout || 5000,
   );
 
+/**
+ * Open a TLS connection to the TV purely to read its certificate fingerprint.
+ * Used at pairing time to capture the value that later connections pin to.
+ */
+export const fetchCertFingerprint = async (ip: string, timeout = 5000): Promise<string | null> => {
+  let observed: string | null = null;
+  const agent = createTvAgent({ onCertObserved: (fingerprint) => (observed = fingerprint) });
+
+  try {
+    await fetchWithTimeout(buildUrl(ip, '/system'), { method: 'GET', dispatcher: agent }, timeout);
+  } catch {
+    // A non-200 or a refused request is fine — the handshake is what matters,
+    // and it has already run by the time the request itself fails.
+  } finally {
+    void agent.close();
+  }
+
+  return observed;
+};
+
 // ============================================================================
 // DIGEST AUTHENTICATION
 // ============================================================================
@@ -231,15 +343,17 @@ export const createDeviceInfo = (deviceName: string): DeviceInfo => {
   };
 };
 
-export const createPairingSuccess = (session: PairingSession): {
+export const createPairingSuccess = (session: PairingSession, certFingerprint?: string): {
   success: true;
   username: string;
   password: string;
+  certFingerprint?: string;
   message: string;
 } => ({
   success: true,
   username: session.device.id,
   password: session.auth_key,
+  certFingerprint,
   message: 'Pairing successful!',
 });
 

@@ -56,6 +56,11 @@
               "type": "string",
               "description": "The password (auth key) obtained during TV pairing."
             },
+            "certFingerprint": {
+              "title": "Certificate Fingerprint",
+              "type": "string",
+              "description": "SHA-256 fingerprint of the TV's certificate, captured automatically during pairing and verified on every connection. Leave empty to connect without verification."
+            },
             "pollingInterval": {
               "title": "Polling Interval (ms)",
               "type": "integer",
