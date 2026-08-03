@@ -12,6 +12,17 @@ import { StateSensorService } from './services/StateSensorService.js';
 import { AmbilightHueSwitchService } from './services/AmbilightHueSwitchService.js';
 
 // ============================================================================
+// CONSTANTS
+// ============================================================================
+
+/** How long after a power-on the TV is treated as possibly still booting, so a
+ *  rejected launch is retried rather than reported as a failure. The logs in
+ *  issue #14 show the TV confirming power 1-10s after the command, so this
+ *  covers that with margin while staying short enough that a launch the TV
+ *  genuinely refuses later still surfaces as an error. */
+const WAKE_WINDOW_MS = 20_000;
+
+// ============================================================================
 // PHILIPS AMBILIGHT TV ACCESSORY
 // ============================================================================
 
@@ -31,6 +42,10 @@ export class PhilipsAmbilightTVAccessory {
   private isPoweredOn = false;
   private isMuted = false;
   private powerSynced = false;
+
+  /** When the TV was last commanded on, used to tell a launch rejected by a
+   *  still-booting TV from one the TV genuinely refuses. */
+  private powerOnAt: number | null = null;
 
   constructor(
     private readonly platform: PhilipsAmbilightTVPlatform,
@@ -69,6 +84,8 @@ export class PhilipsAmbilightTVAccessory {
       log: (level, msg) => this.log(level, msg),
       onInputsChanged: () => this.refreshSourceSwitches(),
       onInputSwitched: (sourceId) => this.sourceSwitchService.updateFromPoll(sourceId),
+      isPoweredOn: () => this.isPoweredOn,
+      isWaking: () => this.isWaking(),
     });
 
     this.sourceSwitchService = new SourceSwitchService({
@@ -248,6 +265,7 @@ export class PhilipsAmbilightTVAccessory {
       const success = await this.tvClient.setPowerState(shouldBeOn);
       if (success) {
         this.isPoweredOn = shouldBeOn;
+        this.powerOnAt = shouldBeOn ? Date.now() : null;
         // Reflect a power-off immediately instead of waiting for the next poll
         // (up to the polling interval away), so the source switches don't linger
         // ON for several seconds after the user turns the TV off from HomeKit.
@@ -296,6 +314,15 @@ export class PhilipsAmbilightTVAccessory {
   // POLL CALLBACKS
   // ==========================================================================
 
+  /**
+   * True while the TV may still be booting. The TV acknowledges /powerstate
+   * long before its launcher will accept a launch, so a rejection inside this
+   * window means "not ready yet" rather than "refused".
+   */
+  private isWaking(): boolean {
+    return this.powerOnAt !== null && Date.now() - this.powerOnAt < WAKE_WINDOW_MS;
+  }
+
   private onPowerChange(isOn: boolean): void {
     // Skip the first sync so a Homebridge restart while the TV is already on
     // doesn't count as a power-on event (which would force Ambilight on).
@@ -314,13 +341,20 @@ export class PhilipsAmbilightTVAccessory {
       this.sourceSwitchService.resetAll();
       this.ambilightHueSwitchService.reset();
     } else if (!isInitialSync) {
-      // TV just powered on. A TV that was asleep at boot may not have reported
-      // its apps yet, so reconcile the input list now that it is reachable —
-      // this backfills any sources that couldn't be discovered at startup and
-      // refreshes the source switches to match (no restart required). Then pull
-      // the current source so the right input/switch lights up immediately
-      // rather than after the next poll (which can show the wrong/no switch).
-      void this.syncActiveSourceOnPowerOn();
+      if (this.inputSourceManager.hasPendingWakeSelection()) {
+        // A selection parked while the TV was off or booting takes priority
+        // over reading back whatever the TV happened to wake into — the user
+        // asked for a specific source and that request is still outstanding.
+        void this.inputSourceManager.replayWakeSelection();
+      } else {
+        // TV just powered on. A TV that was asleep at boot may not have reported
+        // its apps yet, so reconcile the input list now that it is reachable —
+        // this backfills any sources that couldn't be discovered at startup and
+        // refreshes the source switches to match (no restart required). Then pull
+        // the current source so the right input/switch lights up immediately
+        // rather than after the next poll (which can show the wrong/no switch).
+        void this.syncActiveSourceOnPowerOn();
+      }
       if (this.config.ambilightOnStart) {
         // Auto-start Ambilight in the configured mode.
         void this.ambilightService.startWithConfiguredMode();
