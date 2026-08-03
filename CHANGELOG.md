@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.26] - 2026-08-02
+
+### Fixed
+
+- **Switching source/app with the physical TV remote didn't update HomeKit** ([#14](https://github.com/mp-consulting/homebridge-philips-ambilight-tv/issues/14)): The long-poll subscribes to `activities/tv` because the TV pushes it on every state change, but the plugin discarded it as noise and only refreshed on other resources. Once the long-poll was confirmed working (which stops the interval-poll baseline), a change made from the physical remote — which some models only surface via `activities/tv`, not `activities/current` — never triggered a refresh, so the wheel and switches went stale until an action from the Home app moved them. `activities/tv` is now used as a throttled refresh trigger (at most once every 10s, so the once-a-second tuner ticks don't cause constant polling), restoring near-instant tracking of remote-driven changes while a report that directly names a resource still refreshes immediately.
+
 ## [1.5.24] - 2026-07-17
 
 ### Fixed

@@ -15,6 +15,14 @@ const INITIAL_POLL_DELAY_MS = 5000;
 /** Retry long-poll after a transient failure while the TV is on */
 const LONG_POLL_RETRY_MS = 60_000;
 
+/** Minimum gap between state refreshes triggered by the noisy `activities/tv`
+ *  resource. The TV pushes `activities/tv` on every state change — including
+ *  app/source switches made with the physical remote, which some models never
+ *  surface through `activities/current` — but it also ticks about once a second
+ *  with live tuner/EPG data. Refreshing from it on a throttle keeps remote-driven
+ *  changes flowing into HomeKit without polling the TV every second. */
+const TV_ACTIVITY_REFRESH_THROTTLE_MS = 10_000;
+
 // ============================================================================
 // TYPES
 // ============================================================================
@@ -43,6 +51,7 @@ export class StatePollManager {
   private longPollRetryTimer?: ReturnType<typeof setTimeout>;
   private notifyClient: NotifyChangeClient | null = null;
   private longPollConfirmed = false;
+  private lastTvActivityRefresh = 0;
 
   constructor(
     private readonly tvClient: PhilipsTVClient,
@@ -98,21 +107,33 @@ export class StatePollManager {
     this.notifyClient.on('notification', (data: Record<string, unknown>) => {
       const keys = Object.keys(data);
 
-      // activities/tv fires constantly (~every second) and is noise —
-      // only trigger a state poll for resources we actually care about
       const actionableKeys = keys.filter(k => k !== 'activities/tv');
-      if (actionableKeys.length === 0) {
+      if (actionableKeys.length > 0) {
+        // A resource we track changed — refresh immediately. The first such
+        // notification also confirms the long-poll works, so we can drop the
+        // interval-poll baseline.
+        if (!this.longPollConfirmed) {
+          this.longPollConfirmed = true;
+          this.stopIntervalPolling();
+          this.log('info', 'Long-poll confirmed working, stopped interval polling');
+        }
+        this.log('debug', `NotifyChange trigger: ${actionableKeys.join(', ')}`);
+        this.pollState();
         return;
       }
 
-      // First actionable notification confirms long-poll works
-      if (!this.longPollConfirmed) {
-        this.longPollConfirmed = true;
-        this.stopIntervalPolling();
-        this.log('info', 'Long-poll confirmed working, stopped interval polling');
+      // Only activities/tv fired. It ticks about once a second with tuner/EPG
+      // data, but it is also the one resource the TV pushes on every state
+      // change — including app/source switches from the physical remote that
+      // some models never report through activities/current. Refresh from it on
+      // a throttle so those remote-driven changes still reach HomeKit without
+      // polling the TV every second.
+      const now = Date.now();
+      if (now - this.lastTvActivityRefresh < TV_ACTIVITY_REFRESH_THROTTLE_MS) {
+        return;
       }
-
-      this.log('debug', `NotifyChange trigger: ${actionableKeys.join(', ')}`);
+      this.lastTvActivityRefresh = now;
+      this.log('debug', 'NotifyChange trigger: activities/tv (throttled refresh)');
       this.pollState();
     });
 
