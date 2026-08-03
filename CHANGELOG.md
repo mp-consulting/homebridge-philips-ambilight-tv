@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.6.1] - 2026-08-03
+
+### Fixed
+
+- **A scene that turns the TV on and picks a source only turned the TV on** ([#17](https://github.com/mp-consulting/homebridge-philips-ambilight-tv/issues/17)): HomeKit writes the power and the source as two separate instructions at the same moment, with no guarantee of order, and the TV needs several seconds after accepting the power command before it will accept a launch. The plugin acted on the source instruction immediately, so it was sent to a TV that was off or still starting up, failed, and was never tried again — the TV came on and stayed where it was. A source chosen while the TV is off or still waking is now held and applied as soon as the TV is genuinely ready, retrying over about 12 seconds to cover a slow start. A source the TV refuses when it is properly awake still reports an error as before.
+
 ## [1.6.0] - 2026-08-03
 
 ### Security

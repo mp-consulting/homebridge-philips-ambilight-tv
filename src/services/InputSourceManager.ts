@@ -54,6 +54,23 @@ const PLAYTV_PACKAGE = 'org.droidtv.playtv';
 const AMBIGUOUS_CONFIRM_SIGHTINGS = 2;
 const AMBIGUOUS_CONFIRM_WINDOW_MS = 60_000;
 
+/** How long a selection made while the TV was off or waking is held for replay.
+ *  A HomeKit scene that turns the TV on and picks a source writes both
+ *  characteristics at once, but the TV needs several seconds to finish booting
+ *  before it will accept a launch — so the selection is parked and re-applied
+ *  once the TV is genuinely reachable. Long enough to cover a cold start from
+ *  deep standby, short enough that a selection never surfaces unexpectedly
+ *  much later. */
+const WAKE_REPLAY_WINDOW_MS = 90_000;
+
+/** Attempts made when replaying a parked selection. The TV answers /powerstate
+ *  while its launcher is still coming up, so a single try at the power-on edge
+ *  is not enough. Sized from the logs in issue #14: the earliest launch seen to
+ *  succeed after a wake landed 6s past the `Power: On` edge, so the retries
+ *  span 12s to leave real margin. */
+const WAKE_REPLAY_ATTEMPTS = 5;
+const WAKE_REPLAY_RETRY_MS = 3_000;
+
 /** TLV8 tags for DisplayOrder encoding */
 const TLV_ELEMENT_START = 0x01;
 const TLV_ELEMENT_END = 0x00;
@@ -183,6 +200,11 @@ export interface InputSourceManagerDeps {
   /** Called after a wheel selection successfully switched the TV, so the source
    *  switches light up immediately instead of waiting for the next poll. */
   readonly onInputSwitched?: (sourceId: string) => void;
+  /** Whether the TV is currently believed to be on. */
+  readonly isPoweredOn?: () => boolean;
+  /** Whether the TV was powered on recently enough that it may still be
+   *  booting and rejecting launches. */
+  readonly isWaking?: () => boolean;
 }
 
 // ============================================================================
@@ -203,6 +225,10 @@ export class InputSourceManager {
    *  ones, so a burst of wheel moves only launches the final choice. */
   private switchQueue: Promise<void> = Promise.resolve();
   private switchGeneration = 0;
+
+  /** Selection made while the TV was off or still waking, held until the TV is
+   *  reachable. See WAKE_REPLAY_WINDOW_MS. */
+  private wakeSelection: { input: InputSource; parkedAt: number } | null = null;
 
   /** Tracks consecutive sightings of an ambiguous system report (NA / playtv)
    *  so a lone transitional report is never applied. See AMBIGUOUS_CONFIRM_*. */
@@ -479,6 +505,16 @@ export class InputSourceManager {
 
     this.deps.log('info', `Switching to: ${inputSource.name}`);
 
+    // The TV is off. A HomeKit scene that turns the TV on and picks a source
+    // writes Active and ActiveIdentifier as two independent characteristics
+    // with no ordering guarantee, so this can arrive before the power-on has
+    // even been sent. Launching now would fail against a TV that is not up;
+    // park the choice and apply it when the TV reports in.
+    if (this.deps.isPoweredOn?.() === false) {
+      this.parkForWake(inputSource, 'TV is off');
+      return;
+    }
+
     // Coalesce bursts of wheel moves: launches run one at a time, and a
     // selection that is superseded while waiting is skipped entirely. Without
     // this, every intermediate selection launched on the TV back-to-back —
@@ -516,6 +552,15 @@ export class InputSourceManager {
         throw this.deps.communicationError();
       }
     } catch (error) {
+      // The TV acknowledges /powerstate well before its launcher is ready, so
+      // a launch fired moments after a power-on can be rejected by a TV that is
+      // still booting. Park it rather than reporting failure — the same scene
+      // case as above, just with the power write having landed first.
+      if (this.deps.isWaking?.()) {
+        this.parkForWake(inputSource, 'TV is still waking');
+        return;
+      }
+
       if (inputSource.type === 'app') {
         // The TV rejects a launch with the wrong activity — a common cause for
         // custom apps whose launch activity isn't the guessed default.
@@ -528,6 +573,81 @@ export class InputSourceManager {
       }
       throw error instanceof Error && 'hapStatus' in error ? error : this.deps.communicationError();
     }
+  }
+
+  // ==========================================================================
+  // DEFERRED SELECTION (TV off or waking)
+  // ==========================================================================
+
+  /**
+   * Hold a selection the TV cannot act on yet and show it as chosen in
+   * HomeKit. Reporting an error instead would bounce the wheel back and make
+   * the scene look broken, when the request is simply early.
+   */
+  private parkForWake(input: InputSource, reason: string): void {
+    this.wakeSelection = { input, parkedAt: Date.now() };
+    this.currentInputId = input.identifier;
+    this.tvService?.updateCharacteristic(this.deps.Characteristic.ActiveIdentifier, input.identifier);
+    this.deps.log('info', `${reason} — will switch to ${input.name} once it is ready`);
+
+    // If the TV already reports on, the power-on edge that drives the replay
+    // has been and gone, so nothing else would ever pick this up — retry from
+    // here instead. When the TV is still off the edge is yet to come and
+    // onPowerChange takes it.
+    if (this.deps.isPoweredOn?.() === true) {
+      void this.replayWakeSelection();
+    }
+  }
+
+  /** True when a selection is waiting to be applied on wake. */
+  hasPendingWakeSelection(): boolean {
+    return this.wakeSelection !== null;
+  }
+
+  /**
+   * Apply a selection parked while the TV was off or waking. Called on the
+   * power-on edge, once the TV has answered a poll and is reachable.
+   */
+  async replayWakeSelection(): Promise<void> {
+    const parked = this.wakeSelection;
+    this.wakeSelection = null;
+
+    if (!parked) {
+      return;
+    }
+
+    if (Date.now() - parked.parkedAt > WAKE_REPLAY_WINDOW_MS) {
+      this.deps.log('debug', `Discarding stale pending switch to ${parked.input.name}`);
+      return;
+    }
+
+    for (let attempt = 1; attempt <= WAKE_REPLAY_ATTEMPTS; attempt++) {
+      // A newer selection while we were waiting wins — the user has moved on.
+      if (this.wakeSelection !== null) {
+        return;
+      }
+
+      try {
+        if (await this.switchInput(parked.input)) {
+          this.currentInputId = parked.input.identifier;
+          this.markPending(parked.input.identifier);
+          this.tvService?.updateCharacteristic(
+            this.deps.Characteristic.ActiveIdentifier, parked.input.identifier,
+          );
+          this.deps.onInputSwitched?.(parked.input.id);
+          this.deps.log('info', `Switched to ${parked.input.name} after wake`);
+          return;
+        }
+      } catch {
+        // Fall through to the retry — a TV mid-boot rejects launches.
+      }
+
+      if (attempt < WAKE_REPLAY_ATTEMPTS) {
+        await new Promise(resolve => setTimeout(resolve, WAKE_REPLAY_RETRY_MS));
+      }
+    }
+
+    this.deps.log('warn', `Could not switch to ${parked.input.name} after the TV woke up`);
   }
 
   // ==========================================================================

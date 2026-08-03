@@ -20,6 +20,8 @@ const mocks = vi.hoisted(() => ({
   fetchAppsFromTV: vi.fn().mockResolvedValue(undefined),
   inputUpdateFromPoll: vi.fn(),
   switchUpdateFromPoll: vi.fn(),
+  hasPendingWakeSelection: vi.fn().mockReturnValue(false),
+  replayWakeSelection: vi.fn().mockResolvedValue(undefined),
 }));
 
 /** Holder for the poll callbacks the accessory hands to StatePollManager,
@@ -56,6 +58,8 @@ vi.mock('../src/services/InputSourceManager.js', () => ({
     updateFromPoll = mocks.inputUpdateFromPoll;
     setActiveInputById = vi.fn();
     fetchAppsFromTV = mocks.fetchAppsFromTV;
+    hasPendingWakeSelection = mocks.hasPendingWakeSelection;
+    replayWakeSelection = mocks.replayWakeSelection;
     constructor(deps: unknown) {
       capture.inputManagerDeps = deps;
     }
@@ -210,6 +214,8 @@ describe('PhilipsAmbilightTVAccessory power handling', () => {
     Object.values(mocks).forEach(m => m.mockClear());
     mocks.setPowerState.mockResolvedValue(true);
     mocks.getVisibleSources.mockReturnValue([]);
+    mocks.hasPendingWakeSelection.mockReturnValue(false);
+    mocks.replayWakeSelection.mockResolvedValue(undefined);
     // Mirror the real InputSourceManager contract: return the accepted id.
     mocks.inputUpdateFromPoll.mockImplementation((app: string | null) => app);
   });

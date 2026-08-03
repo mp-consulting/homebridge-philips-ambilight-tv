@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { InputSourceManager } from '../../src/services/InputSourceManager.js';
 import type { InputSourceManagerDeps } from '../../src/services/InputSourceManager.js';
+import { WATCH_TV_URI } from '../../src/api/PhilipsTVClient.js';
 
 // ============================================================================
 // MOCKS
@@ -706,6 +707,149 @@ describe('InputSourceManager', () => {
       manager.configureInputSources(tvService as never);
 
       await expect(manager.handleSetInput(999)).rejects.toThrow();
+    });
+  });
+
+  // ==========================================================================
+  // DEFERRED SELECTION WHILE THE TV WAKES (issue #17)
+  // ==========================================================================
+
+  describe('selection made while the TV is off or waking', () => {
+    const APP = {
+      name: 'EON',
+      packageName: 'com.ug.eon.android.tv',
+      className: 'com.ug.eon.android.tv.MainActivity',
+    };
+
+    /** A HomeKit scene writes Active and ActiveIdentifier at the same time. */
+    const setup = (overrides: Record<string, unknown> = {}) => {
+      const deps = createMockDeps({ customApps: [APP], ...overrides });
+      const manager = new InputSourceManager(deps);
+      const tvService = createMockService();
+      manager.configureInputSources(tvService as never);
+      const app = manager.getSources().find(s => s.id === 'com.ug.eon.android.tv')!;
+      return { deps, manager, tvService, app };
+    };
+
+    it('should park the selection instead of launching into a TV that is off', async () => {
+      const { deps, manager, app } = setup({ isPoweredOn: () => false });
+
+      await manager.handleSetInput(app.identifier);
+
+      expect(deps.tvClient.launchApplication).not.toHaveBeenCalled();
+      expect(manager.hasPendingWakeSelection()).toBe(true);
+    });
+
+    it('should show the parked selection as chosen rather than erroring', async () => {
+      const { manager, tvService, app } = setup({ isPoweredOn: () => false });
+
+      // Throwing here would bounce the wheel back and make the scene look broken.
+      await expect(manager.handleSetInput(app.identifier)).resolves.toBeUndefined();
+      expect(tvService.updateCharacteristic).toHaveBeenCalledWith(
+        expect.objectContaining({ UUID: 'active-identifier' }), app.identifier,
+      );
+    });
+
+    it('should apply the parked selection when the TV wakes', async () => {
+      const { deps, manager, app } = setup({ isPoweredOn: () => false });
+      await manager.handleSetInput(app.identifier);
+
+      await manager.replayWakeSelection();
+
+      expect(deps.tvClient.launchApplication).toHaveBeenCalledWith(
+        'com.ug.eon.android.tv', 'com.ug.eon.android.tv.MainActivity', undefined,
+      );
+      expect(manager.hasPendingWakeSelection()).toBe(false);
+    });
+
+    it('should park a launch the TV rejects while it is still booting', async () => {
+      const { deps, manager, app } = setup({ isPoweredOn: () => true, isWaking: () => true });
+      const launch = deps.tvClient.launchApplication as ReturnType<typeof vi.fn>;
+      launch.mockResolvedValue(false);
+
+      // The power write landed first, so the TV reports on but is not ready.
+      await expect(manager.handleSetInput(app.identifier)).resolves.toBeUndefined();
+
+      // The TV already reports on, so the power-on edge has passed and the
+      // retry has to come from the park itself.
+      launch.mockResolvedValue(true);
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(launch.mock.calls.length).toBeGreaterThan(1);
+    });
+
+    it('should still report a failure when the TV is up and refuses the launch', async () => {
+      const { deps, manager, app } = setup({ isPoweredOn: () => true, isWaking: () => false });
+      (deps.tvClient.launchApplication as ReturnType<typeof vi.fn>).mockResolvedValue(false);
+
+      await expect(manager.handleSetInput(app.identifier)).rejects.toThrow();
+      expect(manager.hasPendingWakeSelection()).toBe(false);
+    });
+
+    it('should retry a replay that the TV rejects mid-boot', async () => {
+      const { deps, manager, app } = setup({ isPoweredOn: () => false });
+      await manager.handleSetInput(app.identifier);
+
+      const launch = deps.tvClient.launchApplication as ReturnType<typeof vi.fn>;
+      launch.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+
+      const replay = manager.replayWakeSelection();
+      await vi.advanceTimersByTimeAsync(4000);
+      await replay;
+
+      expect(launch).toHaveBeenCalledTimes(2);
+    });
+
+    it('should give up after the retry budget and warn', async () => {
+      const { deps, manager, app } = setup({ isPoweredOn: () => false });
+      await manager.handleSetInput(app.identifier);
+      (deps.tvClient.launchApplication as ReturnType<typeof vi.fn>).mockResolvedValue(false);
+
+      const replay = manager.replayWakeSelection();
+      await vi.advanceTimersByTimeAsync(20_000);
+      await replay;
+
+      expect(deps.log).toHaveBeenCalledWith('warn', expect.stringContaining('Could not switch to'));
+      expect(manager.hasPendingWakeSelection()).toBe(false);
+    });
+
+    it('should discard a selection parked too long ago', async () => {
+      const { deps, manager, app } = setup({ isPoweredOn: () => false });
+      await manager.handleSetInput(app.identifier);
+
+      // Longer than WAKE_REPLAY_WINDOW_MS — the user is not still waiting.
+      vi.setSystemTime(Date.now() + 120_000);
+      await manager.replayWakeSelection();
+
+      expect(deps.tvClient.launchApplication).not.toHaveBeenCalled();
+    });
+
+    it('should let a newer selection supersede a parked one', async () => {
+      const { deps, manager, app } = setup({ isPoweredOn: () => false });
+      const watchTv = manager.getSources().find(s => s.id === WATCH_TV_URI)!;
+
+      await manager.handleSetInput(app.identifier);
+      await manager.handleSetInput(watchTv.identifier);
+      await manager.replayWakeSelection();
+
+      expect(deps.tvClient.launchWatchTV).toHaveBeenCalled();
+      expect(deps.tvClient.launchApplication).not.toHaveBeenCalled();
+    });
+
+    it('should switch normally when the TV is already on', async () => {
+      const { deps, manager, app } = setup({ isPoweredOn: () => true, isWaking: () => false });
+
+      await manager.handleSetInput(app.identifier);
+
+      expect(deps.tvClient.launchApplication).toHaveBeenCalled();
+      expect(manager.hasPendingWakeSelection()).toBe(false);
+    });
+
+    it('should switch normally when no power hooks are supplied', async () => {
+      const { deps, manager, app } = setup();
+
+      await manager.handleSetInput(app.identifier);
+
+      expect(deps.tvClient.launchApplication).toHaveBeenCalled();
     });
   });
 
