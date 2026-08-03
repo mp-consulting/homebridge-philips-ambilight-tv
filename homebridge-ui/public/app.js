@@ -30,6 +30,8 @@
     configuredTvs: [],
     editingTvIndex: null,
     editingSourcesTvIndex: null,
+    /** Index of the TV being re-paired in place, or null for a new pairing. */
+    repairingTvIndex: null,
     sources: [],
     draggedItem: null,
     dragStartIndex: null,
@@ -83,6 +85,7 @@
 
   const resetCurrentConfig = () => {
     state.currentConfig = { name: '', ip: '', mac: '', username: '', password: '' };
+    state.repairingTvIndex = null;
   };
 
   const getPinValue = () => {
@@ -325,6 +328,7 @@
     await startPairing(ip, listItem);
   };
 
+  /** Starts the PIN flow for `ip`. Resolves true once the TV shows a PIN. */
   const startPairing = async (ip, listItem) => {
     // Show loading state on the list item
     const badge = listItem?.querySelector('.select-badge');
@@ -354,18 +358,20 @@
         homebridge.toast.success('Check your TV for the PIN code');
         pinSection.style.display = 'block';
         setTimeout(() => focusFirstPinInput(), 100);
-      } else {
-        homebridge.toast.error(result.error);
-        // Restore badge
-        if (badge) {
-          badge.textContent = originalBadgeText;
-          badge.classList.remove('bg-secondary');
-          badge.classList.add('bg-primary');
-        }
-        if (state.currentConfig.mac && listItem) {
-          showWolCollapse(listItem);
-        }
+        return true;
       }
+
+      homebridge.toast.error(result.error);
+      // Restore badge
+      if (badge) {
+        badge.textContent = originalBadgeText;
+        badge.classList.remove('bg-secondary');
+        badge.classList.add('bg-primary');
+      }
+      if (state.currentConfig.mac && listItem) {
+        showWolCollapse(listItem);
+      }
+      return false;
     } catch (e) {
       homebridge.toast.error(e.message);
       // Restore badge
@@ -377,6 +383,7 @@
       if (state.currentConfig.mac && listItem) {
         showWolCollapse(listItem);
       }
+      return false;
     }
   };
 
@@ -430,6 +437,22 @@
 
     try {
       const result = await api.pairGrant(state.currentConfig.ip, pin);
+
+      if (result.success && state.repairingTvIndex !== null) {
+        // Re-pairing an existing TV: swap in the new credentials (and the
+        // certificate they were negotiated against) and leave the rest of the
+        // entry — name, sources, switches, custom apps — exactly as it was.
+        const index = state.repairingTvIndex;
+        state.repairingTvIndex = null;
+        const updates = { username: result.username, password: result.password };
+        if (result.certFingerprint) {
+          updates.certFingerprint = result.certFingerprint;
+        }
+        await updateTv(index, updates);
+        homebridge.toast.success('TV re-paired. Restart Homebridge to use the new credentials.');
+        showScreen('successScreen');
+        return;
+      }
 
       if (result.success) {
         state.currentConfig.username = result.username;
@@ -485,6 +508,34 @@
       new bootstrap.Tab(generalTab).show();
     }
     showScreen('editScreen');
+  };
+
+  /**
+   * Re-run pairing for a TV that is already configured. The TV issues a fresh
+   * username/password — and, since certificate pinning was added, lets the
+   * fingerprint be recorded — so this is what turns verification on for an
+   * existing setup. Everything else about the entry survives, which is why
+   * re-pairing no longer means deleting the TV and adding it back.
+   */
+  const startRepair = async (btn) => {
+    const index = state.editingTvIndex;
+    const tv = state.configuredTvs[index];
+    if (!tv) {
+      return;
+    }
+
+    state.repairingTvIndex = index;
+    state.currentConfig = { ...tv };
+
+    setButtonLoading(btn, true, 'Pairing...');
+    try {
+      if (!await startPairing(tv.ip, null)) {
+        // The TV never got as far as showing a PIN — nothing to apply.
+        state.repairingTvIndex = null;
+      }
+    } finally {
+      setButtonLoading(btn, false, null, '<i class="bi bi-shield-lock"></i> Re-pair');
+    }
   };
 
   // ============================================================================
@@ -1194,9 +1245,19 @@
   });
 
   $('cancelPairingBtn').addEventListener('click', () => {
+    // Abandoning a re-pair leaves the existing credentials in place and goes
+    // back where it started, rather than dropping into the add-a-TV wizard.
+    if (state.repairingTvIndex !== null) {
+      state.repairingTvIndex = null;
+      showScreen('editScreen');
+      return;
+    }
     showScreen('wizardStep1');
     $('deviceList').style.display = 'none';
     $('deviceListContainer').innerHTML = '';
+  });
+  $('repairTvBtn').addEventListener('click', function () {
+    startRepair(this);
   });
   $('addAnotherTvBtn').addEventListener('click', () => {
     resetCurrentConfig();

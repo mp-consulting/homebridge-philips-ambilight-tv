@@ -268,8 +268,11 @@
     <!-- Edit TV Screen -->
     <div id="editScreen">
       <h5>Edit TV Configuration</h5>
-      <div class="alert alert-info">
-        <small><i class="bi bi-info-circle"></i> You cannot edit username/password. To change authentication, delete this TV and pair it again.</small>
+      <div class="alert alert-info d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <small><i class="bi bi-info-circle"></i> Credentials are issued by the TV during pairing and cannot be edited here. Re-pair to renew them and record the TV's certificate — this TV's name, sources, switches and custom apps are all kept.</small>
+        <button class="btn btn-sm btn-primary text-nowrap" type="button" id="repairTvBtn">
+          <i class="bi bi-shield-lock"></i> Re-pair
+        </button>
       </div>
       <ul class="nav nav-tabs mb-3" id="editTabs" role="tablist">
         <li class="nav-item" role="presentation">

@@ -341,6 +341,10 @@ export class PhilipsAmbilightTVAccessory {
       this.sourceSwitchService.resetAll();
       this.ambilightHueSwitchService.reset();
     } else if (!isInitialSync) {
+      // The input the TV was left on before standby is not evidence of where
+      // it wakes up, so let the TV's own report realign the state even when
+      // that report is an ambiguous one.
+      this.inputSourceManager.markAwaitingWakeAlignment();
       if (this.inputSourceManager.hasPendingWakeSelection()) {
         // A selection parked while the TV was off or booting takes priority
         // over reading back whatever the TV happened to wake into — the user

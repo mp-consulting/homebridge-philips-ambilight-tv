@@ -54,6 +54,9 @@ const PLAYTV_PACKAGE = 'org.droidtv.playtv';
 const AMBIGUOUS_CONFIRM_SIGHTINGS = 2;
 const AMBIGUOUS_CONFIRM_WINDOW_MS = 60_000;
 
+/** The TV's report for "no trackable app in the foreground". */
+const NO_APP_REPORT = 'NA';
+
 /** How long a selection made while the TV was off or waking is held for replay.
  *  A HomeKit scene that turns the TV on and picks a source writes both
  *  characteristics at once, but the TV needs several seconds to finish booting
@@ -234,6 +237,14 @@ export class InputSourceManager {
    *  so a lone transitional report is never applied. See AMBIGUOUS_CONFIRM_*. */
   private ambiguousReport: { app: string; sightings: number; lastSeen: number } | null = null;
 
+  /** Apps the TV has named in a report of its own. See isOnUntrackedApp. */
+  private readonly tvTrackedApps = new Set<string>();
+
+  /** Set on the power-on edge: the input carried over from before standby is
+   *  no longer evidence of what is on screen, so an ambiguous report is allowed
+   *  to realign the state. Cleared by the first accepted report or selection. */
+  private awaitingWakeAlignment = false;
+
   /** Source configs indexed by id for fast lookup */
   private sourceConfigMap: Map<string, SourceConfig>;
 
@@ -286,6 +297,16 @@ export class InputSourceManager {
   private markPending(identifier: number): void {
     this.pendingInputId = identifier;
     this.pendingSince = Date.now();
+    this.awaitingWakeAlignment = false;
+  }
+
+  /**
+   * Tell the manager the TV has just woken. Whatever input it was left on
+   * before standby says nothing about where it wakes up, so the TV's own
+   * report — including an ambiguous one — is allowed to realign the state.
+   */
+  markAwaitingWakeAlignment(): void {
+    this.awaitingWakeAlignment = true;
   }
 
   getVisibleSources(): readonly InputSource[] {
@@ -699,10 +720,29 @@ export class InputSourceManager {
       return null;
     }
 
+    // The TV named a real package, so it does report this app while it runs.
+    // Remember that: it is what makes a later "no app" report about it
+    // meaningful rather than merely uninformative (see isOnUntrackedApp).
+    if (direct && direct.type === 'app' && currentApp !== NO_APP_REPORT && currentApp !== PLAYTV_PACKAGE) {
+      this.tvTrackedApps.add(direct.id);
+    }
+
+    // "No trackable app" is an absence of information, not evidence of the
+    // home screen: the TV also reports it while an app it does not track sits
+    // in the foreground. Treating it as Home moved the wheel off an app the
+    // user was actually watching (issue #14), so it is ignored while the
+    // current input is an app the TV has never named itself. Once the TV has
+    // reported that app at least once, a later NA does mean the user left it.
+    if (!direct && currentApp === NO_APP_REPORT && this.isOnUntrackedApp()) {
+      this.ambiguousReport = null;
+      this.deps.log('debug', 'Ignoring "no app" report — the TV does not track the current app');
+      return null;
+    }
+
     // NA and playtv are emitted transiently while the TV switches between
     // apps; require consecutive sightings before applying them so a lone
     // transitional report can't drag the state onto the wrong source.
-    if (!direct && (currentApp === 'NA' || currentApp === PLAYTV_PACKAGE)) {
+    if (!direct && (currentApp === NO_APP_REPORT || currentApp === PLAYTV_PACKAGE)) {
       if (!this.recordAmbiguousSighting(currentApp)) {
         return null;
       }
@@ -723,6 +763,8 @@ export class InputSourceManager {
         this.pendingInputId = null;
       }
     }
+
+    this.awaitingWakeAlignment = false;
 
     if (inputSource.identifier !== this.currentInputId) {
       this.currentInputId = inputSource.identifier;
@@ -752,7 +794,7 @@ export class InputSourceManager {
       }
       return WATCH_TV_URI;
     }
-    if (app === 'NA') {
+    if (app === NO_APP_REPORT) {
       // Firmwares that don't run a launcher package report the literal "NA"
       // on the home screen (the tuner reports playtv, tracked apps report
       // their package) — so a sustained NA means the TV is on Home. The old
@@ -761,6 +803,20 @@ export class InputSourceManager {
       return HOME_URI;
     }
     return app;
+  }
+
+  /**
+   * True when the current input is an app the TV has never reported by name.
+   * Some apps never surface through /activities/current — the TV answers "no
+   * trackable app" for the whole time they are on screen — so nothing about
+   * such an app can be inferred from that report.
+   */
+  private isOnUntrackedApp(): boolean {
+    if (this.awaitingWakeAlignment) {
+      return false;
+    }
+    const current = this.inputSources.find(i => i.identifier === this.currentInputId);
+    return current?.type === 'app' && !this.tvTrackedApps.has(current.id);
   }
 
   /**

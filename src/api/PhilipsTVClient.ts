@@ -394,7 +394,20 @@ export class PhilipsTVClient {
     ];
   }
 
+  /**
+   * Switch to the tuner.
+   *
+   * Selecting the tuner URI is tried first because it addresses the TV's
+   * source service directly. The `WatchTV` remote key is delivered to whatever
+   * is in the foreground, and an app that consumes it (many streaming apps do)
+   * simply swallows the request — which is why switching to Watch TV worked
+   * from the home screen but often did nothing from inside an app (issue #14).
+   * The key press remains as a fallback for sets that reject the intent.
+   */
   async launchWatchTV(): Promise<boolean> {
+    if (await this.setSource(WATCH_TV_URI)) {
+      return true;
+    }
     return this.sendKey('WatchTV');
   }
 

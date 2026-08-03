@@ -60,6 +60,7 @@ vi.mock('../src/services/InputSourceManager.js', () => ({
     fetchAppsFromTV = mocks.fetchAppsFromTV;
     hasPendingWakeSelection = mocks.hasPendingWakeSelection;
     replayWakeSelection = mocks.replayWakeSelection;
+    markAwaitingWakeAlignment = vi.fn();
     constructor(deps: unknown) {
       capture.inputManagerDeps = deps;
     }

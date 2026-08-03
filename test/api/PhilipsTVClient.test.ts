@@ -642,6 +642,43 @@ describe('PhilipsTVClient', () => {
     });
   });
 
+  describe('launchWatchTV', () => {
+    it('should select the tuner URI rather than pressing the remote key', async () => {
+      mockFetch.mockReturnValue(mockResponse({}));
+
+      const promise = client.launchWatchTV();
+      await vi.runAllTimersAsync();
+      const result = await promise;
+
+      expect(result).toBe(true);
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('/activities/launch'),
+        expect.objectContaining({
+          body: expect.stringContaining('content://android.media.tv/channel'),
+        }),
+        expect.any(Number),
+      );
+    });
+
+    it('should fall back to the WatchTV key when the TV rejects the intent', async () => {
+      mockFetch
+        .mockReturnValueOnce(mockResponse(null, 500))
+        .mockReturnValue(mockResponse({}));
+
+      const promise = client.launchWatchTV();
+      await vi.runAllTimersAsync();
+      const result = await promise;
+
+      expect(result).toBe(true);
+      expect(mockFetch).toHaveBeenLastCalledWith(
+        expect.stringContaining('/input/key'),
+        expect.objectContaining({ body: JSON.stringify({ key: 'WatchTV' }) }),
+        expect.any(Number),
+      );
+    });
+  });
+
   describe('launchApplication', () => {
     it('should POST intent with correct action', async () => {
       mockFetch.mockReturnValue(mockResponse({}));

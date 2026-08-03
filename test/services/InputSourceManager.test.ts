@@ -1176,6 +1176,69 @@ describe('InputSourceManager', () => {
       expect(manager.currentId).toBe(home.identifier);
     });
 
+    it('keeps an app the TV never reports itself when it says there is no trackable app', async () => {
+      const { manager, tvService } = managerWithApp();
+      const netflix = manager.getSources().find(s => s.id === 'com.netflix.ninja')!;
+
+      // The user picks the app and the TV never names it in a report of its
+      // own — for such apps "NA" says nothing about what is on screen.
+      await manager.handleSetInput(netflix.identifier);
+      vi.advanceTimersByTime(21_000); // past the manual-switch confirmation guard
+
+      expect(manager.updateFromPoll('NA', tvService as never)).toBeNull();
+      expect(manager.updateFromPoll('NA', tvService as never)).toBeNull();
+      expect(manager.currentId).toBe(netflix.identifier);
+    });
+
+    it('lets NA align to Home on wake even when the pre-standby input was an untracked app', async () => {
+      const { manager, tvService } = managerWithApp();
+      const netflix = manager.getSources().find(s => s.id === 'com.netflix.ninja')!;
+      const home = manager.getSources().find(s => s.name === 'Home')!;
+      await manager.handleSetInput(netflix.identifier);
+      vi.advanceTimersByTime(21_000);
+
+      manager.markAwaitingWakeAlignment();
+      manager.updateFromPoll('NA', tvService as never);
+      const accepted = manager.updateFromPoll('NA', tvService as never);
+
+      expect(accepted).toBe(home.id);
+      expect(manager.currentId).toBe(home.identifier);
+    });
+
+    it('applies NA as Home once the TV has reported the current app by name', async () => {
+      const { manager, tvService } = managerWithApp();
+      const netflix = manager.getSources().find(s => s.id === 'com.netflix.ninja')!;
+      const home = manager.getSources().find(s => s.name === 'Home')!;
+
+      await manager.handleSetInput(netflix.identifier);
+      vi.advanceTimersByTime(21_000);
+      // The TV tracks this app, so leaving it really does show up as NA.
+      manager.updateFromPoll('com.netflix.ninja', tvService as never);
+
+      manager.updateFromPoll('NA', tvService as never);
+      const accepted = manager.updateFromPoll('NA', tvService as never);
+
+      expect(accepted).toBe(home.id);
+      expect(manager.currentId).toBe(home.identifier);
+    });
+
+    it('still moves an untracked app to the tuner when the TV reports playtv', async () => {
+      const { manager, tvService } = managerWithApp();
+      const netflix = manager.getSources().find(s => s.id === 'com.netflix.ninja')!;
+      const watchTV = manager.getSources().find(s => s.name === 'Watch TV')!;
+
+      await manager.handleSetInput(netflix.identifier);
+      vi.advanceTimersByTime(21_000);
+
+      // playtv names the tuner service — unlike NA it is positive evidence
+      // that the TV left the app, so it applies after the usual confirmation.
+      manager.updateFromPoll('org.droidtv.playtv', tvService as never);
+      const accepted = manager.updateFromPoll('org.droidtv.playtv', tvService as never);
+
+      expect(accepted).toBe(watchTV.id);
+      expect(manager.currentId).toBe(watchTV.identifier);
+    });
+
     it('ignores a lone transitional system report between app switches', () => {
       const { manager, tvService } = managerWithApp();
       const netflix = manager.getSources().find(s => s.id === 'com.netflix.ninja')!;

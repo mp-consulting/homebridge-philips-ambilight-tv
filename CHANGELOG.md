@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.6.4] - 2026-08-03
+
+### Fixed
+
+- **HomeKit jumped back to Home about half a minute after every source change** ([#14](https://github.com/mp-consulting/homebridge-philips-ambilight-tv/issues/14)): the TV answers "no trackable app" (`NA`) not only on its home screen but also for the whole time an app it does not track sits in the foreground. Since v1.6.0 that answer is read every ten seconds, so once the guard that protects a fresh selection expired, a perfectly ordinary "no app" reply dragged the wheel and the switches onto **Home** while the app carried on playing. `NA` is now treated as what it is — an absence of information — and is ignored while the current input is an app the TV has never named in a report of its own. Apps the TV does report are unaffected: leaving one for the home screen still shows up as Home, as does pressing Home from the tuner or an HDMI input, and a TV waking from standby still aligns on whatever it wakes into.
+- **Switching to Watch TV from inside an app often did nothing.** Watch TV was selected by sending the `WatchTV` remote key, which Android delivers to the foreground app — and many streaming apps swallow it. That is why the switch worked from the home screen but usually failed from within an app, while going the other way (Watch TV to an app) always worked. The tuner is now selected through the TV's source service, the same way HDMI inputs are, with the key press kept as a fallback for sets that reject it.
+
+### Changed
+
+- **A configured TV can be re-paired from the plugin settings.** Editing a TV now offers **Re-pair**, which runs the PIN flow against the TV and swaps in the fresh credentials in place — the name, sources, switches and custom apps are all kept, and the HomeKit accessory stays the one you have already placed in a room. Previously the only way to renew credentials, or to record the TV's certificate for the pinning added in v1.6.0, was to delete the TV and add it back.
+
 ## [1.6.3] - 2026-08-03
 
 ### Fixed
