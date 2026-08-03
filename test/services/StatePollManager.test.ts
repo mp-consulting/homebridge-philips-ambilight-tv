@@ -420,6 +420,96 @@ describe('StatePollManager', () => {
       await vi.advanceTimersByTimeAsync(100);
       expect((tvClient.getCurrentActivity as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(afterFirst);
     });
+
+    it('should stop interval polling when only activities/tv is ever pushed', async () => {
+      (tvClient.getPowerState as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+      (tvClient.getVolume as ReturnType<typeof vi.fn>).mockResolvedValue({ current: 10, muted: false });
+      manager = new StatePollManager(tvClient, TEST_CONFIG, callbacks, debugLog);
+      manager.start();
+      await vi.advanceTimersByTimeAsync(5100);
+
+      // Models that only ever surface activities/tv must still drop the
+      // interval baseline: the throttled refresh already covers the same
+      // cadence, so running both would double the request rate.
+      const latestClient = notifyInstances[notifyInstances.length - 1];
+      latestClient.emit('notification', { 'activities/tv': {} });
+      expect(debugLog).toHaveBeenCalledWith('info', 'Long-poll confirmed working, stopped interval polling');
+
+      await vi.advanceTimersByTimeAsync(100);
+      const callCount = (tvClient.getPowerState as ReturnType<typeof vi.fn>).mock.calls.length;
+
+      // No further ticks arrive, so nothing should poll — proving the interval
+      // timer is gone rather than quietly running alongside the throttle.
+      await vi.advanceTimersByTimeAsync(20_000);
+      expect((tvClient.getPowerState as ReturnType<typeof vi.fn>).mock.calls.length).toBe(callCount);
+    });
+
+    it('should not poll twice when activities/tv ticks right after an actionable refresh', async () => {
+      (tvClient.getPowerState as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+      (tvClient.getVolume as ReturnType<typeof vi.fn>).mockResolvedValue({ current: 10, muted: false });
+      manager = new StatePollManager(tvClient, TEST_CONFIG, callbacks, debugLog);
+      manager.start();
+      await vi.advanceTimersByTimeAsync(5100);
+
+      const latestClient = notifyInstances[notifyInstances.length - 1];
+      latestClient.emit('notification', { 'audio/volume': {} });
+      await vi.advanceTimersByTimeAsync(100);
+      const afterActionable = (tvClient.getCurrentActivity as ReturnType<typeof vi.fn>).mock.calls.length;
+
+      // activities/tv ticks about once a second, so one lands just behind the
+      // immediate refresh above — it must not trigger a redundant full poll.
+      await vi.advanceTimersByTimeAsync(1000);
+      latestClient.emit('notification', { 'activities/tv': {} });
+      await vi.advanceTimersByTimeAsync(100);
+
+      expect((tvClient.getCurrentActivity as ReturnType<typeof vi.fn>).mock.calls.length).toBe(afterActionable);
+    });
+
+    it('should clear the activities/tv throttle when the long-poll is torn down', async () => {
+      const config = { ...TEST_CONFIG, pollingInterval: 1000 };
+      (tvClient.getPowerState as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+      (tvClient.getVolume as ReturnType<typeof vi.fn>).mockResolvedValue({ current: 10, muted: false });
+      manager = new StatePollManager(tvClient, config, callbacks, debugLog);
+      manager.start();
+      await vi.advanceTimersByTimeAsync(5100);
+
+      // Stamp the throttle, then tear the long-poll down and cycle the TV off
+      // and back on — all well inside the 10s throttle window.
+      notifyInstances[notifyInstances.length - 1].emit('notification', { 'activities/tv': {} });
+      await vi.advanceTimersByTimeAsync(100);
+      notifyInstances[notifyInstances.length - 1].emit('failed');
+
+      (tvClient.getPowerState as ReturnType<typeof vi.fn>).mockResolvedValue(false);
+      await vi.advanceTimersByTimeAsync(1100);
+      (tvClient.getPowerState as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+      await vi.advanceTimersByTimeAsync(1100);
+
+      // The fresh long-poll must not inherit the old timestamp, or its first
+      // tick would be swallowed.
+      const newClient = notifyInstances[notifyInstances.length - 1];
+      const before = (tvClient.getCurrentActivity as ReturnType<typeof vi.fn>).mock.calls.length;
+      newClient.emit('notification', { 'activities/tv': {} });
+      await vi.advanceTimersByTimeAsync(100);
+
+      expect((tvClient.getCurrentActivity as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(before);
+    });
+
+    it('should ignore an empty notification', async () => {
+      (tvClient.getPowerState as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+      (tvClient.getVolume as ReturnType<typeof vi.fn>).mockResolvedValue({ current: 10, muted: false });
+      manager = new StatePollManager(tvClient, TEST_CONFIG, callbacks, debugLog);
+      manager.start();
+      await vi.advanceTimersByTimeAsync(5100);
+
+      const latestClient = notifyInstances[notifyInstances.length - 1];
+      const before = (tvClient.getCurrentActivity as ReturnType<typeof vi.fn>).mock.calls.length;
+
+      latestClient.emit('notification', {});
+      await vi.advanceTimersByTimeAsync(100);
+
+      expect((tvClient.getCurrentActivity as ReturnType<typeof vi.fn>).mock.calls.length).toBe(before);
+      expect(debugLog).not.toHaveBeenCalledWith('info', 'Long-poll confirmed working, stopped interval polling');
+    });
   });
 
   // ==========================================================================
