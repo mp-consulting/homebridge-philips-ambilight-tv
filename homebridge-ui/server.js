@@ -18,6 +18,7 @@ import {
   handleErrorResponse,
   extractIpv4,
   createPairingSuccess,
+  fetchCertFingerprint,
   sendWakeOnLan,
 } from '../dist/api/utils.js';
 import { PhilipsTVClient, HOME_URI, WATCH_TV_URI } from '../dist/api/PhilipsTVClient.js';
@@ -305,7 +306,7 @@ class UiServer extends HomebridgePluginUiServer {
           }
 
           this.pairingSessions.delete(ip);
-          return createPairingSuccess(session);
+          return createPairingSuccess(session, await fetchCertFingerprint(ip));
         }
       }
 
@@ -314,7 +315,7 @@ class UiServer extends HomebridgePluginUiServer {
       }
 
       this.pairingSessions.delete(ip);
-      return createPairingSuccess(session);
+      return createPairingSuccess(session, await fetchCertFingerprint(ip));
     } catch (error) {
       console.log('[PairGrant] Error:', error.message);
       return { success: false, error: error.message || 'Failed to complete pairing' };

@@ -325,6 +325,12 @@ export interface TVDeviceConfig {
   mac: string;
   username: string;
   password: string;
+  /**
+   * SHA-256 fingerprint of the TV's certificate, captured at pairing time and
+   * verified on every later connection. Absent on configs paired before
+   * pinning existed, which connect unverified with a warning.
+   */
+  certFingerprint?: string;
   pollingInterval?: number;
   wakeOnLanEnabled?: boolean;
   ambilightMode?: string;

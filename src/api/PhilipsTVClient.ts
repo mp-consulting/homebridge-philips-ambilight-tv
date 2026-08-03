@@ -3,11 +3,12 @@
  * Handles all communication with the Philips TV JointSpace API (v6)
  */
 
+import type { Dispatcher } from 'undici';
 import { TV_API_VERSION } from './constants.js';
 import {
   buildUrl,
+  createTvAgent,
   fetchWithTimeout,
-  httpsAgent,
   sendWakeOnLan,
 } from './utils.js';
 import { DigestAuthSession } from './DigestAuthSession.js';
@@ -93,6 +94,8 @@ export interface PhilipsTVClientConfig {
   mac: string;
   username: string;
   password: string;
+  /** SHA-256 certificate fingerprint captured at pairing time, if available. */
+  certFingerprint?: string;
 }
 
 interface ApplicationIntent {
@@ -118,10 +121,19 @@ export class PhilipsTVClient {
   /** Shared digest auth session — avoids a 401 round-trip on every request */
   private readonly authSession: DigestAuthSession;
 
+  /** Dispatcher pinned to this TV's certificate (unpinned on legacy configs) */
+  private readonly agent: Dispatcher;
+
   constructor(config: PhilipsTVClientConfig, debug?: (message: string) => void) {
     this.config = config;
     this.debug = debug ?? (() => {});
     this.authSession = new DigestAuthSession(config.username, config.password);
+    this.agent = createTvAgent({
+      certFingerprint: config.certFingerprint,
+      onUnpinned: () => this.debug(
+        `Connection to ${config.ip} is not certificate-pinned — re-pair the TV to enable verification`,
+      ),
+    });
   }
 
   // ==========================================================================
@@ -196,7 +208,7 @@ export class PhilipsTVClient {
         const authHeader = this.authSession.buildHeader(method, uri)!;
         const response = await fetchWithTimeout(
           url,
-          { method, headers: { ...headers, Authorization: authHeader }, body: requestBody, dispatcher: httpsAgent },
+          { method, headers: { ...headers, Authorization: authHeader }, body: requestBody, dispatcher: this.agent },
           timeout,
         );
 
@@ -217,7 +229,7 @@ export class PhilipsTVClient {
       // No cached auth — initial request (may trigger 401)
       const initialResponse = await fetchWithTimeout(
         url,
-        { method, headers, body: requestBody, dispatcher: httpsAgent },
+        { method, headers, body: requestBody, dispatcher: this.agent },
         timeout,
       );
 
@@ -262,7 +274,7 @@ export class PhilipsTVClient {
         method,
         headers: { ...headers, Authorization: authHeader },
         body,
-        dispatcher: httpsAgent,
+        dispatcher: this.agent,
       },
       timeout,
     );

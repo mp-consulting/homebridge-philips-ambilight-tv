@@ -102,6 +102,7 @@ export class StatePollManager {
         ip: this.config.ip,
         username: this.config.username,
         password: this.config.password,
+        certFingerprint: this.config.certFingerprint,
       },
       (msg) => this.log('debug', msg),
     );

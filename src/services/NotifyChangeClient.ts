@@ -9,7 +9,8 @@
 
 import { EventEmitter } from 'events';
 import { TV_API_PORT, TV_API_HTTP_PORT, TV_API_VERSION } from '../api/constants.js';
-import { fetchWithTimeout, httpsAgent, sanitizeForLog } from '../api/utils.js';
+import type { Dispatcher } from 'undici';
+import { createTvAgent, fetchWithTimeout, sanitizeForLog } from '../api/utils.js';
 import { DigestAuthSession } from '../api/DigestAuthSession.js';
 
 // ============================================================================
@@ -44,6 +45,8 @@ export interface NotifyChangeClientConfig {
   ip: string;
   username: string;
   password: string;
+  /** SHA-256 certificate fingerprint captured at pairing time, if available. */
+  certFingerprint?: string;
 }
 
 // ============================================================================
@@ -62,12 +65,16 @@ export class NotifyChangeClient extends EventEmitter {
   /** Independent digest auth session (separate from PhilipsTVClient) */
   private readonly authSession: DigestAuthSession;
 
+  /** Dispatcher pinned to this TV's certificate (unpinned on legacy configs) */
+  private readonly agent: Dispatcher;
+
   constructor(
     private readonly config: NotifyChangeClientConfig,
     private readonly debug: (message: string) => void,
   ) {
     super();
     this.authSession = new DigestAuthSession(config.username, config.password);
+    this.agent = createTvAgent({ certFingerprint: config.certFingerprint });
   }
 
   // ==========================================================================
@@ -139,9 +146,12 @@ export class NotifyChangeClient extends EventEmitter {
     const endpoint = `/${TV_API_VERSION}/notifychange`;
     const body = JSON.stringify({ notification: SUBSCRIBED_RESOURCES });
 
-    const allAttempts: Array<{ protocol: 'https' | 'http'; port: number; useAgent: boolean }> = [
-      { protocol: 'https', port: TV_API_PORT, useAgent: true },
-      { protocol: 'http', port: TV_API_HTTP_PORT, useAgent: false },
+    const allAttempts: Array<{ protocol: 'https' | 'http'; port: number }> = [
+      { protocol: 'https', port: TV_API_PORT },
+      // Plaintext fallback for older sets that never answer on 1926. Skipped
+      // once a certificate is pinned, since downgrading to HTTP would sidestep
+      // the pin entirely.
+      ...(this.config.certFingerprint ? [] : [{ protocol: 'http' as const, port: TV_API_HTTP_PORT }]),
     ];
 
     // If we already know which protocol works, only use that one
@@ -149,12 +159,12 @@ export class NotifyChangeClient extends EventEmitter {
       ? allAttempts.filter(a => a.protocol === this.workingProtocol)
       : allAttempts;
 
-    for (const { protocol, port, useAgent } of attempts) {
+    for (const { protocol, port } of attempts) {
       const url = `${protocol}://${this.config.ip}:${port}${endpoint}`;
       // Always use full timeout — the TV blocks until a state change occurs
 
       try {
-        const result = await this.doLongPollRequest(url, endpoint, body, useAgent, LONG_POLL_TIMEOUT_MS);
+        const result = await this.doLongPollRequest(url, endpoint, body, LONG_POLL_TIMEOUT_MS);
         if (result !== null) {
           if (!this.workingProtocol) {
             this.debug(`NotifyChange: ${protocol} confirmed working`);
@@ -181,7 +191,6 @@ export class NotifyChangeClient extends EventEmitter {
     url: string,
     uri: string,
     body: string,
-    useAgent: boolean,
     timeout: number,
   ): Promise<Record<string, unknown> | null> {
     this.abortController = new AbortController();
@@ -197,14 +206,14 @@ export class NotifyChangeClient extends EventEmitter {
       method: 'POST',
       headers,
       body,
-      ...(useAgent ? { dispatcher: httpsAgent } : {}),
+      dispatcher: this.agent,
     };
 
     const response = await fetchWithTimeout(url, options, timeout, this.abortController?.signal);
 
     if (response.status === 401) {
       this.authSession.clear();
-      return this.handleDigestChallenge(response, url, uri, body, useAgent);
+      return this.handleDigestChallenge(response, url, uri, body);
     }
 
     if (response.ok) {
@@ -223,7 +232,6 @@ export class NotifyChangeClient extends EventEmitter {
     url: string,
     uri: string,
     body: string,
-    useAgent: boolean,
   ): Promise<Record<string, unknown> | null> {
     const wwwAuth = response.headers.get('www-authenticate');
     if (!wwwAuth || !this.authSession.cacheFromChallenge(wwwAuth)) {
@@ -241,7 +249,7 @@ export class NotifyChangeClient extends EventEmitter {
         method: 'POST',
         headers,
         body,
-        ...(useAgent ? { dispatcher: httpsAgent } : {}),
+        dispatcher: this.agent,
       },
       LONG_POLL_TIMEOUT_MS,
       this.abortController?.signal,
