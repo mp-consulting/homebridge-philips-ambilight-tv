@@ -51,7 +51,8 @@ export class StatePollManager {
   private longPollRetryTimer?: ReturnType<typeof setTimeout>;
   private notifyClient: NotifyChangeClient | null = null;
   private longPollConfirmed = false;
-  private lastTvActivityRefresh = 0;
+  /** Timestamp of the last notification-driven refresh, used to throttle activities/tv */
+  private lastNotifyRefresh = 0;
 
   constructor(
     private readonly tvClient: PhilipsTVClient,
@@ -106,19 +107,24 @@ export class StatePollManager {
 
     this.notifyClient.on('notification', (data: Record<string, unknown>) => {
       const keys = Object.keys(data);
+      if (keys.length === 0) {
+        return;
+      }
 
+      // Any notification proves the long-poll channel is delivering, so the
+      // interval-poll baseline can stop — including on models that only ever
+      // push activities/tv, where the throttled refresh below already provides
+      // the same cadence the baseline did.
+      if (!this.longPollConfirmed) {
+        this.longPollConfirmed = true;
+        this.stopIntervalPolling();
+        this.log('info', 'Long-poll confirmed working, stopped interval polling');
+      }
+
+      // A resource we track changed — refresh immediately.
       const actionableKeys = keys.filter(k => k !== 'activities/tv');
       if (actionableKeys.length > 0) {
-        // A resource we track changed — refresh immediately. The first such
-        // notification also confirms the long-poll works, so we can drop the
-        // interval-poll baseline.
-        if (!this.longPollConfirmed) {
-          this.longPollConfirmed = true;
-          this.stopIntervalPolling();
-          this.log('info', 'Long-poll confirmed working, stopped interval polling');
-        }
-        this.log('debug', `NotifyChange trigger: ${actionableKeys.join(', ')}`);
-        this.pollState();
+        this.refresh(`NotifyChange trigger: ${actionableKeys.join(', ')}`);
         return;
       }
 
@@ -128,13 +134,10 @@ export class StatePollManager {
       // some models never report through activities/current. Refresh from it on
       // a throttle so those remote-driven changes still reach HomeKit without
       // polling the TV every second.
-      const now = Date.now();
-      if (now - this.lastTvActivityRefresh < TV_ACTIVITY_REFRESH_THROTTLE_MS) {
+      if (Date.now() - this.lastNotifyRefresh < TV_ACTIVITY_REFRESH_THROTTLE_MS) {
         return;
       }
-      this.lastTvActivityRefresh = now;
-      this.log('debug', 'NotifyChange trigger: activities/tv (throttled refresh)');
-      this.pollState();
+      this.refresh('NotifyChange trigger: activities/tv (throttled refresh)');
     });
 
     this.notifyClient.on('failed', () => {
@@ -156,6 +159,17 @@ export class StatePollManager {
     this.log('debug', 'Long-poll started (interval polling remains active until confirmed)');
   }
 
+  /**
+   * Run a state poll triggered by a notification. Stamping every such refresh
+   * — not just the throttled activities/tv ones — keeps an activities/tv tick
+   * arriving moments after an immediate refresh from firing a redundant poll.
+   */
+  private refresh(reason: string): void {
+    this.lastNotifyRefresh = Date.now();
+    this.log('debug', reason);
+    this.pollState();
+  }
+
   private stopLongPoll(): void {
     if (this.notifyClient) {
       this.notifyClient.stop();
@@ -163,6 +177,7 @@ export class StatePollManager {
       this.notifyClient = null;
     }
     this.longPollConfirmed = false;
+    this.lastNotifyRefresh = 0;
   }
 
   private scheduleLongPollRetry(): void {
