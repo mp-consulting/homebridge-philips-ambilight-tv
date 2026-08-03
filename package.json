@@ -2,7 +2,7 @@
   "name": "@mp-consulting/homebridge-philips-ambilight-tv",
   "displayName": "Philips Ambilight TV",
   "type": "module",
-  "version": "1.6.1",
+  "version": "1.6.2",
   "description": "Homebridge plugin to control Philips Ambilight TV as a HomeKit Television accessory.",
   "author": "Mickael Palma",
   "license": "(Apache-2.0 AND MIT)",
@@ -32,8 +32,8 @@
     "homebridge": "^1.8.0 || ^2.0.0-beta.0"
   },
   "scripts": {
-    "copy:ui-kit": "mkdir -p homebridge-ui/public/lib && cp node_modules/@mp-consulting/homebridge-ui-kit/dist/kit.css homebridge-ui/public/lib/ && cp node_modules/@mp-consulting/homebridge-ui-kit/dist/kit.js homebridge-ui/public/lib/",
-    "build": "npm run copy:ui-kit && rimraf ./dist && tsc",
+    "copy:ui-assets": "mkdir -p homebridge-ui/public/lib/fonts && cp node_modules/@mp-consulting/homebridge-ui-kit/dist/kit.css node_modules/@mp-consulting/homebridge-ui-kit/dist/kit.js homebridge-ui/public/lib/ && cp node_modules/bootstrap/dist/css/bootstrap.min.css node_modules/bootstrap/dist/js/bootstrap.bundle.min.js homebridge-ui/public/lib/ && cp node_modules/bootstrap-icons/font/bootstrap-icons.min.css homebridge-ui/public/lib/ && cp node_modules/bootstrap-icons/font/fonts/bootstrap-icons.woff node_modules/bootstrap-icons/font/fonts/bootstrap-icons.woff2 homebridge-ui/public/lib/fonts/",
+    "build": "npm run copy:ui-assets && rimraf ./dist && tsc",
     "lint": "eslint . --max-warnings=0",
     "prepublishOnly": "npm test && npm run lint && npm run build",
     "watch": "npm run build && npm link && nodemon",
@@ -55,6 +55,8 @@
     "@mp-consulting/homebridge-ui-kit": "^1.0.0",
     "@types/node": "^25.9.4",
     "@vitest/coverage-v8": "^4.1.5",
+    "bootstrap": "^5.3.3",
+    "bootstrap-icons": "^1.11.3",
     "eslint": "^10.6.0",
     "homebridge": "^2.1.0",
     "homebridge-config-ui-x": "^5.24.0",

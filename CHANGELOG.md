@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.6.2] - 2026-08-03
+
+### Fixed
+
+- **The plugin settings screen was broken: "Edit" did nothing and icons were missing.** Bootstrap's stylesheet, icon font and JavaScript bundle were loaded from a CDN, but the Homebridge UI serves plugin pages under a Content-Security-Policy that only permits `'self'` for scripts, styles and fonts — so all three were blocked in every installation. With the bundle blocked, `bootstrap` was undefined and clicking **Edit** threw `ReferenceError: Can't find variable: bootstrap` instead of opening the screen. Bootstrap and Bootstrap Icons are now shipped with the plugin and served locally, which also means the settings UI no longer needs internet access to render.
+
 ## [1.6.1] - 2026-08-03
 
 ### Fixed
