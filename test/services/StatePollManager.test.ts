@@ -376,6 +376,50 @@ describe('StatePollManager', () => {
       await vi.advanceTimersByTimeAsync(20_000);
       expect((tvClient.getPowerState as ReturnType<typeof vi.fn>).mock.calls.length).toBe(callCount);
     });
+
+    it('should refresh state from an activities/tv-only notification (remote-driven change)', async () => {
+      (tvClient.getPowerState as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+      (tvClient.getVolume as ReturnType<typeof vi.fn>).mockResolvedValue({ current: 10, muted: false });
+      manager = new StatePollManager(tvClient, TEST_CONFIG, callbacks, debugLog);
+      manager.start();
+      await vi.advanceTimersByTimeAsync(5100);
+
+      const latestClient = notifyInstances[notifyInstances.length - 1];
+      const before = (tvClient.getCurrentActivity as ReturnType<typeof vi.fn>).mock.calls.length;
+
+      // The TV reports a source change made with the physical remote only via
+      // activities/tv — this must still trigger a full state poll.
+      latestClient.emit('notification', { 'activities/tv': {} });
+      await vi.advanceTimersByTimeAsync(100);
+
+      expect((tvClient.getCurrentActivity as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(before);
+    });
+
+    it('should throttle repeated activities/tv-only notifications', async () => {
+      (tvClient.getPowerState as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+      (tvClient.getVolume as ReturnType<typeof vi.fn>).mockResolvedValue({ current: 10, muted: false });
+      manager = new StatePollManager(tvClient, TEST_CONFIG, callbacks, debugLog);
+      manager.start();
+      await vi.advanceTimersByTimeAsync(5100);
+
+      const latestClient = notifyInstances[notifyInstances.length - 1];
+      latestClient.emit('notification', { 'activities/tv': {} });
+      await vi.advanceTimersByTimeAsync(100);
+      const afterFirst = (tvClient.getCurrentActivity as ReturnType<typeof vi.fn>).mock.calls.length;
+
+      // A burst of further activities/tv ticks within the throttle window must
+      // not each trigger a poll.
+      latestClient.emit('notification', { 'activities/tv': {} });
+      latestClient.emit('notification', { 'activities/tv': {} });
+      await vi.advanceTimersByTimeAsync(100);
+      expect((tvClient.getCurrentActivity as ReturnType<typeof vi.fn>).mock.calls.length).toBe(afterFirst);
+
+      // Past the throttle window, the next tick refreshes again.
+      await vi.advanceTimersByTimeAsync(10_000);
+      latestClient.emit('notification', { 'activities/tv': {} });
+      await vi.advanceTimersByTimeAsync(100);
+      expect((tvClient.getCurrentActivity as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(afterFirst);
+    });
   });
 
   // ==========================================================================
