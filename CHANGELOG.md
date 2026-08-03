@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.6.3] - 2026-08-03
+
+### Fixed
+
+- **HAP-NodeJS warned that the "Ambilight + Hue" switch had an invalid name.** HomeKit only accepts letters, numbers, spaces and a small set of punctuation in an accessory name, and `+` is not among them. The TV's own name and the app names read from the TV were already passed through the plugin's sanitizer (which renders Disney+ as "Disney Plus"), but the switch's label was a hardcoded string appended afterwards, so the `+` survived into the `Name` characteristic. Apple warns that such a name can stop an accessory being added in the Home app or leave it unresponsive. The switch is now called **Ambilight Plus Hue**. Existing installs are migrated automatically, unless the tile was renamed in the Home app — in that case your name is kept.
+
 ## [1.6.2] - 2026-08-03
 
 ### Fixed

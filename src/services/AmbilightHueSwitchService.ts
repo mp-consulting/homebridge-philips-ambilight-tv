@@ -20,6 +20,16 @@ export interface AmbilightHueSwitchDeps {
 
 const SWITCH_SUBTYPE = 'ambilight-hue-switch';
 
+/**
+ * Switch label. HomeKit rejects '+' in a Name characteristic, so the feature
+ * Philips brands "Ambilight+hue" is spelled out — matching how
+ * `sanitizeForHomeKit` renders '+' in TV-supplied app names (Disney+ → Disney Plus).
+ */
+const SWITCH_LABEL = 'Ambilight Plus Hue';
+
+/** The pre-1.6.3 label, written to ConfiguredName on installs created before the rename. */
+const LEGACY_SWITCH_LABEL = 'Ambilight + Hue';
+
 // ============================================================================
 // AMBILIGHT + HUE SWITCH SERVICE
 // ============================================================================
@@ -43,13 +53,17 @@ export class AmbilightHueSwitchService {
 
   configureSwitch(accessory: PlatformAccessory, tvName: string): void {
     const { Service: Svc, Characteristic: Char } = this.deps;
-    const displayName = `${tvName} Ambilight + Hue`;
+    const displayName = `${tvName} ${SWITCH_LABEL}`;
 
     let service = accessory.getServiceById(Svc.Switch, SWITCH_SUBTYPE);
     if (!service) {
       service = accessory.addService(Svc.Switch, displayName, SWITCH_SUBTYPE);
       service.addOptionalCharacteristic(Char.ConfiguredName);
-      service.setCharacteristic(Char.ConfiguredName, 'Ambilight + Hue');
+      service.setCharacteristic(Char.ConfiguredName, SWITCH_LABEL);
+    } else if (service.getCharacteristic(Char.ConfiguredName).value === LEGACY_SWITCH_LABEL) {
+      // Migrate installs that stored the old label, but only when it is still
+      // untouched — a value the user changed in the Home app must not be clobbered.
+      service.setCharacteristic(Char.ConfiguredName, SWITCH_LABEL);
     }
 
     service.setCharacteristic(Char.Name, displayName);

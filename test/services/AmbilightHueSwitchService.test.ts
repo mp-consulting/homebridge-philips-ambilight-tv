@@ -92,7 +92,25 @@ describe('AmbilightHueSwitchService', () => {
       service.configureSwitch(accessory as never, 'TV');
 
       expect(accessory.addService).toHaveBeenCalledTimes(1);
-      expect(accessory.addService).toHaveBeenCalledWith(expect.anything(), 'TV Ambilight + Hue', 'ambilight-hue-switch');
+      expect(accessory.addService).toHaveBeenCalledWith(expect.anything(), 'TV Ambilight Plus Hue', 'ambilight-hue-switch');
+    });
+
+    it('should give the switch a name HomeKit accepts', () => {
+      // HAP rejects anything outside letters, numbers, spaces and a small set of
+      // punctuation — '+' among them — so the label must not reintroduce one.
+      const hapNameRegex = /^[\p{L}\p{N}][\p{L}\p{N}\p{Zs}’'&!._:;()/,-]*[\p{L}\p{N}]$/u;
+      const service = new AmbilightHueSwitchService(createMockDeps());
+      const accessory = createMockAccessory();
+
+      service.configureSwitch(accessory as never, 'TV');
+
+      const name = accessory.addService.mock.calls[0][1] as string;
+      expect(name).toMatch(hapNameRegex);
+
+      const sw = accessory.services[0];
+      const configuredName = sw.setCharacteristic.mock.calls
+        .find(([char]) => (char as { UUID: string }).UUID === 'configured-name')![1] as string;
+      expect(configuredName).toMatch(hapNameRegex);
     });
 
     it('should reuse an existing switch service', () => {
@@ -104,6 +122,34 @@ describe('AmbilightHueSwitchService', () => {
       service.configureSwitch(accessory as never, 'TV');
 
       expect(accessory.addService).not.toHaveBeenCalled();
+    });
+
+    it('should migrate an untouched legacy ConfiguredName', () => {
+      const service = new AmbilightHueSwitchService(createMockDeps());
+      const accessory = createMockAccessory();
+      const existing = createMockService('ambilight-hue-switch');
+      existing.getCharacteristic({ UUID: 'configured-name' }).value = 'Ambilight + Hue';
+      accessory.getServiceById = vi.fn().mockReturnValue(existing);
+
+      service.configureSwitch(accessory as never, 'TV');
+
+      expect(existing.setCharacteristic).toHaveBeenCalledWith(
+        expect.objectContaining({ UUID: 'configured-name' }), 'Ambilight Plus Hue',
+      );
+    });
+
+    it('should not clobber a ConfiguredName the user changed', () => {
+      const service = new AmbilightHueSwitchService(createMockDeps());
+      const accessory = createMockAccessory();
+      const existing = createMockService('ambilight-hue-switch');
+      existing.getCharacteristic({ UUID: 'configured-name' }).value = 'Hue Sync';
+      accessory.getServiceById = vi.fn().mockReturnValue(existing);
+
+      service.configureSwitch(accessory as never, 'TV');
+
+      expect(existing.setCharacteristic).not.toHaveBeenCalledWith(
+        expect.objectContaining({ UUID: 'configured-name' }), expect.anything(),
+      );
     });
   });
 
