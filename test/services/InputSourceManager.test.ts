@@ -844,6 +844,70 @@ describe('InputSourceManager', () => {
       expect(manager.hasPendingWakeSelection()).toBe(false);
     });
 
+    it('should drop a parked selection once a live switch takes over', async () => {
+      // Park while off, then let the TV come up and the user pick something
+      // else. The parked choice must not fire later and drag the TV back.
+      let powered = false;
+      const { deps, manager, app } = setup({ isPoweredOn: () => powered, isWaking: () => false });
+      const watchTv = manager.getSources().find(s => s.id === WATCH_TV_URI)!;
+
+      await manager.handleSetInput(app.identifier);
+      expect(manager.hasPendingWakeSelection()).toBe(true);
+
+      powered = true;
+      await manager.handleSetInput(watchTv.identifier);
+
+      expect(manager.hasPendingWakeSelection()).toBe(false);
+      await manager.replayWakeSelection();
+      expect(deps.tvClient.launchApplication).not.toHaveBeenCalled();
+    });
+
+    it('should abandon a replay already under way when a newer selection lands', async () => {
+      let powered = false;
+      const { deps, manager, app } = setup({ isPoweredOn: () => powered, isWaking: () => false });
+      const watchTv = manager.getSources().find(s => s.id === WATCH_TV_URI)!;
+      const launch = deps.tvClient.launchApplication as ReturnType<typeof vi.fn>;
+
+      await manager.handleSetInput(app.identifier);
+
+      // The TV comes up but keeps rejecting the parked app, so the replay is
+      // mid-retry when the user picks something else.
+      powered = true;
+      launch.mockResolvedValue(false);
+      const replay = manager.replayWakeSelection();
+      await manager.handleSetInput(watchTv.identifier);
+      await vi.advanceTimersByTimeAsync(20_000);
+      await replay;
+
+      expect(deps.tvClient.launchWatchTV).toHaveBeenCalled();
+      expect(deps.log).toHaveBeenCalledWith('debug', expect.stringContaining('superseded'));
+    });
+
+    it('should hold a source-switch request and the wheel to one outcome', async () => {
+      // A scene writes ActiveIdentifier and a source switch at the same moment.
+      // Both go through the same arbiter, so only the later one reaches the TV.
+      const { deps, manager, app } = setup({ isPoweredOn: () => true, isWaking: () => false });
+      const watchTv = manager.getSources().find(s => s.id === WATCH_TV_URI)!;
+
+      await Promise.all([
+        manager.handleSetInput(watchTv.identifier),
+        manager.requestSwitchById(app.id),
+      ]);
+
+      expect(deps.tvClient.launchApplication).toHaveBeenCalled();
+      expect(deps.tvClient.launchWatchTV).not.toHaveBeenCalled();
+      expect(manager.currentId).toBe(app.identifier);
+    });
+
+    it('should align the source switches with a parked selection', async () => {
+      const onInputSwitched = vi.fn();
+      const { manager, app } = setup({ isPoweredOn: () => false, onInputSwitched });
+
+      await manager.handleSetInput(app.identifier);
+
+      expect(onInputSwitched).toHaveBeenCalledWith(app.id);
+    });
+
     it('should switch normally when no power hooks are supplied', async () => {
       const { deps, manager, app } = setup();
 
@@ -957,11 +1021,11 @@ describe('InputSourceManager', () => {
   });
 
   // ==========================================================================
-  // SET ACTIVE INPUT BY ID
+  // SOURCE SWITCH REQUESTS (issue #17 — switches racing the wheel)
   // ==========================================================================
 
-  describe('setActiveInputById', () => {
-    it('should update ActiveIdentifier from a source ID', () => {
+  describe('requestSwitchById', () => {
+    it('should launch the source and take the wheel with it', async () => {
       const deps = createMockDeps({
         userInputs: [{ identifier: 'com.netflix.ninja', name: 'Netflix', type: 'app' }],
       });
@@ -970,22 +1034,37 @@ describe('InputSourceManager', () => {
       manager.configureInputSources(tvService as never);
 
       const netflixSource = manager.getSources().find(s => s.id === 'com.netflix.ninja');
-      manager.setActiveInputById('com.netflix.ninja');
+      await manager.requestSwitchById('com.netflix.ninja');
 
+      expect(deps.tvClient.launchApplication).toHaveBeenCalledWith('com.netflix.ninja', undefined, undefined);
       expect(manager.currentId).toBe(netflixSource!.identifier);
-      expect(tvService.updateCharacteristic).toHaveBeenCalled();
     });
 
-    it('should ignore unknown source IDs', () => {
+    it('should reject an unknown source ID', async () => {
       const deps = createMockDeps();
       const manager = new InputSourceManager(deps);
       const tvService = createMockService();
       manager.configureInputSources(tvService as never);
 
       const initialId = manager.currentId;
-      manager.setActiveInputById('com.unknown.app');
+      await expect(manager.requestSwitchById('com.unknown.app')).rejects.toThrow();
 
       expect(manager.currentId).toBe(initialId);
+    });
+
+    it('should park a source-switch request made while the TV is off', async () => {
+      const deps = createMockDeps({
+        userInputs: [{ identifier: 'com.netflix.ninja', name: 'Netflix', type: 'app' }],
+        isPoweredOn: () => false,
+      });
+      const manager = new InputSourceManager(deps);
+      const tvService = createMockService();
+      manager.configureInputSources(tvService as never);
+
+      await manager.requestSwitchById('com.netflix.ninja');
+
+      expect(deps.tvClient.launchApplication).not.toHaveBeenCalled();
+      expect(manager.hasPendingWakeSelection()).toBe(true);
     });
   });
 

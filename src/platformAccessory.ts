@@ -91,12 +91,11 @@ export class PhilipsAmbilightTVAccessory {
     this.sourceSwitchService = new SourceSwitchService({
       Service: this.Service,
       Characteristic: this.Characteristic,
-      tvClient: this.tvClient,
       storagePath: platform.api.user.storagePath(),
       deviceId: this.config.mac,
       communicationError: () => this.communicationError(),
       log: (level, msg) => this.log(level, msg),
-      onSourceSwitch: (sourceId) => this.inputSourceManager.setActiveInputById(sourceId),
+      requestSource: (sourceId) => this.inputSourceManager.requestSwitchById(sourceId),
     });
 
     this.stateSensorService = new StateSensorService({
@@ -266,10 +265,22 @@ export class PhilipsAmbilightTVAccessory {
       if (success) {
         this.isPoweredOn = shouldBeOn;
         this.powerOnAt = shouldBeOn ? Date.now() : null;
-        // Reflect a power-off immediately instead of waiting for the next poll
-        // (up to the polling interval away), so the source switches don't linger
-        // ON for several seconds after the user turns the TV off from HomeKit.
-        if (!shouldBeOn) {
+        if (shouldBeOn) {
+          // Drive the parked selection from here rather than waiting for the
+          // poll to notice the transition. The poll only reports an *edge*, and
+          // a TV switched off again a few seconds later never presents one — so
+          // a source picked by the same scene was parked and then silently
+          // never applied (issue #17). Replaying is idempotent: whichever of
+          // this and the poll's edge arrives first takes the parked selection.
+          if (this.inputSourceManager.hasPendingWakeSelection()) {
+            void this.inputSourceManager.replayWakeSelection();
+          }
+        } else {
+          // Reflect a power-off immediately instead of waiting for the next poll
+          // (up to the polling interval away), so the source switches don't linger
+          // ON for several seconds after the user turns the TV off from HomeKit.
+          // An explicit off also retires a selection the user has moved on from.
+          this.inputSourceManager.clearWakeSelection();
           this.onPowerChange(false);
         }
         this.log('debug', `Power state changed to ${shouldBeOn ? 'ON' : 'OFF'}`);

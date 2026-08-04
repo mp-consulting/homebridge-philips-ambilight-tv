@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => ({
   switchUpdateFromPoll: vi.fn(),
   hasPendingWakeSelection: vi.fn().mockReturnValue(false),
   replayWakeSelection: vi.fn().mockResolvedValue(undefined),
+  clearWakeSelection: vi.fn(),
 }));
 
 /** Holder for the poll callbacks the accessory hands to StatePollManager,
@@ -56,10 +57,11 @@ vi.mock('../src/services/InputSourceManager.js', () => ({
     handleSetInput = vi.fn();
     handleRemoteKey = vi.fn();
     updateFromPoll = mocks.inputUpdateFromPoll;
-    setActiveInputById = vi.fn();
+    requestSwitchById = vi.fn();
     fetchAppsFromTV = mocks.fetchAppsFromTV;
     hasPendingWakeSelection = mocks.hasPendingWakeSelection;
     replayWakeSelection = mocks.replayWakeSelection;
+    clearWakeSelection = mocks.clearWakeSelection;
     markAwaitingWakeAlignment = vi.fn();
     constructor(deps: unknown) {
       capture.inputManagerDeps = deps;
@@ -273,6 +275,56 @@ describe('PhilipsAmbilightTVAccessory power handling', () => {
 
     expect(mocks.setPowerState).not.toHaveBeenCalled();
     expect(mocks.resetAll).not.toHaveBeenCalled();
+  });
+
+  // ==========================================================================
+  // PARKED SELECTION (issue #17 — scene source never applied)
+  // ==========================================================================
+
+  describe('parked selection and the power edge', () => {
+    it('replays a parked selection when HomeKit turns the TV on', async () => {
+      // The poll only reports an *edge*. A TV switched off again seconds later
+      // never presents one, so the power-on path must drive the replay itself.
+      mocks.hasPendingWakeSelection.mockReturnValue(true);
+      const { platform, accessory, services } = createMocks();
+      new PhilipsAmbilightTVAccessory(platform as never, accessory as never);
+
+      await setPower(services, true);
+
+      expect(mocks.replayWakeSelection).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not replay when nothing is parked', async () => {
+      mocks.hasPendingWakeSelection.mockReturnValue(false);
+      const { platform, accessory, services } = createMocks();
+      new PhilipsAmbilightTVAccessory(platform as never, accessory as never);
+
+      await setPower(services, true);
+
+      expect(mocks.replayWakeSelection).not.toHaveBeenCalled();
+    });
+
+    it('drops a parked selection when the user turns the TV off', async () => {
+      const { platform, accessory, services } = createMocks();
+      new PhilipsAmbilightTVAccessory(platform as never, accessory as never);
+
+      await setPower(services, true);
+      await setPower(services, false);
+
+      expect(mocks.clearWakeSelection).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps a parked selection when the TV merely reports standby', async () => {
+      // A TV mid-boot reports standby transiently — discarding on those reports
+      // would defeat the parking entirely.
+      const { platform, accessory } = createMocks();
+      new PhilipsAmbilightTVAccessory(platform as never, accessory as never);
+      const cb = capture.pollCallbacks as { onPowerChange: (on: boolean) => void };
+
+      cb.onPowerChange(false);
+
+      expect(mocks.clearWakeSelection).not.toHaveBeenCalled();
+    });
   });
 
   describe('active-source sync on power-on', () => {

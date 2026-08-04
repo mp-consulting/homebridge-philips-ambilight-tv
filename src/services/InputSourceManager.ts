@@ -230,8 +230,13 @@ export class InputSourceManager {
   private switchGeneration = 0;
 
   /** Selection made while the TV was off or still waking, held until the TV is
-   *  reachable. See WAKE_REPLAY_WINDOW_MS. */
-  private wakeSelection: { input: InputSource; parkedAt: number } | null = null;
+   *  reachable. Carries the generation it was requested under so any newer
+   *  request — parked or launched, wheel or source switch — supersedes it.
+   *  See WAKE_REPLAY_WINDOW_MS. */
+  private wakeSelection: { input: InputSource; generation: number; parkedAt: number } | null = null;
+
+  /** True while a parked selection is actually being replayed. */
+  private replayInFlight = false;
 
   /** Tracks consecutive sightings of an ambiguous system report (NA / playtv)
    *  so a lone transitional report is never applied. See AMBIGUOUS_CONFIRM_*. */
@@ -278,19 +283,6 @@ export class InputSourceManager {
 
   getSources(): readonly InputSource[] {
     return this.inputSources;
-  }
-
-  /** Update ActiveIdentifier on the Television service from a source ID (e.g. from a source switch). */
-  setActiveInputById(sourceId: string): void {
-    const inputSource = this.inputSources.find(i => i.id === sourceId);
-    if (inputSource && inputSource.identifier !== this.currentInputId) {
-      this.currentInputId = inputSource.identifier;
-      this.markPending(inputSource.identifier);
-      if (this.tvService) {
-        this.tvService.updateCharacteristic(this.deps.Characteristic.ActiveIdentifier, this.currentInputId);
-      }
-      this.deps.log('debug', `Input updated: ${inputSource.name}`);
-    }
   }
 
   /** Record a manual switch so contradicting polls are ignored for a while. */
@@ -525,6 +517,45 @@ export class InputSourceManager {
     }
 
     this.deps.log('info', `Switching to: ${inputSource.name}`);
+    return this.requestSwitch(inputSource);
+  }
+
+  /**
+   * Apply a selection made through a source switch (the Switch service mirror
+   * of an input). Routed through the same arbiter as the wheel so the two
+   * HomeKit representations of a source cannot race: a Home scene captures
+   * both the Television's ActiveIdentifier and any source switches it contains
+   * and writes them at the same moment, which previously produced two
+   * independent launches fighting over the TV (issue #17).
+   */
+  async requestSwitchById(sourceId: string): Promise<void> {
+    const inputSource = this.inputSources.find(i => i.id === sourceId);
+    if (!inputSource) {
+      this.deps.log('warn', `Unknown source: ${sourceId}`);
+      throw this.deps.communicationError();
+    }
+    return this.requestSwitch(inputSource);
+  }
+
+  /**
+   * The single entry point every source selection goes through, whatever
+   * HomeKit control it came from. Owns the launch queue, the latest-wins
+   * generation counter and the parked wake selection, so exactly one selection
+   * is ever outstanding.
+   */
+  private async requestSwitch(inputSource: InputSource): Promise<void> {
+    // Coalesce bursts of selections: launches run one at a time, and a
+    // selection that is superseded while waiting is skipped entirely. Without
+    // this, every intermediate selection launched on the TV back-to-back —
+    // the requests piled up until the newest (the one the user actually
+    // wanted) was dropped by the client queue or blew HomeKit's 10s callback
+    // deadline, leaving the wheel showing "No Response" until reopened.
+    const generation = ++this.switchGeneration;
+
+    // This request supersedes anything parked earlier. Leaving the old one in
+    // place let a stale choice fire on the next wake and drag the TV off the
+    // source the user had since picked.
+    this.wakeSelection = null;
 
     // The TV is off. A HomeKit scene that turns the TV on and picks a source
     // writes Active and ActiveIdentifier as two independent characteristics
@@ -532,29 +563,22 @@ export class InputSourceManager {
     // even been sent. Launching now would fail against a TV that is not up;
     // park the choice and apply it when the TV reports in.
     if (this.deps.isPoweredOn?.() === false) {
-      this.parkForWake(inputSource, 'TV is off');
+      this.parkForWake(inputSource, generation, 'TV is off');
       return;
     }
 
-    // Coalesce bursts of wheel moves: launches run one at a time, and a
-    // selection that is superseded while waiting is skipped entirely. Without
-    // this, every intermediate selection launched on the TV back-to-back —
-    // the requests piled up until the newest (the one the user actually
-    // wanted) was dropped by the client queue or blew HomeKit's 10s callback
-    // deadline, leaving the wheel showing "No Response" until reopened.
-    const generation = ++this.switchGeneration;
     const task = this.switchQueue.then(async () => {
       if (generation !== this.switchGeneration) {
         this.deps.log('debug', `Skipping superseded switch to ${inputSource.name}`);
         return;
       }
-      await this.performSwitch(inputSource);
+      await this.performSwitch(inputSource, generation);
     });
     this.switchQueue = task.then(() => {}, () => {});
     return task;
   }
 
-  private async performSwitch(inputSource: InputSource): Promise<void> {
+  private async performSwitch(inputSource: InputSource, generation: number): Promise<void> {
     try {
       const success = await this.switchInput(inputSource);
       if (success) {
@@ -576,9 +600,12 @@ export class InputSourceManager {
       // The TV acknowledges /powerstate well before its launcher is ready, so
       // a launch fired moments after a power-on can be rejected by a TV that is
       // still booting. Park it rather than reporting failure — the same scene
-      // case as above, just with the power write having landed first.
+      // case as above, just with the power write having landed first. A
+      // selection already superseded by a newer one is simply dropped.
       if (this.deps.isWaking?.()) {
-        this.parkForWake(inputSource, 'TV is still waking');
+        if (generation === this.switchGeneration) {
+          this.parkForWake(inputSource, generation, 'TV is still waking');
+        }
         return;
       }
 
@@ -605,10 +632,13 @@ export class InputSourceManager {
    * HomeKit. Reporting an error instead would bounce the wheel back and make
    * the scene look broken, when the request is simply early.
    */
-  private parkForWake(input: InputSource, reason: string): void {
-    this.wakeSelection = { input, parkedAt: Date.now() };
+  private parkForWake(input: InputSource, generation: number, reason: string): void {
+    this.wakeSelection = { input, generation, parkedAt: Date.now() };
     this.currentInputId = input.identifier;
     this.tvService?.updateCharacteristic(this.deps.Characteristic.ActiveIdentifier, input.identifier);
+    // Show the parked choice on the source switches too, so the wheel and the
+    // switches agree on what was asked for while the TV catches up.
+    this.deps.onInputSwitched?.(input.id);
     this.deps.log('info', `${reason} — will switch to ${input.name} once it is ready`);
 
     // If the TV already reports on, the power-on edge that drives the replay
@@ -620,9 +650,27 @@ export class InputSourceManager {
     }
   }
 
-  /** True when a selection is waiting to be applied on wake. */
+  /** True when a selection is parked, or is being replayed right now. The
+   *  in-flight case matters because the replay clears the parked slot as it
+   *  starts: without it the caller would decide nothing was outstanding and
+   *  read the TV's current source back over the switch still in progress. */
   hasPendingWakeSelection(): boolean {
-    return this.wakeSelection !== null;
+    return this.wakeSelection !== null || this.replayInFlight;
+  }
+
+  /**
+   * Drop a parked selection. Called when the user explicitly turns the TV off:
+   * the request they made before doing so is no longer wanted, and holding it
+   * meant a later power-on replayed a source the user had moved on from.
+   *
+   * Only an explicit power-off clears it — a TV mid-boot reports standby
+   * transiently, and discarding on those reports would defeat the parking.
+   */
+  clearWakeSelection(): void {
+    if (this.wakeSelection) {
+      this.deps.log('debug', `Dropping pending switch to ${this.wakeSelection.input.name} — TV turned off`);
+      this.wakeSelection = null;
+    }
   }
 
   /**
@@ -642,9 +690,21 @@ export class InputSourceManager {
       return;
     }
 
+    this.replayInFlight = true;
+    try {
+      await this.runWakeReplay(parked);
+    } finally {
+      this.replayInFlight = false;
+    }
+  }
+
+  private async runWakeReplay(parked: { input: InputSource; generation: number }): Promise<void> {
     for (let attempt = 1; attempt <= WAKE_REPLAY_ATTEMPTS; attempt++) {
       // A newer selection while we were waiting wins — the user has moved on.
-      if (this.wakeSelection !== null) {
+      // The generation covers both a fresh park and a live launch, either of
+      // which makes this replay obsolete.
+      if (this.switchGeneration !== parked.generation) {
+        this.deps.log('debug', `Abandoning pending switch to ${parked.input.name} — superseded`);
         return;
       }
 

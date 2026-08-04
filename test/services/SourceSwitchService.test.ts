@@ -60,19 +60,11 @@ function createMockDeps(): SourceSwitchDeps {
       ConfiguredName: { UUID: 'configured-name' },
       On: { UUID: 'on' },
     } as never,
-    tvClient: {
-      launchApplication: vi.fn().mockResolvedValue(true),
-      setSource: vi.fn().mockResolvedValue(true),
-      setChannel: vi.fn().mockResolvedValue(true),
-      sendKey: vi.fn().mockResolvedValue(true),
-      launchWatchTV: vi.fn().mockResolvedValue(true),
-      launchHome: vi.fn().mockResolvedValue(true),
-    } as never,
     storagePath: '/tmp/test',
     deviceId: 'AA:BB:CC:DD:EE:FF',
     communicationError: () => new Error('comm error') as never,
     log: vi.fn(),
-    onSourceSwitch: vi.fn(),
+    requestSource: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -314,91 +306,68 @@ describe('SourceSwitchService', () => {
   // ==========================================================================
 
   describe('switch ON', () => {
-    it('should launch an app when its switch is turned on', async () => {
-      const deps = createMockDeps();
+    /** Turn a switch on and return the deps used, for assertions. */
+    function turnOn(deps: SourceSwitchDeps, subtype: string, sources = TEST_SOURCES) {
       const service = new SourceSwitchService(deps);
       const accessory = createMockAccessory();
+      service.configureSwitches(accessory as never, sources as never, 'TV');
 
-      service.configureSwitches(accessory as never, TEST_SOURCES, 'TV');
-
-      // Get the onSet handler for Netflix switch
-      const netflixSwitch = accessory.services.find(s => s.subtype === 'source-switch-com.netflix.ninja')!;
-      const onChar = netflixSwitch.getCharacteristic({ UUID: 'on' });
+      const target = accessory.services.find(s => s.subtype === subtype)!;
+      const onChar = target.getCharacteristic({ UUID: 'on' });
       const onSetHandler = onChar.onSet.mock.calls[0][0] as (v: unknown) => Promise<void>;
 
-      await onSetHandler(true);
+      return { service, accessory, target, run: () => onSetHandler(true) };
+    }
 
-      expect(deps.tvClient.launchApplication).toHaveBeenCalledWith('com.netflix.ninja', undefined, undefined);
+    it('should delegate an app switch to the input manager instead of launching it', async () => {
+      const deps = createMockDeps();
+      const { run } = turnOn(deps, 'source-switch-com.netflix.ninja');
+
+      await run();
+
+      expect(deps.requestSource).toHaveBeenCalledWith('com.netflix.ninja');
     });
 
-    it('should call onSourceSwitch callback after successful switch', async () => {
+    it('should delegate an HDMI switch to the input manager', async () => {
       const deps = createMockDeps();
-      const service = new SourceSwitchService(deps);
-      const accessory = createMockAccessory();
+      const { run } = turnOn(deps, 'source-switch-content://android.media.tv/passthrough/HW5');
 
-      service.configureSwitches(accessory as never, TEST_SOURCES, 'TV');
+      await run();
 
-      const netflixSwitch = accessory.services.find(s => s.subtype === 'source-switch-com.netflix.ninja')!;
-      const onChar = netflixSwitch.getCharacteristic({ UUID: 'on' });
-      const onSetHandler = onChar.onSet.mock.calls[0][0] as (v: unknown) => Promise<void>;
-
-      await onSetHandler(true);
-
-      expect(deps.onSourceSwitch).toHaveBeenCalledWith('com.netflix.ninja');
+      expect(deps.requestSource).toHaveBeenCalledWith('content://android.media.tv/passthrough/HW5');
     });
 
-    it('should set source when an HDMI switch is turned on', async () => {
+    it('should delegate a channel switch to the input manager', async () => {
       const deps = createMockDeps();
-      const service = new SourceSwitchService(deps);
-      const accessory = createMockAccessory();
+      const { run } = turnOn(deps, 'source-switch-42');
 
-      service.configureSwitches(accessory as never, TEST_SOURCES, 'TV');
+      await run();
 
-      const hdmiSwitch = accessory.services.find(s => s.subtype === 'source-switch-content://android.media.tv/passthrough/HW5')!;
-      const onChar = hdmiSwitch.getCharacteristic({ UUID: 'on' });
-      const onSetHandler = onChar.onSet.mock.calls[0][0] as (v: unknown) => Promise<void>;
-
-      await onSetHandler(true);
-
-      expect(deps.tvClient.setSource).toHaveBeenCalledWith('content://android.media.tv/passthrough/HW5');
+      expect(deps.requestSource).toHaveBeenCalledWith('42');
     });
 
-    it('should launch Home screen via sendKey when Home switch is turned on', async () => {
+    it('should light the switch up while the request is still being applied', async () => {
       const deps = createMockDeps();
-      const service = new SourceSwitchService(deps);
-      const accessory = createMockAccessory();
+      // A request parked for a waking TV resolves without ever reaching the TV.
+      const { target, run } = turnOn(deps, 'source-switch-com.netflix.ninja');
 
-      const sources = [
-        { id: 'virtual:home', name: 'Home', type: 'source' as const },
-      ];
+      await run();
 
-      service.configureSwitches(accessory as never, sources, 'TV');
-
-      const homeSwitch = accessory.services.find(s => s.subtype === 'source-switch-virtual:home')!;
-      const onChar = homeSwitch.getCharacteristic({ UUID: 'on' });
-      const onSetHandler = onChar.onSet.mock.calls[0][0] as (v: unknown) => Promise<void>;
-
-      await onSetHandler(true);
-
-      expect(deps.tvClient.launchHome).toHaveBeenCalled();
-      expect(deps.tvClient.setSource).not.toHaveBeenCalled();
+      expect(target.updateCharacteristic).toHaveBeenCalledWith(
+        expect.objectContaining({ UUID: 'on' }), true,
+      );
     });
 
-    it('should activate TV tuner before switching to a channel', async () => {
+    it('should turn the switch back off when the TV refuses the source', async () => {
       const deps = createMockDeps();
-      const service = new SourceSwitchService(deps);
-      const accessory = createMockAccessory();
+      (deps.requestSource as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('nope'));
+      const { target, run } = turnOn(deps, 'source-switch-com.netflix.ninja');
 
-      service.configureSwitches(accessory as never, TEST_SOURCES, 'TV');
+      await expect(run()).rejects.toThrow();
 
-      const channelSwitch = accessory.services.find(s => s.subtype === 'source-switch-42')!;
-      const onChar = channelSwitch.getCharacteristic({ UUID: 'on' });
-      const onSetHandler = onChar.onSet.mock.calls[0][0] as (v: unknown) => Promise<void>;
-
-      await onSetHandler(true);
-
-      expect(deps.tvClient.launchWatchTV).toHaveBeenCalled();
-      expect(deps.tvClient.setChannel).toHaveBeenCalledWith(42, 'allcab');
+      const onCalls = target.updateCharacteristic.mock.calls
+        .filter((c: unknown[]) => (c[0] as { UUID: string }).UUID === 'on');
+      expect(onCalls.at(-1)).toEqual([expect.objectContaining({ UUID: 'on' }), false]);
     });
   });
 

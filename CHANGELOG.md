@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.6.5] - 2026-08-04
+
+### Fixed
+
+- **Scenes that pick a source still landed on the wrong app, or on none at all** ([#17](https://github.com/mp-consulting/homebridge-philips-ambilight-tv/issues/17)): v1.6.4 taught the input wheel to hold a source until the TV had finished waking, but a source is exposed to HomeKit twice — as an entry on the wheel and as its own switch — and the switches were left launching on their own. A Home scene captures both, writes them at the same moment, and the two launches then fought over the TV: one would win on screen while the other won in the Home app, which is why a switch would light up and then go out again with the right app playing. Both now go through one place, so a scene produces exactly one launch and the Home app shows what the TV is actually on.
+- **A source picked as part of turning the TV on was sometimes never applied.** The held selection was waiting for the next poll to notice the TV had come on. A TV switched off again a few seconds later never gives it that moment, so the selection sat there and quietly expired. Turning the TV on now applies it directly.
+- **Turning the TV off no longer leaves a source waiting to fire.** A source picked just before switching off could still be applied on the next power-on, dragging the TV off whatever had been chosen since. An explicit off now retires it — a TV reporting standby while it boots does not, so a scene's source is still held across the wake it was meant for.
+- **Source switches no longer flicker off while the TV wakes.** A switch turned on for a TV that is still starting up stays on, matching how the wheel already behaved, and only goes back to the previous source if the TV genuinely refuses.
+
 ## [1.6.4] - 2026-08-03
 
 ### Fixed

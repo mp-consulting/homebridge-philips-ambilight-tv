@@ -3,8 +3,6 @@ import fs from 'fs';
 import { writeFile } from 'fs/promises';
 import path from 'path';
 
-import type { PhilipsTVClient } from '../api/PhilipsTVClient.js';
-import { HOME_URI, WATCH_TV_URI } from '../api/PhilipsTVClient.js';
 import { sanitizeForHomeKit } from '../api/utils.js';
 
 // ============================================================================
@@ -14,25 +12,30 @@ import { sanitizeForHomeKit } from '../api/utils.js';
 export interface SourceSwitchDeps {
   readonly Service: typeof Service;
   readonly Characteristic: typeof Characteristic;
-  readonly tvClient: PhilipsTVClient;
   /** Homebridge storage path for persisting user switch renames. */
   readonly storagePath: string;
   /** Device id (MAC) used to key the persisted rename file. */
   readonly deviceId: string;
   readonly communicationError: () => HapStatusError;
   readonly log: (level: 'debug' | 'info' | 'warn' | 'error', message: string) => void;
-  readonly onSourceSwitch?: (sourceId: string) => void;
+  /**
+   * Ask the input manager to make this source current. The switches do not talk
+   * to the TV themselves: a switch and the Television service's ActiveIdentifier
+   * are two HomeKit views of the same thing, and a scene writes both at once, so
+   * launching from here as well produced two competing launches (issue #17).
+   * Resolves once the request is accepted — which may mean it was parked for a
+   * TV that is still waking — and rejects if the TV refused it.
+   */
+  readonly requestSource: (sourceId: string) => Promise<void>;
 }
 
-/** A registered source switch with its associated HomeKit service */
+/** A registered source switch with its associated HomeKit service. Only what
+ *  the switches themselves need: how to launch a source is the input manager's
+ *  business, not theirs. */
 interface SourceSwitch {
   readonly id: string;
   readonly name: string;
-  readonly type: 'app' | 'source' | 'channel';
   readonly service: Service;
-  readonly channelListId?: string;
-  readonly className?: string;
-  readonly action?: string;
 }
 
 // ============================================================================
@@ -125,15 +128,7 @@ export class SourceSwitchService {
         .onGet(() => this.handleGetSwitch(source.id))
         .onSet((value) => this.handleSetSwitch(source.id, value));
 
-      this.switches.push({
-        id: source.id,
-        name: source.name,
-        type: source.type,
-        service,
-        channelListId: source.channelListId,
-        className: source.className,
-        action: source.action,
-      });
+      this.switches.push({ id: source.id, name: source.name, service });
     }
 
     if (sources.length > 0) {
@@ -225,16 +220,22 @@ export class SourceSwitchService {
 
     this.deps.log('info', `Source switch: ${sw.name}`);
 
+    // Show the choice straight away. The request may be parked for a TV that
+    // is still waking, and bouncing the switch back off in the meantime is what
+    // made a scene look like it had failed when it had not.
+    const previous = this.activeSourceId;
+    this.setActiveSource(sourceId);
+
     try {
-      const success = await this.launchSource(sw);
-      if (success) {
-        this.setActiveSource(sourceId);
-        this.deps.onSourceSwitch?.(sourceId);
-      } else {
-        throw this.deps.communicationError();
-      }
+      await this.deps.requestSource(sourceId);
     } catch (error) {
       this.deps.log('warn', `Failed to switch source: ${sw.name}`);
+      // The switch never took effect. Put the previous source back, unless
+      // something newer has since claimed the switches — that state is more
+      // current than the one we were about to restore.
+      if (this.activeSourceId === sourceId) {
+        this.setActiveSource(previous);
+      }
       throw error instanceof Error && 'hapStatus' in error ? error : this.deps.communicationError();
     }
   }
@@ -284,25 +285,6 @@ export class SourceSwitchService {
       const wasActive = sw.id === previous;
       if (isActive !== wasActive) {
         sw.service.updateCharacteristic(this.deps.Characteristic.On, isActive);
-      }
-    }
-  }
-
-  private async launchSource(sw: SourceSwitch): Promise<boolean> {
-    switch (sw.type) {
-      case 'app':
-        return this.deps.tvClient.launchApplication(sw.id, sw.className, sw.action);
-      case 'source':
-        if (sw.id === WATCH_TV_URI) {
-          return this.deps.tvClient.launchWatchTV();
-        }
-        if (sw.id === HOME_URI) {
-          return this.deps.tvClient.launchHome();
-        }
-        return this.deps.tvClient.setSource(sw.id);
-      case 'channel': {
-        await this.deps.tvClient.launchWatchTV();
-        return this.deps.tvClient.setChannel(parseInt(sw.id, 10), sw.channelListId);
       }
     }
   }
