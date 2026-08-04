@@ -24,6 +24,20 @@ const LONG_POLL_RETRY_MS = 60_000;
  *  changes flowing into HomeKit without polling the TV every second. */
 const TV_ACTIVITY_REFRESH_THROTTLE_MS = 10_000;
 
+/** How long the plugin will go without a single state refresh before it stops
+ *  trusting the long-poll and brings the interval baseline back.
+ *
+ *  A working channel refreshes at least every TV_ACTIVITY_REFRESH_THROTTLE_MS,
+ *  so this is several times the healthy cadence. The channel can stop
+ *  delivering without ever reporting a failure — a TV that answers
+ *  /notifychange with nothing at all keeps the loop alive and the connection
+ *  open — and once the baseline has been dropped there is nothing else left
+ *  watching the TV. */
+const LONG_POLL_STALE_MS = 60_000;
+
+/** How often the staleness check above runs. */
+const HEALTH_CHECK_INTERVAL_MS = 15_000;
+
 // ============================================================================
 // TYPES
 // ============================================================================
@@ -50,10 +64,14 @@ export class StatePollManager {
   private startupTimer?: ReturnType<typeof setTimeout>;
   private pollingTimer?: ReturnType<typeof setInterval>;
   private longPollRetryTimer?: ReturnType<typeof setTimeout>;
+  private healthCheckTimer?: ReturnType<typeof setInterval>;
   private notifyClient: NotifyChangeClient | null = null;
   private longPollConfirmed = false;
   /** Timestamp of the last notification-driven refresh, used to throttle activities/tv */
   private lastNotifyRefresh = 0;
+  /** Timestamp of the last completed state poll, however it was triggered.
+   *  Watched by the health check — see LONG_POLL_STALE_MS. */
+  private lastStatePoll = 0;
 
   constructor(
     private readonly tvClient: PhilipsTVClient,
@@ -74,6 +92,7 @@ export class StatePollManager {
       // Start interval polling as baseline — long-poll is started
       // automatically by pollState() when it detects the TV is on
       this.startIntervalPolling();
+      this.startHealthCheck();
     }, INITIAL_POLL_DELAY_MS);
 
     this.log('debug', `State updates will start in ${INITIAL_POLL_DELAY_MS}ms`);
@@ -85,8 +104,45 @@ export class StatePollManager {
       this.startupTimer = undefined;
     }
     this.stopIntervalPolling();
+    this.stopHealthCheck();
     this.stopLongPoll();
     this.cancelLongPollRetry();
+  }
+
+  // ==========================================================================
+  // HEALTH CHECK
+  // ==========================================================================
+
+  /**
+   * Last line of defence against the plugin going quiet.
+   *
+   * Once a notification confirms the long-poll, the interval baseline is
+   * dropped and the channel becomes the only thing watching the TV. If it then
+   * stops delivering without reporting a failure, nothing notices: HomeKit
+   * freezes on whatever it last saw, and the TV can be switched off from the
+   * remote without the tile ever going dark (issue #14). Bringing the baseline
+   * back on a stale channel bounds that to LONG_POLL_STALE_MS. Clearing
+   * longPollConfirmed lets a channel that recovers drop the baseline again.
+   */
+  private startHealthCheck(): void {
+    if (this.healthCheckTimer) {
+      return;
+    }
+    this.healthCheckTimer = setInterval(() => {
+      if (!this.longPollConfirmed || Date.now() - this.lastStatePoll < LONG_POLL_STALE_MS) {
+        return;
+      }
+      this.log('warn', 'No state updates from the TV recently — resuming interval polling');
+      this.longPollConfirmed = false;
+      this.startIntervalPolling();
+    }, HEALTH_CHECK_INTERVAL_MS);
+  }
+
+  private stopHealthCheck(): void {
+    if (this.healthCheckTimer) {
+      clearInterval(this.healthCheckTimer);
+      this.healthCheckTimer = undefined;
+    }
   }
 
   // ==========================================================================
@@ -223,6 +279,7 @@ export class StatePollManager {
   // ==========================================================================
 
   private async pollState(): Promise<void> {
+    this.lastStatePoll = Date.now();
     try {
       const isOn = await this.tvClient.getPowerState();
       const changed = isOn !== this.isPoweredOn;
@@ -242,9 +299,16 @@ export class StatePollManager {
           // TV just came back — restart long-poll
           this.startLongPoll();
         } else if (!isOn) {
-          // TV turned off — stop long-poll immediately
+          // TV turned off — stop long-poll immediately. The baseline has to
+          // come back with it: if a notification had confirmed the channel,
+          // interval polling was dropped and the long-poll was the only thing
+          // left watching the TV. Tearing it down without this left nothing
+          // polling at all, so the TV coming back on — or anything the user
+          // did with the remote afterwards — never reached HomeKit again until
+          // Homebridge was restarted (issue #14).
           this.stopLongPoll();
           this.cancelLongPollRetry();
+          this.startIntervalPolling();
         }
       }
 

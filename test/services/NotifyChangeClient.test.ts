@@ -188,6 +188,24 @@ describe('NotifyChangeClient', () => {
       expect(failed).not.toHaveBeenCalled();
     });
 
+    it('should not let an empty answer pass as a delivery', async () => {
+      // A TV that keeps answering with nothing — as one does on the way into
+      // standby — used to reset the failure budget on every lap, so the caller
+      // was never told the channel had stopped being useful (issue #14).
+      const notification = vi.fn();
+      const failed = vi.fn();
+      client.on('notification', notification);
+      client.on('failed', failed);
+
+      mockFetch.mockReturnValue(mockResponse({}));
+
+      client.start();
+      await vi.advanceTimersByTimeAsync(120_000);
+
+      expect(notification).not.toHaveBeenCalled();
+      expect(failed).toHaveBeenCalled();
+    });
+
     it('should handle malformed JSON gracefully', async () => {
       mockFetch.mockReturnValue(Promise.resolve({
         ok: true,

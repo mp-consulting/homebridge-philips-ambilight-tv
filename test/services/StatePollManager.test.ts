@@ -516,6 +516,69 @@ describe('StatePollManager', () => {
       expect(logged.some(message => message.includes('audio/volume [Homebridge] forged'))).toBe(true);
     });
 
+    // ========================================================================
+    // THE PLUGIN MUST NEVER BE LEFT WITH NOTHING WATCHING THE TV
+    // ========================================================================
+
+    /** TV on, with a notification confirming the channel and dropping the
+     *  interval baseline — the state the plugin settles into in normal use. */
+    const startWithConfirmedLongPoll = async () => {
+      (tvClient.getPowerState as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+      (tvClient.getVolume as ReturnType<typeof vi.fn>).mockResolvedValue({ current: 10, muted: false });
+      manager = new StatePollManager(tvClient, TEST_CONFIG, callbacks, debugLog);
+      manager.start();
+      await vi.advanceTimersByTimeAsync(5100);
+
+      notifyInstances[notifyInstances.length - 1].emit('notification', { 'audio/volume': {} });
+      await vi.advanceTimersByTimeAsync(100);
+      expect(debugLog).toHaveBeenCalledWith('info', 'Long-poll confirmed working, stopped interval polling');
+    };
+
+    it('should keep watching the TV after it is turned off', async () => {
+      await startWithConfirmedLongPoll();
+
+      // The TV goes to standby, so the long-poll is torn down — leaving
+      // nothing polling at all unless the baseline comes back with it.
+      (tvClient.getPowerState as ReturnType<typeof vi.fn>).mockResolvedValue(false);
+      notifyInstances[notifyInstances.length - 1].emit('notification', { powerstate: {} });
+      await vi.advanceTimersByTimeAsync(100);
+      expect(callbacks.onPowerChange).toHaveBeenLastCalledWith(false);
+
+      // Switching it back on has to reach HomeKit.
+      (tvClient.getPowerState as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+      await vi.advanceTimersByTimeAsync(10_100);
+
+      expect(callbacks.onPowerChange).toHaveBeenLastCalledWith(true);
+    });
+
+    it('should resume interval polling when the long-poll goes quiet', async () => {
+      await startWithConfirmedLongPoll();
+      const before = (tvClient.getPowerState as ReturnType<typeof vi.fn>).mock.calls.length;
+
+      // The channel delivers nothing and never reports a failure, so without
+      // the health check the plugin would sit here indefinitely.
+      await vi.advanceTimersByTimeAsync(90_000);
+
+      expect(debugLog).toHaveBeenCalledWith('warn', expect.stringContaining('resuming interval polling'));
+      expect((tvClient.getPowerState as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(before);
+    });
+
+    it('should not resume interval polling while the long-poll is delivering', async () => {
+      await startWithConfirmedLongPoll();
+      const before = (tvClient.getPowerState as ReturnType<typeof vi.fn>).mock.calls.length;
+
+      // A healthy channel refreshes well inside the staleness threshold.
+      for (let i = 0; i < 6; i++) {
+        await vi.advanceTimersByTimeAsync(15_000);
+        notifyInstances[notifyInstances.length - 1].emit('notification', { 'activities/tv': {} });
+        await vi.advanceTimersByTimeAsync(100);
+      }
+
+      expect(debugLog).not.toHaveBeenCalledWith('warn', expect.stringContaining('resuming interval polling'));
+      // One refresh per notification, and nothing from an interval baseline.
+      expect((tvClient.getPowerState as ReturnType<typeof vi.fn>).mock.calls.length).toBe(before + 6);
+    });
+
     it('should ignore an empty notification', async () => {
       (tvClient.getPowerState as ReturnType<typeof vi.fn>).mockResolvedValue(true);
       (tvClient.getVolume as ReturnType<typeof vi.fn>).mockResolvedValue({ current: 10, muted: false });

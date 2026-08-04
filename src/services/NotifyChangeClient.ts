@@ -165,7 +165,11 @@ export class NotifyChangeClient extends EventEmitter {
 
       try {
         const result = await this.doLongPollRequest(url, endpoint, body, LONG_POLL_TIMEOUT_MS);
-        if (result !== null) {
+        // An answer that reports nothing is not a delivery. Counting it as one
+        // reset the failure budget on every lap, so a TV that keeps answering
+        // empty — as one does once it drops into standby — held the channel
+        // open forever and never let the caller fall back (issue #14).
+        if (result !== null && Object.keys(result).length > 0) {
           if (!this.workingProtocol) {
             this.debug(`NotifyChange: ${protocol} confirmed working`);
           }
