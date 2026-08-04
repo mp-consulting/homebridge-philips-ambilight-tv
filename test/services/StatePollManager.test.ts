@@ -579,6 +579,76 @@ describe('StatePollManager', () => {
       expect((tvClient.getPowerState as ReturnType<typeof vi.fn>).mock.calls.length).toBe(before + 6);
     });
 
+    it('should never call a channel stale while activities/tv keeps ticking', async () => {
+      // Most of these ticks are swallowed by the refresh throttle, so the check
+      // sees far fewer refreshes than notifications — and must still read the
+      // channel as alive, whatever the two intervals are tuned to.
+      await startWithConfirmedLongPoll();
+
+      for (let i = 0; i < 30; i++) {
+        notifyInstances[notifyInstances.length - 1].emit('notification', { 'activities/tv': {} });
+        await vi.advanceTimersByTimeAsync(3_000);
+      }
+
+      expect(debugLog).not.toHaveBeenCalledWith('warn', expect.stringContaining('resuming interval polling'));
+    });
+
+    it('should warn once when a quiet TV keeps cycling through the health check', async () => {
+      // A TV with genuinely little to say goes quiet, gets the baseline back,
+      // eventually says something, and goes quiet again. That cycle is normal;
+      // warning on every lap of it is just noise.
+      await startWithConfirmedLongPoll();
+
+      for (let i = 0; i < 3; i++) {
+        await vi.advanceTimersByTimeAsync(90_000);
+        // The channel speaks up again, re-confirming itself and dropping the
+        // baseline — which sets the next quiet spell up to trip the check.
+        notifyInstances[notifyInstances.length - 1].emit('notification', { 'audio/volume': {} });
+        await vi.advanceTimersByTimeAsync(100);
+      }
+
+      const warnings = (debugLog as ReturnType<typeof vi.fn>).mock.calls
+        .filter(([level, message]) => level === 'warn' && String(message).includes('resuming interval polling'));
+      expect(warnings).toHaveLength(1);
+      // The later laps are still recorded, just not as warnings.
+      expect(debugLog).toHaveBeenCalledWith('debug', expect.stringContaining('quiet again'));
+    });
+
+    it('should give a fresh channel a fresh warning', async () => {
+      await startWithConfirmedLongPoll();
+      await vi.advanceTimersByTimeAsync(90_000);
+
+      // The TV goes to standby and comes back, which builds a new channel.
+      (tvClient.getPowerState as ReturnType<typeof vi.fn>).mockResolvedValue(false);
+      await vi.advanceTimersByTimeAsync(10_100);
+      (tvClient.getPowerState as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+      await vi.advanceTimersByTimeAsync(10_100);
+      notifyInstances[notifyInstances.length - 1].emit('notification', { 'audio/volume': {} });
+      await vi.advanceTimersByTimeAsync(100);
+      await vi.advanceTimersByTimeAsync(90_000);
+
+      const warnings = (debugLog as ReturnType<typeof vi.fn>).mock.calls
+        .filter(([level, message]) => level === 'warn' && String(message).includes('resuming interval polling'));
+      expect(warnings).toHaveLength(2);
+    });
+
+    it('should leave no timer running after cleanup', async () => {
+      await startWithConfirmedLongPoll();
+      const before = (tvClient.getPowerState as ReturnType<typeof vi.fn>).mock.calls.length;
+
+      manager.cleanup();
+
+      // Asserted on the timer itself, not on its effects: a health check that
+      // outlives the accessory finds longPollConfirmed already cleared and so
+      // quietly does nothing, while still holding the event loop open for as
+      // long as Homebridge runs.
+      expect(vi.getTimerCount()).toBe(0);
+
+      // And nothing polls a torn-down accessory either.
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect((tvClient.getPowerState as ReturnType<typeof vi.fn>).mock.calls.length).toBe(before);
+    });
+
     it('should ignore an empty notification', async () => {
       (tvClient.getPowerState as ReturnType<typeof vi.fn>).mockResolvedValue(true);
       (tvClient.getVolume as ReturnType<typeof vi.fn>).mockResolvedValue({ current: 10, muted: false });

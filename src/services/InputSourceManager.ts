@@ -69,15 +69,19 @@ const WAKE_REPLAY_WINDOW_MS = 90_000;
 /** Attempts made when replaying a parked selection. The TV answers /powerstate
  *  while its launcher is still coming up, so a single try at the power-on edge
  *  is not enough. Sized from the logs in issue #14: the earliest launch seen to
- *  succeed after a wake landed 6s past the `Power: On` edge, so the retries
- *  span the wake window to leave real margin. */
+ *  succeed after a wake landed 6s past the `Power: On` edge, so the retries run
+ *  well past that to leave real margin. Each attempt costs a launch, the settle
+ *  below and a retry gap, which puts the last of them past WAKE_WINDOW_MS —
+ *  deliberately, since a set that slow is the one still booting. The
+ *  confirmation does not lapse with the window, so those attempts are checked
+ *  like any other. */
 const WAKE_REPLAY_ATTEMPTS = 5;
 const WAKE_REPLAY_RETRY_MS = 3_000;
 
-/** How long to let the TV settle before checking whether a launch made during
- *  the wake window actually took. Long enough for an app that is genuinely
- *  starting to reach the foreground, so a starting app isn't mistaken for a
- *  dropped launch and relaunched under itself. */
+/** How long to let the TV settle before checking whether a replayed launch
+ *  actually took. Long enough for an app that is genuinely starting to reach
+ *  the foreground, so a starting app isn't mistaken for a dropped launch and
+ *  relaunched under itself. */
 const WAKE_CONFIRM_SETTLE_MS = 1_500;
 
 /** How long a source picked from its own Switch takes precedence over a
@@ -682,9 +686,13 @@ export class InputSourceManager {
       return false;
     }
 
+    // Hedged, because a user who picks a source switch and then changes the
+    // input by hand within the window lands here too, and telling them to go
+    // edit a scene they never made would be nonsense.
     this.deps.log('info',
       `Ignoring input ${input.name} — ${recent.input.name} was just selected from its switch. `
-      + 'If a scene is asking for both, remove whichever of the two you did not intend.');
+      + 'If a scene set both, remove whichever of the two you did not intend; '
+      + `if you meant to pick ${input.name} yourself, choose it again.`);
     this.currentInputId = recent.input.identifier;
     this.tvService?.updateCharacteristic(this.deps.Characteristic.ActiveIdentifier, recent.input.identifier);
     return true;
@@ -776,10 +784,15 @@ export class InputSourceManager {
       }
 
       try {
+        const launched = await this.enqueueSwitch(parked.input, parked.generation);
+        if (launched === 'superseded') {
+          this.deps.log('debug', `Abandoning pending switch to ${parked.input.name} — superseded`);
+          return;
+        }
         // An accepted launch is not the same as a launch that took: a booting
         // TV answers OK and drops it. Confirm before believing it, and retry
         // until the TV is far enough up to act on the request.
-        if (await this.switchInput(parked.input) && await this.launchTookEffect(parked.input)) {
+        if (launched && await this.launchTookEffect(parked.input)) {
           // The confirmation takes a moment, and a newer selection may have
           // arrived while it ran — that one is what the user wants now.
           if (this.switchGeneration !== parked.generation) {
@@ -808,22 +821,48 @@ export class InputSourceManager {
   }
 
   /**
+   * Launch on the shared switch queue, so a replay and a direct selection can
+   * never have two launches outstanding on the TV at once — the queue is this
+   * class's one serialization point (see requestSwitch). A replay can now
+   * overlap another one, since a request arriving mid-replay starts a second,
+   * which makes going through the queue rather than straight to switchInput the
+   * difference between the two taking turns and both launching at once.
+   *
+   * The generation is re-checked inside the queued task, not just before it: a
+   * newer selection can arrive while this one waits its turn, and firing the
+   * old launch then would drag the TV back off the source the user has since
+   * picked.
+   */
+  private enqueueSwitch(input: InputSource, generation: number): Promise<boolean | 'superseded'> {
+    const task = this.switchQueue.then(async (): Promise<boolean | 'superseded'> => {
+      if (generation !== this.switchGeneration) {
+        return 'superseded';
+      }
+      return this.switchInput(input);
+    });
+    this.switchQueue = task.then(() => {}, () => {});
+    return task;
+  }
+
+  /**
    * Decide whether a launch the TV accepted actually put the source on screen.
    *
    * A Philips set answers `OK` to /activities/launch while it is still coming
    * up out of standby and then does nothing with the request, so the
    * acknowledgement alone is not evidence (issue #17). Only positive evidence
-   * to the contrary counts as a failure — the TV reporting its launcher, the
-   * tuner, or a different app. Anything inconclusive is accepted, so an app
-   * the TV never names by itself is not relaunched on a loop underneath the
-   * user.
+   * to the contrary counts as a failure — the TV reporting its launcher, or a
+   * different app. Anything inconclusive is accepted, so an app the TV never
+   * names by itself is not relaunched on a loop underneath the user.
+   *
+   * Every replay attempt is checked, rather than only those still inside the
+   * wake window. A set slow enough to need the last of the retries is exactly
+   * the one that has not finished booting, and gating on the window meant the
+   * check switched itself off at the point it was most needed: the retries take
+   * longer than the window to run through, so the tail attempts went back to
+   * trusting an acknowledgement — the very thing the window exists to distrust.
+   * Only a replay reaches here, and a replay only ever runs off a wake.
    */
   private async launchTookEffect(input: InputSource): Promise<boolean> {
-    // Outside the wake window the TV is up and its acknowledgement is good.
-    if (this.deps.isWaking?.() !== true) {
-      return true;
-    }
-
     // Give an app that is genuinely starting time to reach the foreground,
     // otherwise its own start-up looks like a dropped launch.
     await new Promise(resolve => setTimeout(resolve, WAKE_CONFIRM_SETTLE_MS));
@@ -847,7 +886,11 @@ export class InputSourceManager {
       return input.id === HOME_URI;
     }
     if (reported === PLAYTV_PACKAGE) {
-      // Tuner or an HDMI input; either way not an app.
+      // The tuner or an HDMI input — the TV reports the same package for every
+      // one of them, so this says a source was reached but not which. Enough to
+      // rule out the launch having been dropped, since a dropped one leaves the
+      // TV on its launcher; not enough to tell HDMI1 from HDMI2, so a switch
+      // between two sources is taken on trust here.
       return input.type === 'source' && input.id !== HOME_URI;
     }
     if (reported === NO_APP_REPORT) {

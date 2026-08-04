@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { InputSourceManager } from '../../src/services/InputSourceManager.js';
 import type { InputSourceManagerDeps } from '../../src/services/InputSourceManager.js';
-import { WATCH_TV_URI } from '../../src/api/PhilipsTVClient.js';
+import { HOME_URI, WATCH_TV_URI } from '../../src/api/PhilipsTVClient.js';
 
 // ============================================================================
 // MOCKS
@@ -756,7 +756,10 @@ describe('InputSourceManager', () => {
       const { deps, manager, app } = setup({ isPoweredOn: () => false });
       await manager.handleSetInput(app.identifier);
 
-      await manager.replayWakeSelection();
+      // A replay confirms every launch it makes, so it takes the settle time.
+      const replay = manager.replayWakeSelection();
+      await vi.advanceTimersByTimeAsync(4000);
+      await replay;
 
       expect(deps.tvClient.launchApplication).toHaveBeenCalledWith(
         'com.ug.eon.android.tv', 'com.ug.eon.android.tv.MainActivity', undefined,
@@ -794,8 +797,9 @@ describe('InputSourceManager', () => {
       const launch = deps.tvClient.launchApplication as ReturnType<typeof vi.fn>;
       launch.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
 
+      // A rejected launch costs the retry gap, the accepted one the settle.
       const replay = manager.replayWakeSelection();
-      await vi.advanceTimersByTimeAsync(4000);
+      await vi.advanceTimersByTimeAsync(10_000);
       await replay;
 
       expect(launch).toHaveBeenCalledTimes(2);
@@ -831,7 +835,9 @@ describe('InputSourceManager', () => {
 
       await manager.handleSetInput(app.identifier);
       await manager.handleSetInput(watchTv.identifier);
-      await manager.replayWakeSelection();
+      const replay = manager.replayWakeSelection();
+      await vi.advanceTimersByTimeAsync(4000);
+      await replay;
 
       expect(deps.tvClient.launchWatchTV).toHaveBeenCalled();
       expect(deps.tvClient.launchApplication).not.toHaveBeenCalled();
@@ -957,6 +963,112 @@ describe('InputSourceManager', () => {
       expect(deps.tvClient.getCurrentActivity).not.toHaveBeenCalled();
     });
 
+    it('should keep confirming on the attempts that outlast the wake window', async () => {
+      // The retries take longer to run through than the window lasts. Gating
+      // the check on the window switched it off exactly where it was needed
+      // most: a set slow enough to need the last retries is the one still
+      // booting, and the tail attempts went back to trusting the OK.
+      let waking = true;
+      const { deps, manager, app } = setup({ isPoweredOn: () => true, isWaking: () => waking });
+      (deps.tvClient.getCurrentActivity as ReturnType<typeof vi.fn>)
+        .mockResolvedValue('com.google.android.tvlauncher');
+
+      await manager.handleSetInput(app.identifier);
+      // The window lapses partway through the replay.
+      await vi.advanceTimersByTimeAsync(6_000);
+      waking = false;
+      const confirmsSoFar = (deps.tvClient.getCurrentActivity as ReturnType<typeof vi.fn>).mock.calls.length;
+      await vi.advanceTimersByTimeAsync(30_000);
+
+      expect((deps.tvClient.getCurrentActivity as ReturnType<typeof vi.fn>).mock.calls.length)
+        .toBeGreaterThan(confirmsSoFar);
+      expect(deps.log).toHaveBeenCalledWith('warn', expect.stringContaining('Could not switch to'));
+    });
+
+    it('should accept the tuner package as proof an HDMI source was reached', async () => {
+      // The TV names the same package for the tuner and every HDMI input, so it
+      // cannot tell them apart — but it does rule out the launch having been
+      // dropped, which would have left the TV on its launcher.
+      const { deps, manager } = setup({ isPoweredOn: () => true, isWaking: () => true });
+      const hdmi = manager.getSources().find(s => s.id === WATCH_TV_URI)!;
+      (deps.tvClient.getCurrentActivity as ReturnType<typeof vi.fn>)
+        .mockResolvedValue('org.droidtv.playtv');
+
+      await manager.handleSetInput(hdmi.identifier);
+      await vi.advanceTimersByTimeAsync(30_000);
+
+      expect(deps.tvClient.launchWatchTV).toHaveBeenCalledTimes(1);
+      expect(deps.log).toHaveBeenCalledWith('info', expect.stringContaining('after wake'));
+    });
+
+    it('should treat the tuner package as a dropped launch when an app was asked for', async () => {
+      const { deps, manager, app } = setup({ isPoweredOn: () => true, isWaking: () => true });
+      (deps.tvClient.getCurrentActivity as ReturnType<typeof vi.fn>)
+        .mockResolvedValue('org.droidtv.playtv');
+
+      await manager.handleSetInput(app.identifier);
+      await vi.advanceTimersByTimeAsync(30_000);
+
+      expect((deps.tvClient.launchApplication as ReturnType<typeof vi.fn>).mock.calls.length)
+        .toBeGreaterThan(1);
+    });
+
+    it('should accept the launcher when Home is what was asked for', async () => {
+      const { deps, manager } = setup({ isPoweredOn: () => true, isWaking: () => true });
+      const home = manager.getSources().find(s => s.id === HOME_URI)!;
+      (deps.tvClient.getCurrentActivity as ReturnType<typeof vi.fn>)
+        .mockResolvedValue('com.google.android.tvlauncher');
+
+      await manager.handleSetInput(home.identifier);
+      await vi.advanceTimersByTimeAsync(30_000);
+
+      expect(deps.tvClient.launchHome).toHaveBeenCalledTimes(1);
+      expect(deps.log).toHaveBeenCalledWith('info', expect.stringContaining('after wake'));
+    });
+
+    it('should treat an unreachable TV as a launch that cannot have taken', async () => {
+      const { deps, manager, app } = setup({ isPoweredOn: () => true, isWaking: () => true });
+      (deps.tvClient.getCurrentActivity as ReturnType<typeof vi.fn>)
+        .mockRejectedValue(new Error('not up yet'));
+
+      await manager.handleSetInput(app.identifier);
+      await vi.advanceTimersByTimeAsync(30_000);
+
+      expect((deps.tvClient.launchApplication as ReturnType<typeof vi.fn>).mock.calls.length)
+        .toBeGreaterThan(1);
+    });
+
+    it('should never have two launches outstanding on the TV at once', async () => {
+      // A request arriving mid-replay starts a second replay, so both go
+      // through the shared queue — otherwise each fires into the TV whenever it
+      // pleases and the loser can land last.
+      const { deps, manager, app } = setup({ isPoweredOn: () => true, isWaking: () => true });
+      const watchTv = manager.getSources().find(s => s.id === WATCH_TV_URI)!;
+      (deps.tvClient.getCurrentActivity as ReturnType<typeof vi.fn>)
+        .mockResolvedValue('com.google.android.tvlauncher');
+
+      // A launch slow enough that the second request lands squarely inside it,
+      // which is the only moment the two can genuinely collide.
+      let inFlight = 0;
+      let maxInFlight = 0;
+      const track = async () => {
+        maxInFlight = Math.max(maxInFlight, ++inFlight);
+        await new Promise(resolve => setTimeout(resolve, 5_000));
+        inFlight--;
+        return true;
+      };
+      (deps.tvClient.launchApplication as ReturnType<typeof vi.fn>).mockImplementation(track);
+      (deps.tvClient.launchWatchTV as ReturnType<typeof vi.fn>).mockImplementation(track);
+
+      await manager.handleSetInput(app.identifier);
+      await vi.advanceTimersByTimeAsync(2_000);
+      // Lands while the first replay's launch is still outstanding.
+      await manager.handleSetInput(watchTv.identifier);
+      await vi.advanceTimersByTimeAsync(60_000);
+
+      expect(maxInFlight).toBe(1);
+    });
+
     // ========================================================================
     // SCENE CONFLICT: SWITCH VS LEFTOVER INPUT
     // ========================================================================
@@ -993,7 +1105,9 @@ describe('InputSourceManager', () => {
 
       await manager.requestSwitchById(app.id);
       await manager.handleSetInput(app.identifier);
-      await manager.replayWakeSelection();
+      const replay = manager.replayWakeSelection();
+      await vi.advanceTimersByTimeAsync(4000);
+      await replay;
 
       expect(deps.tvClient.launchApplication).toHaveBeenCalled();
       expect(manager.currentId).toBe(app.identifier);

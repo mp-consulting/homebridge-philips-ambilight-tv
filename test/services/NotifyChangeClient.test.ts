@@ -14,18 +14,19 @@ vi.mock('../../src/api/utils.js', async (importOriginal) => {
   };
 });
 
+/** Spied so tests can tell a discarded session from a kept one. */
+const authMocks = vi.hoisted(() => ({ clear: vi.fn() }));
+
 vi.mock('../../src/api/DigestAuthSession.js', () => ({
   DigestAuthSession: class MockDigestAuthSession {
+    clear = authMocks.clear;
+
     buildHeader() {
       return null;
     }
 
     cacheFromChallenge() {
       return true;
-    }
-
-    clear() {
-      // no-op
     }
   },
 }));
@@ -63,10 +64,16 @@ describe('NotifyChangeClient', () => {
     client = new NotifyChangeClient(TEST_CONFIG, debugLog);
     mockFetch.mockReset();
     debugLog.mockReset();
+    authMocks.clear.mockReset();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     client.stop();
+    // Let the lap that was in flight run itself out before the next test takes
+    // over. stop() only ends the loop; a request already awaiting still
+    // resolves, and the mocks it lands on are shared across tests — so a
+    // straggler finishing mid-test reads as that test's own client acting.
+    await vi.advanceTimersByTimeAsync(120_000);
     vi.useRealTimers();
     vi.restoreAllMocks();
   });
@@ -204,6 +211,56 @@ describe('NotifyChangeClient', () => {
 
       expect(notification).not.toHaveBeenCalled();
       expect(failed).toHaveBeenCalled();
+    });
+
+    /** Pin a protocol with one real delivery, then have every later lap behave
+     *  the way the test needs. The switch has to be in place before the second
+     *  lap runs, so it goes in the implementation rather than after a wait. */
+    const afterOneDelivery = async (later: () => ReturnType<typeof fetchWithTimeout>) => {
+      let delivered = false;
+      mockFetch.mockImplementation(() => {
+        if (delivered) {
+          return later();
+        }
+        delivered = true;
+        return mockResponse({ powerstate: {} });
+      });
+
+      client.start();
+      // Lap one resolves on microtasks and parks in the inter-poll sleep.
+      await vi.advanceTimersByTimeAsync(0);
+
+      mockFetch.mockClear();
+      authMocks.clear.mockReset();
+      debugLog.mockReset();
+    };
+
+    it('should keep the pinned protocol and session when the TV answers empty', async () => {
+      // An empty answer still means the request reached the TV and the cached
+      // credentials were accepted. Discarding both bought a re-probe and a
+      // fresh 401 challenge on every empty lap — precisely when the TV is
+      // dropping into standby and least able to answer them.
+      await afterOneDelivery(() => mockResponse({}));
+
+      await vi.advanceTimersByTimeAsync(30_000);
+
+      expect(authMocks.clear).not.toHaveBeenCalled();
+      expect(debugLog).not.toHaveBeenCalledWith(expect.stringContaining('will re-probe'));
+      // Still only the pinned protocol — no plaintext re-probe alongside it.
+      const urls = mockFetch.mock.calls.map(call => String(call[0]));
+      expect(urls.length).toBeGreaterThan(0);
+      expect(urls.every(url => url.startsWith('https://'))).toBe(true);
+    });
+
+    it('should re-probe when the request genuinely fails', async () => {
+      // The other half of the same coin: a transport that has actually broken
+      // must still drop the pin and the session.
+      await afterOneDelivery(() => Promise.reject(new Error('ECONNREFUSED')));
+
+      await vi.advanceTimersByTimeAsync(30_000);
+
+      expect(authMocks.clear).toHaveBeenCalled();
+      expect(debugLog).toHaveBeenCalledWith(expect.stringContaining('will re-probe'));
     });
 
     it('should handle malformed JSON gracefully', async () => {

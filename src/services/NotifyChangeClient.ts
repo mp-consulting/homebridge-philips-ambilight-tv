@@ -119,12 +119,16 @@ export class NotifyChangeClient extends EventEmitter {
         if (elapsed < MIN_POLL_INTERVAL_MS) {
           await this.sleep(MIN_POLL_INTERVAL_MS - elapsed);
         }
-      } catch {
+      } catch (error) {
         if (!this.running) {
           break;
         }
         this.consecutiveFailures++;
-        this.debug(`NotifyChange poll failed (${this.consecutiveFailures}/${MAX_CONSECUTIVE_FAILURES})`);
+        // Name the reason: "answered with no changes" and "attempts failed"
+        // burn the same budget but mean very different things when reading a
+        // log back, and only one of them points at the network.
+        const reason = error instanceof Error ? error.message : 'unknown error';
+        this.debug(`NotifyChange poll failed (${this.consecutiveFailures}/${MAX_CONSECUTIVE_FAILURES}): ${reason}`);
 
         if (this.consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
           this.debug('NotifyChange: too many failures, giving up');
@@ -159,6 +163,10 @@ export class NotifyChangeClient extends EventEmitter {
       ? allAttempts.filter(a => a.protocol === this.workingProtocol)
       : allAttempts;
 
+    /** Set when the TV answered but reported nothing — a very different thing
+     *  from the request not getting through. See the reset block below. */
+    let answeredEmpty = false;
+
     for (const { protocol, port } of attempts) {
       const url = `${protocol}://${this.config.ip}:${port}${endpoint}`;
       // Always use full timeout — the TV blocks until a state change occurs
@@ -176,19 +184,30 @@ export class NotifyChangeClient extends EventEmitter {
           this.workingProtocol = protocol;
           return result;
         }
+        if (result !== null) {
+          answeredEmpty = true;
+        }
       } catch {
         // Try next attempt
       }
     }
 
-    // If known protocol failed, reset and re-probe next time
-    if (this.workingProtocol) {
+    // If known protocol failed, reset and re-probe next time. An empty answer
+    // is explicitly not that: the request reached the TV over the pinned
+    // protocol and the cached digest credentials were accepted, so throwing
+    // both away would buy a re-probe and a fresh 401 challenge on every empty
+    // lap — precisely when the TV is dropping into standby and least able to
+    // answer them. It still counts against the failure budget below; it just
+    // does not count as the transport having broken.
+    if (!answeredEmpty && this.workingProtocol) {
       this.debug('NotifyChange: known protocol failed, will re-probe');
       this.workingProtocol = null;
       this.authSession.clear();
     }
 
-    throw new Error('All notifychange attempts failed');
+    throw new Error(answeredEmpty
+      ? 'notifychange answered with no changes'
+      : 'All notifychange attempts failed');
   }
 
   private async doLongPollRequest(
