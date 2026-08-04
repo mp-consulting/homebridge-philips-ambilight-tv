@@ -125,6 +125,8 @@ function createMockDeps(overrides?: Partial<InputSourceManagerDeps>): InputSourc
       sendKey: vi.fn().mockResolvedValue(true),
       launchWatchTV: vi.fn().mockResolvedValue(true),
       launchHome: vi.fn().mockResolvedValue(true),
+      // "No trackable app" — inconclusive, so a confirmation check accepts it.
+      getCurrentActivity: vi.fn().mockResolvedValue('NA'),
     } as never,
     accessory: accessory as never,
     storagePath: '/tmp/test',
@@ -914,6 +916,87 @@ describe('InputSourceManager', () => {
       await manager.handleSetInput(app.identifier);
 
       expect(deps.tvClient.launchApplication).toHaveBeenCalled();
+    });
+
+    // ========================================================================
+    // A BOOTING TV ACCEPTS A LAUNCH AND DROPS IT
+    // ========================================================================
+
+    it('should retry a launch the booting TV accepted but ignored', async () => {
+      // The TV answers OK from standby and then wakes onto its launcher, so
+      // the acknowledgement alone must not be taken as the source being on.
+      const { deps, manager, app } = setup({ isPoweredOn: () => true, isWaking: () => true });
+      const current = deps.tvClient.getCurrentActivity as ReturnType<typeof vi.fn>;
+      current.mockResolvedValue('com.google.android.tvlauncher');
+
+      await manager.handleSetInput(app.identifier);
+      await vi.advanceTimersByTimeAsync(30_000);
+
+      expect((deps.tvClient.launchApplication as ReturnType<typeof vi.fn>).mock.calls.length)
+        .toBeGreaterThan(1);
+    });
+
+    it('should stop retrying once the TV reports the requested app', async () => {
+      const { deps, manager, app } = setup({ isPoweredOn: () => true, isWaking: () => true });
+      const current = deps.tvClient.getCurrentActivity as ReturnType<typeof vi.fn>;
+      current.mockResolvedValue('com.ug.eon.android.tv');
+
+      await manager.handleSetInput(app.identifier);
+      await vi.advanceTimersByTimeAsync(30_000);
+
+      expect(deps.tvClient.launchApplication).toHaveBeenCalledTimes(1);
+      expect(deps.log).toHaveBeenCalledWith('info', expect.stringContaining('after wake'));
+    });
+
+    it('should not second-guess the TV once it is past the wake window', async () => {
+      const { deps, manager, app } = setup({ isPoweredOn: () => true, isWaking: () => false });
+
+      await manager.handleSetInput(app.identifier);
+
+      expect(deps.tvClient.launchApplication).toHaveBeenCalledTimes(1);
+      expect(deps.tvClient.getCurrentActivity).not.toHaveBeenCalled();
+    });
+
+    // ========================================================================
+    // SCENE CONFLICT: SWITCH VS LEFTOVER INPUT
+    // ========================================================================
+
+    it('should let a source switch win over an input the same scene carries', async () => {
+      // The Home app fills a scene's TV input in from whatever it was when the
+      // scene was created, so it routinely contradicts the switch the user
+      // actually added. The wheel write arriving second must not undo it.
+      const { deps, manager, app } = setup({ isPoweredOn: () => true, isWaking: () => false });
+      const watchTv = manager.getSources().find(s => s.id === WATCH_TV_URI)!;
+
+      await manager.requestSwitchById(app.id);
+      await manager.handleSetInput(watchTv.identifier);
+
+      expect(deps.tvClient.launchWatchTV).not.toHaveBeenCalled();
+      expect(manager.currentId).toBe(app.identifier);
+    });
+
+    it('should still honour an input picked a moment after using a switch', async () => {
+      const { deps, manager, app } = setup({ isPoweredOn: () => true, isWaking: () => false });
+      const watchTv = manager.getSources().find(s => s.id === WATCH_TV_URI)!;
+
+      await manager.requestSwitchById(app.id);
+      // Well past the window in which the two count as one scene.
+      vi.setSystemTime(Date.now() + 10_000);
+      await manager.handleSetInput(watchTv.identifier);
+
+      expect(deps.tvClient.launchWatchTV).toHaveBeenCalled();
+      expect(manager.currentId).toBe(watchTv.identifier);
+    });
+
+    it('should not treat an input that agrees with the switch as a conflict', async () => {
+      const { deps, manager, app } = setup({ isPoweredOn: () => false });
+
+      await manager.requestSwitchById(app.id);
+      await manager.handleSetInput(app.identifier);
+      await manager.replayWakeSelection();
+
+      expect(deps.tvClient.launchApplication).toHaveBeenCalled();
+      expect(manager.currentId).toBe(app.identifier);
     });
   });
 

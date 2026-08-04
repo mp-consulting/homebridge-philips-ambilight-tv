@@ -346,12 +346,21 @@ export class PhilipsAmbilightTVAccessory {
     );
     this.stateSensorService.update('power', isOn);
     if (!isOn) {
+      this.powerOnAt = null;
       this.ambilightService.reflectPowerOff();
       this.stateSensorService.update('ambilight', false);
       this.stateSensorService.update('mute', false);
       this.sourceSwitchService.resetAll();
       this.ambilightHueSwitchService.reset();
     } else if (!isInitialSync) {
+      // The TV has just come up, so launches are provisional for a while —
+      // including when it was switched on from the remote rather than from
+      // HomeKit, which is the only way powerOnAt would otherwise be unset.
+      // Don't restart a window already running: that one began at the command,
+      // which is the earlier and therefore truer start of the boot.
+      if (!this.isWaking()) {
+        this.powerOnAt = Date.now();
+      }
       // The input the TV was left on before standby is not evidence of where
       // it wakes up, so let the TV's own report realign the state even when
       // that report is an ambiguous one.

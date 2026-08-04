@@ -70,9 +70,28 @@ const WAKE_REPLAY_WINDOW_MS = 90_000;
  *  while its launcher is still coming up, so a single try at the power-on edge
  *  is not enough. Sized from the logs in issue #14: the earliest launch seen to
  *  succeed after a wake landed 6s past the `Power: On` edge, so the retries
- *  span 12s to leave real margin. */
+ *  span the wake window to leave real margin. */
 const WAKE_REPLAY_ATTEMPTS = 5;
 const WAKE_REPLAY_RETRY_MS = 3_000;
+
+/** How long to let the TV settle before checking whether a launch made during
+ *  the wake window actually took. Long enough for an app that is genuinely
+ *  starting to reach the foreground, so a starting app isn't mistaken for a
+ *  dropped launch and relaunched under itself. */
+const WAKE_CONFIRM_SETTLE_MS = 1_500;
+
+/** How long a source picked from its own Switch takes precedence over a
+ *  contradicting write to the Television service's ActiveIdentifier.
+ *
+ *  A Home scene captures both, and the Home app fills the TV's input in from
+ *  whatever it happened to be when the scene was created — so a scene built
+ *  around a source switch routinely carries an unrelated leftover input as
+ *  well. Both land in the same instant with no ordering guarantee, which made
+ *  the winner a coin flip (issue #17). The switch is the deliberate half of
+ *  the pair: a user adds it on purpose, where the input comes along by
+ *  itself. Short enough that changing the input by hand moments after using a
+ *  switch still works. */
+const SWITCH_PRECEDENCE_MS = 1_500;
 
 /** TLV8 tags for DisplayOrder encoding */
 const TLV_ELEMENT_START = 0x01;
@@ -139,6 +158,10 @@ const HOMEKIT_TO_TV_KEY_BASE: Readonly<Record<number, RemoteKey>> = {
 
 /** Input source type for HomeKit categorization */
 type InputType = 'app' | 'source' | 'channel';
+
+/** Which HomeKit control a source selection arrived from. The two are not
+ *  interchangeable when they disagree — see SWITCH_PRECEDENCE_MS. */
+type SelectionOrigin = 'wheel' | 'switch';
 
 /** Runtime input source with associated HomeKit service */
 interface InputSource {
@@ -235,8 +258,14 @@ export class InputSourceManager {
    *  See WAKE_REPLAY_WINDOW_MS. */
   private wakeSelection: { input: InputSource; generation: number; parkedAt: number } | null = null;
 
-  /** True while a parked selection is actually being replayed. */
-  private replayInFlight = false;
+  /** How many parked selections are being replayed right now. A count rather
+   *  than a flag because a request arriving mid-replay starts a second one,
+   *  and the first to finish must not report the other as done. */
+  private replaysInFlight = 0;
+
+  /** The last source picked from its own Switch, and when. Lets a leftover
+   *  input carried by the same scene be ignored. See SWITCH_PRECEDENCE_MS. */
+  private lastSwitchRequest: { input: InputSource; at: number } | null = null;
 
   /** Tracks consecutive sightings of an ambiguous system report (NA / playtv)
    *  so a lone transitional report is never applied. See AMBIGUOUS_CONFIRM_*. */
@@ -517,7 +546,7 @@ export class InputSourceManager {
     }
 
     this.deps.log('info', `Switching to: ${inputSource.name}`);
-    return this.requestSwitch(inputSource);
+    return this.requestSwitch(inputSource, 'wheel');
   }
 
   /**
@@ -534,7 +563,7 @@ export class InputSourceManager {
       this.deps.log('warn', `Unknown source: ${sourceId}`);
       throw this.deps.communicationError();
     }
-    return this.requestSwitch(inputSource);
+    return this.requestSwitch(inputSource, 'switch');
   }
 
   /**
@@ -543,7 +572,13 @@ export class InputSourceManager {
    * generation counter and the parked wake selection, so exactly one selection
    * is ever outstanding.
    */
-  private async requestSwitch(inputSource: InputSource): Promise<void> {
+  private async requestSwitch(inputSource: InputSource, origin: SelectionOrigin): Promise<void> {
+    if (origin === 'switch') {
+      this.lastSwitchRequest = { input: inputSource, at: Date.now() };
+    } else if (this.isSupersededByRecentSwitch(inputSource)) {
+      return;
+    }
+
     // Coalesce bursts of selections: launches run one at a time, and a
     // selection that is superseded while waiting is skipped entirely. Without
     // this, every intermediate selection launched on the TV back-to-back —
@@ -564,6 +599,17 @@ export class InputSourceManager {
     // park the choice and apply it when the TV reports in.
     if (this.deps.isPoweredOn?.() === false) {
       this.parkForWake(inputSource, generation, 'TV is off');
+      return;
+    }
+
+    // The TV has accepted the power-on but may still be booting. It answers OK
+    // to a launch it then quietly drops, so launching from here would report
+    // success while the TV came up on its launcher instead — the request looks
+    // applied in HomeKit and nothing ever retries it (issue #17). Go through
+    // the replay path, which checks the source actually took and tries again
+    // until it does.
+    if (this.deps.isWaking?.() === true) {
+      this.parkForWake(inputSource, generation, 'TV is still waking');
       return;
     }
 
@@ -623,6 +669,27 @@ export class InputSourceManager {
     }
   }
 
+  /**
+   * True when a source switch has just asked for a different source, so this
+   * ActiveIdentifier write is the leftover half of a scene rather than a
+   * choice the user made. Puts the wheel back on the source that won, so the
+   * two HomeKit views agree instead of the scene's outcome depending on which
+   * write the controller happened to send first. See SWITCH_PRECEDENCE_MS.
+   */
+  private isSupersededByRecentSwitch(input: InputSource): boolean {
+    const recent = this.lastSwitchRequest;
+    if (!recent || recent.input.id === input.id || Date.now() - recent.at > SWITCH_PRECEDENCE_MS) {
+      return false;
+    }
+
+    this.deps.log('info',
+      `Ignoring input ${input.name} — ${recent.input.name} was just selected from its switch. `
+      + 'If a scene is asking for both, remove whichever of the two you did not intend.');
+    this.currentInputId = recent.input.identifier;
+    this.tvService?.updateCharacteristic(this.deps.Characteristic.ActiveIdentifier, recent.input.identifier);
+    return true;
+  }
+
   // ==========================================================================
   // DEFERRED SELECTION (TV off or waking)
   // ==========================================================================
@@ -655,7 +722,7 @@ export class InputSourceManager {
    *  starts: without it the caller would decide nothing was outstanding and
    *  read the TV's current source back over the switch still in progress. */
   hasPendingWakeSelection(): boolean {
-    return this.wakeSelection !== null || this.replayInFlight;
+    return this.wakeSelection !== null || this.replaysInFlight > 0;
   }
 
   /**
@@ -690,11 +757,11 @@ export class InputSourceManager {
       return;
     }
 
-    this.replayInFlight = true;
+    this.replaysInFlight++;
     try {
       await this.runWakeReplay(parked);
     } finally {
-      this.replayInFlight = false;
+      this.replaysInFlight--;
     }
   }
 
@@ -709,7 +776,16 @@ export class InputSourceManager {
       }
 
       try {
-        if (await this.switchInput(parked.input)) {
+        // An accepted launch is not the same as a launch that took: a booting
+        // TV answers OK and drops it. Confirm before believing it, and retry
+        // until the TV is far enough up to act on the request.
+        if (await this.switchInput(parked.input) && await this.launchTookEffect(parked.input)) {
+          // The confirmation takes a moment, and a newer selection may have
+          // arrived while it ran — that one is what the user wants now.
+          if (this.switchGeneration !== parked.generation) {
+            this.deps.log('debug', `Abandoning pending switch to ${parked.input.name} — superseded`);
+            return;
+          }
           this.currentInputId = parked.input.identifier;
           this.markPending(parked.input.identifier);
           this.tvService?.updateCharacteristic(
@@ -729,6 +805,59 @@ export class InputSourceManager {
     }
 
     this.deps.log('warn', `Could not switch to ${parked.input.name} after the TV woke up`);
+  }
+
+  /**
+   * Decide whether a launch the TV accepted actually put the source on screen.
+   *
+   * A Philips set answers `OK` to /activities/launch while it is still coming
+   * up out of standby and then does nothing with the request, so the
+   * acknowledgement alone is not evidence (issue #17). Only positive evidence
+   * to the contrary counts as a failure — the TV reporting its launcher, the
+   * tuner, or a different app. Anything inconclusive is accepted, so an app
+   * the TV never names by itself is not relaunched on a loop underneath the
+   * user.
+   */
+  private async launchTookEffect(input: InputSource): Promise<boolean> {
+    // Outside the wake window the TV is up and its acknowledgement is good.
+    if (this.deps.isWaking?.() !== true) {
+      return true;
+    }
+
+    // Give an app that is genuinely starting time to reach the foreground,
+    // otherwise its own start-up looks like a dropped launch.
+    await new Promise(resolve => setTimeout(resolve, WAKE_CONFIRM_SETTLE_MS));
+
+    let reported: string | null;
+    try {
+      reported = await this.deps.tvClient.getCurrentActivity();
+    } catch {
+      reported = null;
+    }
+
+    // No answer at all: the TV is not up yet, so the launch cannot have taken.
+    if (reported === null) {
+      return false;
+    }
+    if (reported === input.id) {
+      return true;
+    }
+    if (isLauncherPackage(reported)) {
+      // Sitting on the home screen — right only if that is what was asked for.
+      return input.id === HOME_URI;
+    }
+    if (reported === PLAYTV_PACKAGE) {
+      // Tuner or an HDMI input; either way not an app.
+      return input.type === 'source' && input.id !== HOME_URI;
+    }
+    if (reported === NO_APP_REPORT) {
+      // Ambiguous — the home screen on some firmwares, and every app the TV
+      // does not track. Not evidence the launch was dropped.
+      return true;
+    }
+    // The TV named a different app: ours did not take.
+    this.deps.log('debug', `TV is on ${reported}, not ${input.name} — retrying the switch`);
+    return false;
   }
 
   // ==========================================================================

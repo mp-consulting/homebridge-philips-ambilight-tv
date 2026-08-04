@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.6.6] - 2026-08-04
+
+### Fixed
+
+- **A source could still be missed when it was picked as part of turning the TV on** ([#17](https://github.com/mp-consulting/homebridge-philips-ambilight-tv/issues/17)): the TV answers `OK` to an app launch it receives while it is still coming out of standby, and then drops it — so the plugin recorded the source as applied, told the Home app so, and never tried again while the TV woke onto its own home screen. A launch made in the seconds after a power-on is now checked against what the TV reports it is actually showing, and repeated until it takes. Only evidence to the contrary counts as a failure — the TV sitting on its launcher, the tuner, or a different app — so an app the TV never names in a report of its own is not relaunched underneath you.
+- **A scene asking for two different sources at once now resolves the same way every time.** The Home app fills a scene's TV input in from whatever it happened to be when the scene was created, so a scene built around a source switch routinely carries an unrelated leftover input as well. Both are written in the same instant with no ordering guarantee, which made the outcome a coin flip. The switch now wins: it is the half of the pair you added on purpose. The wheel follows it rather than fighting it, and the log says which source was dropped so the scene can be corrected.
+
 ## [1.6.5] - 2026-08-04
 
 ### Fixed
