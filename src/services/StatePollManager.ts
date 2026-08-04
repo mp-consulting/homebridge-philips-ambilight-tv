@@ -24,15 +24,25 @@ const LONG_POLL_RETRY_MS = 60_000;
  *  changes flowing into HomeKit without polling the TV every second. */
 const TV_ACTIVITY_REFRESH_THROTTLE_MS = 10_000;
 
-/** How long the plugin will go without a single state refresh before it stops
- *  trusting the long-poll and brings the interval baseline back.
+/** How long the plugin will go without a single signal from the TV before it
+ *  stops trusting the long-poll and brings the interval baseline back.
  *
- *  A working channel refreshes at least every TV_ACTIVITY_REFRESH_THROTTLE_MS,
- *  so this is several times the healthy cadence. The channel can stop
- *  delivering without ever reporting a failure — a TV that answers
- *  /notifychange with nothing at all keeps the loop alive and the connection
- *  open — and once the baseline has been dropped there is nothing else left
- *  watching the TV. */
+ *  The channel can stop delivering without ever reporting a failure — a TV
+ *  that answers /notifychange with nothing at all keeps the loop alive and the
+ *  connection open — and once the baseline has been dropped there is nothing
+ *  else left watching the TV.
+ *
+ *  Every notification counts as a signal, not just the ones that survive the
+ *  activities/tv throttle. Today that makes no difference — the throttle is far
+ *  below this, so a ticking channel always refreshes in time anyway — but it
+ *  stops this threshold from quietly depending on that ordering holding, since
+ *  the throttle bounds how often the plugin refreshes and not how often the TV
+ *  pushes.
+ *
+ *  What nothing can bound is a TV that genuinely has nothing to report, sitting
+ *  in an app with the tuner idle. Such a TV will trip this and get the baseline
+ *  back, which is the safe outcome but not a free one, so it wants to be long
+ *  enough that quiet sets are not put through it constantly. */
 const LONG_POLL_STALE_MS = 60_000;
 
 /** How often the staleness check above runs. */
@@ -69,9 +79,15 @@ export class StatePollManager {
   private longPollConfirmed = false;
   /** Timestamp of the last notification-driven refresh, used to throttle activities/tv */
   private lastNotifyRefresh = 0;
-  /** Timestamp of the last completed state poll, however it was triggered.
-   *  Watched by the health check — see LONG_POLL_STALE_MS. */
-  private lastStatePoll = 0;
+  /** Timestamp of the last proof the plugin is still seeing the TV: a state
+   *  poll starting, or any notification off the long-poll channel — including
+   *  the activities/tv ticks the refresh throttle swallows, which are still
+   *  evidence the channel is delivering. Watched by the health check — see
+   *  LONG_POLL_STALE_MS. */
+  private lastTvSignal = 0;
+  /** True once the health check has reported this channel stale, so a TV that
+   *  simply has little to say warns the user once instead of on every lapse. */
+  private staleReported = false;
 
   constructor(
     private readonly tvClient: PhilipsTVClient,
@@ -123,16 +139,27 @@ export class StatePollManager {
    * remote without the tile ever going dark (issue #14). Bringing the baseline
    * back on a stale channel bounds that to LONG_POLL_STALE_MS. Clearing
    * longPollConfirmed lets a channel that recovers drop the baseline again.
+   *
+   * That recovery is also why the warning only goes out once per channel. A TV
+   * with genuinely little to report cycles through here — quiet, baseline back,
+   * a notification eventually confirms the channel again, quiet again — and
+   * that cycle is normal, not something to warn about every minute. The first
+   * one is worth telling the user about; the rest are a debug detail.
    */
   private startHealthCheck(): void {
     if (this.healthCheckTimer) {
       return;
     }
     this.healthCheckTimer = setInterval(() => {
-      if (!this.longPollConfirmed || Date.now() - this.lastStatePoll < LONG_POLL_STALE_MS) {
+      if (!this.longPollConfirmed || Date.now() - this.lastTvSignal < LONG_POLL_STALE_MS) {
         return;
       }
-      this.log('warn', 'No state updates from the TV recently — resuming interval polling');
+      if (this.staleReported) {
+        this.log('debug', 'Long-poll quiet again — resuming interval polling');
+      } else {
+        this.staleReported = true;
+        this.log('warn', 'No state updates from the TV recently — resuming interval polling');
+      }
       this.longPollConfirmed = false;
       this.startIntervalPolling();
     }, HEALTH_CHECK_INTERVAL_MS);
@@ -168,6 +195,13 @@ export class StatePollManager {
       if (keys.length === 0) {
         return;
       }
+
+      // Anything arriving here is proof the channel is delivering, whether or
+      // not it earns a refresh below. Belt and braces while the refresh throttle
+      // stays well under LONG_POLL_STALE_MS — a throttled-out tick always has a
+      // refresh right behind it — but it keeps the health check measuring the
+      // TV rather than the throttle.
+      this.lastTvSignal = Date.now();
 
       // Any notification proves the long-poll channel is delivering, so the
       // interval-poll baseline can stop — including on models that only ever
@@ -237,6 +271,8 @@ export class StatePollManager {
     }
     this.longPollConfirmed = false;
     this.lastNotifyRefresh = 0;
+    // A fresh channel gets a fresh warning if it too goes quiet.
+    this.staleReported = false;
   }
 
   private scheduleLongPollRetry(): void {
@@ -279,7 +315,10 @@ export class StatePollManager {
   // ==========================================================================
 
   private async pollState(): Promise<void> {
-    this.lastStatePoll = Date.now();
+    // Stamped on entry rather than on completion: a poll that hangs is not
+    // evidence the plugin has stopped watching, and tripping the health check
+    // underneath one would start a second poller alongside it.
+    this.lastTvSignal = Date.now();
     try {
       const isOn = await this.tvClient.getPowerState();
       const changed = isOn !== this.isPoweredOn;

@@ -327,6 +327,98 @@ describe('PhilipsAmbilightTVAccessory power handling', () => {
     });
   });
 
+  // ==========================================================================
+  // THE WAKE WINDOW
+  // ==========================================================================
+
+  describe('the wake window', () => {
+    /** Mirrors WAKE_WINDOW_MS in platformAccessory.ts. */
+    const WAKE_WINDOW_MS = 20_000;
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    /** Build the accessory and return the poll callbacks, the wake predicate it
+     *  hands to InputSourceManager, and the services HomeKit writes land on. */
+    function build() {
+      const { platform, accessory, services } = createMocks();
+      new PhilipsAmbilightTVAccessory(platform as never, accessory as never);
+      return {
+        services,
+        cb: capture.pollCallbacks as { onPowerChange: (on: boolean) => void },
+        isWaking: (capture.inputManagerDeps as { isWaking: () => boolean }).isWaking,
+      };
+    }
+
+    it('opens the wake window when the TV is switched on from the remote', async () => {
+      // Nothing HomeKit did opened this one — the poll noticing the TV is on is
+      // the only signal there is, and launches are just as provisional.
+      const { cb, isWaking } = build();
+
+      cb.onPowerChange(false); // initial sync: TV was off
+      expect(isWaking()).toBe(false);
+
+      cb.onPowerChange(true);
+
+      expect(isWaking()).toBe(true);
+    });
+
+    it('closes the wake window once the window has run its course', async () => {
+      const { cb, isWaking } = build();
+
+      cb.onPowerChange(false);
+      cb.onPowerChange(true);
+      vi.setSystemTime(Date.now() + WAKE_WINDOW_MS + 1_000);
+
+      expect(isWaking()).toBe(false);
+    });
+
+    it('does not restart a window that is already running', async () => {
+      // The window opened at the power command, which is the earlier and so the
+      // truer start of the boot. Restarting it when the poll catches up would
+      // stretch it by however long the poll took to notice.
+      const { cb, isWaking, services } = build();
+
+      cb.onPowerChange(false); // initial sync: TV was off
+      await setPower(services, true); // window opens here
+      vi.setSystemTime(Date.now() + 15_000);
+      cb.onPowerChange(true); // the poll catches up, well inside the window
+
+      // Past the window measured from the command, but not from the poll — so
+      // this only passes if the later report left the running window alone.
+      vi.setSystemTime(Date.now() + 6_000);
+      expect(isWaking()).toBe(false);
+    });
+
+    it('closes the wake window when the TV goes to standby', async () => {
+      const { cb, isWaking } = build();
+
+      cb.onPowerChange(false);
+      cb.onPowerChange(true);
+      expect(isWaking()).toBe(true);
+
+      cb.onPowerChange(false);
+
+      expect(isWaking()).toBe(false);
+    });
+
+    it('does not open a window on the first sync of an already-on TV', async () => {
+      // A Homebridge restart while the TV is up is not a power-on, and treating
+      // it as one would make every launch provisional for no reason.
+      const { cb, isWaking } = build();
+
+      cb.onPowerChange(true);
+
+      expect(isWaking()).toBe(false);
+    });
+  });
+
   describe('active-source sync on power-on', () => {
     /** Build the accessory and return the poll callbacks it registered. */
     function build() {
