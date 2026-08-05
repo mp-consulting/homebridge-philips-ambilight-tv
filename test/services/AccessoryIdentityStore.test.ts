@@ -96,7 +96,9 @@ describe('AccessoryIdentityStore', () => {
       expect(store.resolve('aa:bb:cc:dd:ee:ff')).not.toBe(store.resolve('11:22:33:44:55:66'));
     });
 
-    it('records the decision so it can be replayed on the next run', () => {
+    it('records the decision once a pairing anchors it, so it can be replayed next run', () => {
+      withFiles({ [persistFileFor('AA:BB:CC:DD:EE:FF')]: pairedRecord });
+
       createStore().resolve('AA:BB:CC:DD:EE:FF');
 
       expect(mockWriteFileSync).toHaveBeenCalledWith(
@@ -107,6 +109,7 @@ describe('AccessoryIdentityStore', () => {
     });
 
     it('survives an unwritable storage path', () => {
+      withFiles({ [persistFileFor('AA:BB:CC:DD:EE:FF')]: pairedRecord });
       mockWriteFileSync.mockImplementation(() => {
         throw new Error('EACCES');
       });
@@ -114,6 +117,38 @@ describe('AccessoryIdentityStore', () => {
 
       expect(store.resolve('AA:BB:CC:DD:EE:FF')).toBe(generateUuid('PhilipsAmbilightTV-AA:BB:CC:DD:EE:FF'));
       expect(log).toHaveBeenCalledWith('warn', expect.stringContaining('Failed to persist'));
+    });
+  });
+
+  describe('before a pairing exists to anchor the identity', () => {
+    it('records nothing, so config.json stays in charge', () => {
+      createStore().resolve('AA:BB:CC:DD:EE:FF');
+
+      expect(mockWriteFileSync).not.toHaveBeenCalled();
+    });
+
+    it('still follows the configured MAC, which is how an unrecovered TV is fixed by hand', () => {
+      // A pairing made under a spelling the probe does not enumerate is not
+      // found, so putting that exact spelling back in config.json has to work.
+      const odd = 'Aa:Bb:Cc:Dd:Ee:Ff';
+
+      expect(createStore().resolve(odd)).toBe(generateUuid(`PhilipsAmbilightTV-${odd}`));
+      expect(createStore().resolve('aa:bb:cc:dd:ee:ff')).toBe(generateUuid('PhilipsAmbilightTV-aa:bb:cc:dd:ee:ff'));
+    });
+
+    it('freezes the identity as soon as the TV is paired', () => {
+      createStore().resolve('AA:BB:CC:DD:EE:FF');
+      expect(mockWriteFileSync).not.toHaveBeenCalled();
+
+      // The user adds the TV in the Home app; HAP writes the pairing.
+      withFiles({ [persistFileFor('AA:BB:CC:DD:EE:FF')]: pairedRecord });
+      createStore().resolve('AA:BB:CC:DD:EE:FF');
+
+      expect(mockWriteFileSync).toHaveBeenCalledWith(
+        IDENTITY_PATH,
+        expect.stringContaining('PhilipsAmbilightTV-AA:BB:CC:DD:EE:FF'),
+        'utf-8',
+      );
     });
   });
 
@@ -199,6 +234,7 @@ describe('AccessoryIdentityStore', () => {
       withFiles({ [persistFileFor('AA:BB:CC:DD:EE:FF')]: unpairedRecord });
 
       expect(createStore().resolve('aa:bb:cc:dd:ee:ff')).toBe(generateUuid('PhilipsAmbilightTV-aa:bb:cc:dd:ee:ff'));
+      expect(mockWriteFileSync).not.toHaveBeenCalled();
     });
 
     it('freezes the recovered identity so it is not re-derived next run', () => {
