@@ -193,6 +193,22 @@ The plugin supports up to 30 input sources (5 static + 25 apps).
 - Check if Wake-on-LAN is enabled in TV settings
 - Ensure the TV's API is accessible (port 1926)
 
+### TV missing from the Home app or the iOS Remote
+
+If the TV was working and then went unresponsive or disappeared — typically after
+re-running the pairing wizard — its MAC address was most likely rewritten in a
+different case, which used to republish it as a new, unpaired accessory. v1.6.8
+detects the pairing left behind and restores it automatically; restart Homebridge
+and look for a line saying the TV was found paired under a different MAC.
+
+Every way of writing the address is searched, whatever its case and whether it
+uses colons or dashes. The one exception is an address that mixes the two
+(`AA:BB-CC:DD-EE:FF`). If the line does not appear, set `mac` in `config.json`
+back to exactly how it used to be written and restart — the configured address
+is followed as-is until a pairing is found, so this still works. Failing that,
+add the TV in the Home app once more. Either way, once it is paired the plugin
+records that identity and it will not drift again.
+
 ### "Write handler didn't respond at all" warnings
 
 If you see these warnings in the Homebridge logs, make sure you are running v1.0.4 or later. Earlier versions used a 15-second API timeout that exceeded Homebridge's handler deadline, causing the plugin to slow down the entire instance when the TV was unreachable.

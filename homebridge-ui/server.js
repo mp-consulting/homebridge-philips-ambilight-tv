@@ -11,6 +11,7 @@ import {
 } from '../dist/api/constants.js';
 import {
   hmacSignature,
+  normalizeMacAddress,
   postToTv,
   getFromTv,
   createDigestAuth,
@@ -159,7 +160,11 @@ class UiServer extends HomebridgePluginUiServer {
 
   async getMacAddress(ipAddress) {
     try {
-      const mac = await getMAC(ipAddress);
+      // Canonicalize before it reaches the config: the ARP table prints
+      // lowercase while an address typed off the TV is usually uppercase, and
+      // writing back a differently-spelled version of the same address used to
+      // republish the TV as a new, unpaired HomeKit accessory.
+      const mac = normalizeMacAddress(await getMAC(ipAddress));
       return { success: true, mac };
     } catch (error) {
       return { success: false, error: error.message || 'Failed to get MAC address' };

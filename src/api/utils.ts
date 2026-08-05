@@ -403,6 +403,34 @@ export const sanitizeForHomeKit = (name: string): string =>
     || 'Unknown';
 
 // ============================================================================
+// MAC ADDRESSES
+// ============================================================================
+
+/** Bare 12-hex-digit form of a MAC, or null when the input is not one. */
+export const macHexDigits = (mac: string): string | null => {
+  const hex = mac.replace(/[:-]/g, '').toLowerCase();
+  return /^[0-9a-f]{12}$/.test(hex) ? hex : null;
+};
+
+/**
+ * Canonical spelling of a MAC: lowercase, colon-separated.
+ *
+ * Anything that derives a stable identity from a MAC has to agree on one
+ * spelling, because the config accepts several: `AA:BB:CC:DD:EE:FF`,
+ * `aa:bb:cc:dd:ee:ff` and `aa-bb-cc-dd-ee-ff` all name the same TV and all pass
+ * validation. Re-detecting the address is enough to swap one for another — the
+ * settings UI reads it from the OS ARP table, which prints lowercase, while an
+ * address typed off the TV's network screen is usually uppercase.
+ *
+ * Returns the input untouched when it is not a MAC; validating that is the
+ * caller's job.
+ */
+export const normalizeMacAddress = (mac: string): string => {
+  const hex = macHexDigits(mac);
+  return hex ? hex.match(/.{2}/g)!.join(':') : mac;
+};
+
+// ============================================================================
 // WAKE-ON-LAN
 // ============================================================================
 
@@ -433,9 +461,9 @@ const wolSleep = (ms: number): Promise<void> =>
  */
 export const sendWakeOnLan = (macAddress: string): Promise<void> =>
   new Promise((resolve, reject) => {
-    const mac = macAddress.replace(/[:-]/g, '').toLowerCase();
+    const mac = macHexDigits(macAddress);
 
-    if (mac.length !== 12 || !/^[0-9a-f]+$/.test(mac)) {
+    if (!mac) {
       return reject(new Error('Invalid MAC address format'));
     }
 
