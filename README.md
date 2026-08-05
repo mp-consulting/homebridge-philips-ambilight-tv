@@ -201,11 +201,12 @@ different case, which used to republish it as a new, unpaired accessory. v1.6.8
 detects the pairing left behind and restores it automatically; restart Homebridge
 and look for a line saying the TV was found paired under a different MAC.
 
-If that line does not appear, the TV was paired under a spelling the plugin does
-not go looking for (a mixed-case address, say). Set `mac` in `config.json` back
-to exactly how it used to be written and restart — the configured address is
-followed as-is until a pairing is found, so this still works. Failing that, add
-the TV in the Home app once more. Either way, once it is paired the plugin
+Every way of writing the address is searched, whatever its case and whether it
+uses colons or dashes. The one exception is an address that mixes the two
+(`AA:BB-CC:DD-EE:FF`). If the line does not appear, set `mac` in `config.json`
+back to exactly how it used to be written and restart — the configured address
+is followed as-is until a pairing is found, so this still works. Failing that,
+add the TV in the Home app once more. Either way, once it is paired the plugin
 records that identity and it will not drift again.
 
 ### "Write handler didn't respond at all" warnings
