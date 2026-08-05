@@ -17,6 +17,8 @@ import {
   parseErrorResponse,
   extractIpv4,
   sendWakeOnLan,
+  macHexDigits,
+  normalizeMacAddress,
   sanitizeForLog,
   sanitizeForHomeKit,
   createDeviceInfo,
@@ -254,6 +256,35 @@ describe('extractIpv4', () => {
       type: 'androidtvremote2',
     };
     expect(extractIpv4(device)).toBe('tv.local');
+  });
+});
+
+// ============================================================================
+// MAC addresses
+// ============================================================================
+
+describe('macHexDigits', () => {
+  it('should strip separators and lowercase', () => {
+    expect(macHexDigits('AA-BB-CC-DD-EE-FF')).toBe('aabbccddeeff');
+  });
+
+  it('should reject anything that is not twelve hex digits', () => {
+    expect(macHexDigits('AA:BB:CC')).toBeNull();
+    expect(macHexDigits('not-a-mac-at-all')).toBeNull();
+  });
+});
+
+describe('normalizeMacAddress', () => {
+  it('should map every accepted spelling of one address to the same string', () => {
+    const canonical = 'aa:bb:cc:dd:ee:ff';
+    expect(normalizeMacAddress('AA:BB:CC:DD:EE:FF')).toBe(canonical);
+    expect(normalizeMacAddress('aa-bb-cc-dd-ee-ff')).toBe(canonical);
+    expect(normalizeMacAddress('AA-BB-CC-DD-EE-FF')).toBe(canonical);
+    expect(normalizeMacAddress(canonical)).toBe(canonical);
+  });
+
+  it('should leave a value that is not a MAC alone for the caller to validate', () => {
+    expect(normalizeMacAddress('not-a-mac')).toBe('not-a-mac');
   });
 });
 
