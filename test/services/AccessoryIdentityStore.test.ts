@@ -11,6 +11,7 @@ vi.mock('fs', () => ({
   default: {
     readFileSync: vi.fn(),
     writeFileSync: vi.fn(),
+    readdirSync: vi.fn(),
   },
 }));
 
@@ -18,6 +19,7 @@ import fs from 'fs';
 
 const mockReadFileSync = vi.mocked(fs.readFileSync);
 const mockWriteFileSync = vi.mocked(fs.writeFileSync);
+const mockReaddirSync = vi.mocked(fs.readdirSync);
 
 const STORAGE_PATH = '/storage';
 const PERSIST_PATH = '/storage/persist';
@@ -55,7 +57,8 @@ function createStore(): AccessoryIdentityStore {
 
 /**
  * Serve the identity file and any AccessoryInfo records from an in-memory map;
- * everything else throws ENOENT the way a missing file does.
+ * everything else throws ENOENT the way a missing file does. Listing the
+ * persist directory returns exactly the records the map holds.
  */
 function withFiles(files: Record<string, unknown>): void {
   mockReadFileSync.mockImplementation((p: unknown) => {
@@ -64,6 +67,14 @@ function withFiles(files: Record<string, unknown>): void {
       throw new Error('ENOENT');
     }
     return JSON.stringify(file);
+  });
+  mockReaddirSync.mockImplementation((dir: unknown) => {
+    if (String(dir) !== PERSIST_PATH) {
+      throw new Error('ENOENT');
+    }
+    return Object.keys(files)
+      .filter(f => f.startsWith(`${PERSIST_PATH}/`))
+      .map(f => f.slice(PERSIST_PATH.length + 1)) as unknown as ReturnType<typeof fs.readdirSync>;
   });
 }
 
@@ -128,9 +139,9 @@ describe('AccessoryIdentityStore', () => {
     });
 
     it('still follows the configured MAC, which is how an unrecovered TV is fixed by hand', () => {
-      // A pairing made under a spelling the probe does not enumerate is not
-      // found, so putting that exact spelling back in config.json has to work.
-      const odd = 'Aa:Bb:Cc:Dd:Ee:Ff';
+      // Mixed separators are the one spelling not enumerated, so putting that
+      // exact spelling back in config.json has to keep working.
+      const odd = 'aa:bb-cc:dd-ee:ff';
 
       expect(createStore().resolve(odd)).toBe(generateUuid(`PhilipsAmbilightTV-${odd}`));
       expect(createStore().resolve('aa:bb:cc:dd:ee:ff')).toBe(generateUuid('PhilipsAmbilightTV-aa:bb:cc:dd:ee:ff'));
@@ -210,6 +221,36 @@ describe('AccessoryIdentityStore', () => {
       createStore().resolve('aa:bb:cc:dd:ee:ff');
 
       expect(log).toHaveBeenCalledWith('info', expect.stringContaining('AA:BB:CC:DD:EE:FF'));
+    });
+
+    it('recovers a pairing made under a mixed-case MAC', () => {
+      const mixed = 'A1:b2:C3:d4:E5:f6';
+      withFiles({ [persistFileFor(mixed)]: pairedRecord });
+
+      expect(createStore().resolve('a1:b2:c3:d4:e5:f6')).toBe(generateUuid(`PhilipsAmbilightTV-${mixed}`));
+    });
+
+    it('recovers a mixed-case pairing written with dashes', () => {
+      const mixed = 'a1-B2-c3-D4-e5-F6';
+      withFiles({ [persistFileFor(mixed)]: pairedRecord });
+
+      expect(createStore().resolve('a1:b2:c3:d4:e5:f6')).toBe(generateUuid(`PhilipsAmbilightTV-${mixed}`));
+    });
+
+    it('sweeps case permutations only against records that are actually paired', () => {
+      const mixed = 'A1:b2:C3:d4:E5:f6';
+      withFiles({ [persistFileFor(mixed)]: unpairedRecord });
+
+      expect(createStore().resolve('a1:b2:c3:d4:e5:f6')).toBe(generateUuid('PhilipsAmbilightTV-a1:b2:c3:d4:e5:f6'));
+    });
+
+    it('falls back to the common spellings when the persist directory cannot be listed', () => {
+      withFiles({ [persistFileFor('AA:BB:CC:DD:EE:FF')]: pairedRecord });
+      mockReaddirSync.mockImplementation(() => {
+        throw new Error('EACCES');
+      });
+
+      expect(createStore().resolve('aa:bb:cc:dd:ee:ff')).toBe(generateUuid('PhilipsAmbilightTV-AA:BB:CC:DD:EE:FF'));
     });
 
     it('recovers a dash-separated pairing too', () => {
