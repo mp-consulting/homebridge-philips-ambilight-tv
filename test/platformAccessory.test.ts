@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   fetchAppsFromTV: vi.fn().mockResolvedValue(undefined),
   inputUpdateFromPoll: vi.fn(),
   switchUpdateFromPoll: vi.fn(),
+  sendKey: vi.fn().mockResolvedValue(true),
   hasPendingWakeSelection: vi.fn().mockReturnValue(false),
   replayWakeSelection: vi.fn().mockResolvedValue(undefined),
   clearWakeSelection: vi.fn(),
@@ -33,6 +34,7 @@ vi.mock('../src/api/PhilipsTVClient.js', () => ({
   PhilipsTVClient: class {
     setPowerState = mocks.setPowerState;
     getCurrentActivity = mocks.getCurrentActivity;
+    sendKey = mocks.sendKey;
   },
   // Re-exported URI constants used elsewhere; unused here but keep the shape.
   HDMI_SOURCES: {},
@@ -121,6 +123,7 @@ function createMockService() {
     setCharacteristic: vi.fn().mockReturnThis(),
     updateCharacteristic: vi.fn().mockReturnThis(),
     addLinkedService: vi.fn(),
+    setPrimaryService: vi.fn().mockReturnThis(),
     getCharacteristic: vi.fn().mockImplementation((key: unknown) => {
       if (!chars.has(key)) {
         const char: MockCharacteristic = {
@@ -147,7 +150,8 @@ const Characteristic = {
   SleepDiscoveryMode: { ALWAYS_DISCOVERABLE: 1 },
   CurrentMediaState: { INTERRUPTED: 0 },
   RemoteKey: {},
-  VolumeControlType: { ABSOLUTE: 3 },
+  PowerModeSelection: {},
+  VolumeControlType: { NONE: 0, RELATIVE: 1, RELATIVE_WITH_CURRENT: 2, ABSOLUTE: 3 },
   VolumeSelector: {},
   Mute: {},
   Manufacturer: {},
@@ -534,5 +538,91 @@ describe('PhilipsAmbilightTVAccessory power handling', () => {
       // on every selection from the wheel.
       expect(build(false)()).toBe(false);
     });
+  });
+});
+
+// ============================================================================
+// iOS REMOTE WIRING
+//
+// The Control Center remote reads the accessory rather than the Home app's
+// view of it, so it is the part of the published accessory that shows up first
+// when the Television service is described wrongly.
+// ============================================================================
+
+describe('PhilipsAmbilightTVAccessory iOS Remote wiring', () => {
+  beforeEach(() => {
+    Object.values(mocks).forEach(m => m.mockClear());
+    mocks.sendKey.mockResolvedValue(true);
+    mocks.getVisibleSources.mockReturnValue([]);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('marks the Television as the accessory’s primary service', () => {
+    // Everything else on the accessory — the bulb, the switches, the sensors —
+    // is a supporting service. Without this, nothing states which one the
+    // accessory actually is.
+    const { platform, accessory, services } = createMocks();
+    new PhilipsAmbilightTVAccessory(platform as never, accessory as never);
+
+    expect(services.get(Service.Television)!.setPrimaryService).toHaveBeenCalledWith(true);
+  });
+
+  it('does not seed ActiveIdentifier itself', () => {
+    // The inputs it could name don't exist yet at this point; InputSourceManager
+    // sets it once they do. The old hardcoded 1 named an input that was never
+    // registered.
+    const { platform, accessory, services } = createMocks();
+    new PhilipsAmbilightTVAccessory(platform as never, accessory as never);
+
+    const seeded = services.get(Service.Television)!.setCharacteristic.mock.calls
+      .some(([char]) => char === Characteristic.ActiveIdentifier);
+    expect(seeded).toBe(false);
+  });
+
+  it('declares relative volume control, matching the keys it actually sends', () => {
+    // The speaker has no Volume characteristic — it presses VolumeUp/VolumeDown
+    // — so ABSOLUTE promised a level no controller could read back.
+    const { platform, accessory, services } = createMocks();
+    new PhilipsAmbilightTVAccessory(platform as never, accessory as never);
+
+    expect(services.get(Service.TelevisionSpeaker)!.setCharacteristic)
+      .toHaveBeenCalledWith(Characteristic.VolumeControlType, Characteristic.VolumeControlType.RELATIVE);
+  });
+
+  it('sends the TV’s menu key for the remote’s settings button', async () => {
+    const { platform, accessory, services } = createMocks();
+    new PhilipsAmbilightTVAccessory(platform as never, accessory as never);
+
+    const char = services.get(Service.Television)!
+      .getCharacteristic(Characteristic.PowerModeSelection) as unknown as MockCharacteristic;
+    await char._onSet!(0);
+
+    expect(mocks.sendKey).toHaveBeenCalledWith('Options');
+  });
+
+  it('honours a configured settings key', async () => {
+    const { platform, accessory, services } = createMocks();
+    (accessory.context.device as Record<string, unknown>).settingsButtonKey = 'Adjust';
+    new PhilipsAmbilightTVAccessory(platform as never, accessory as never);
+
+    const char = services.get(Service.Television)!
+      .getCharacteristic(Characteristic.PowerModeSelection) as unknown as MockCharacteristic;
+    await char._onSet!(0);
+
+    expect(mocks.sendKey).toHaveBeenCalledWith('Adjust');
+  });
+
+  it('survives a TV that refuses the settings key', async () => {
+    const { platform, accessory, services } = createMocks();
+    new PhilipsAmbilightTVAccessory(platform as never, accessory as never);
+    mocks.sendKey.mockRejectedValueOnce(new Error('unreachable'));
+
+    const char = services.get(Service.Television)!
+      .getCharacteristic(Characteristic.PowerModeSelection) as unknown as MockCharacteristic;
+
+    await expect(char._onSet!(0)).resolves.toBeUndefined();
   });
 });

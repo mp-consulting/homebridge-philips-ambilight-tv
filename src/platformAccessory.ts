@@ -130,7 +130,7 @@ export class PhilipsAmbilightTVAccessory {
     this.configureAccessoryInfo();
     this.tvService = this.configureTelevisionService();
     this.speakerService = this.configureSpeakerService();
-    this.ambilightService.configureService(this.accessory, this.tvService);
+    this.ambilightService.configureService(this.accessory);
     this.inputSourceManager.configureInputSources(this.tvService);
 
     // Configure source switches (individual Switch services for HomeKit automations)
@@ -182,14 +182,25 @@ export class PhilipsAmbilightTVAccessory {
     const service = this.accessory.getService(this.Service.Television)
       ?? this.accessory.addService(this.Service.Television);
 
+    // The accessory carries a lot besides the TV — the Ambilight bulb, a switch
+    // per source, the state sensors. Without a service flagged as primary,
+    // nothing in the published accessory says which of them the accessory *is*,
+    // and iOS has to guess a Television out of twenty services. Saying so
+    // outright is what keeps it recognisable as a TV, and so controllable from
+    // the iOS Remote.
+    service.setPrimaryService(true);
+
     const displayName = sanitizeForHomeKit(this.config.name);
     service
       .setCharacteristic(this.Characteristic.Active, this.Characteristic.Active.INACTIVE)
-      .setCharacteristic(this.Characteristic.ActiveIdentifier, 1)
       .setCharacteristic(this.Characteristic.Name, displayName)
       .setCharacteristic(this.Characteristic.ConfiguredName, displayName)
       .setCharacteristic(this.Characteristic.SleepDiscoveryMode, this.Characteristic.SleepDiscoveryMode.ALWAYS_DISCOVERABLE)
       .setCharacteristic(this.Characteristic.CurrentMediaState, this.Characteristic.CurrentMediaState.INTERRUPTED);
+
+    // ActiveIdentifier is deliberately not seeded here: the inputs it can point
+    // at don't exist yet. InputSourceManager.configureInputSources() sets it to
+    // a real input once they are registered — see the note there.
 
     service.getCharacteristic(this.Characteristic.Active)
       .onGet(() => this.handleGetPower())
@@ -202,6 +213,12 @@ export class PhilipsAmbilightTVAccessory {
     service.getCharacteristic(this.Characteristic.RemoteKey)
       .onSet((value) => this.inputSourceManager.handleRemoteKey(value));
 
+    // The settings button on the iOS Remote. It is not a RemoteKey — HomeKit
+    // sends it as PowerModeSelection — so without this characteristic the
+    // button has nothing to write to and doesn't appear at all.
+    service.getCharacteristic(this.Characteristic.PowerModeSelection)
+      .onSet(() => this.handleSettingsButton());
+
     return service;
   }
 
@@ -211,7 +228,12 @@ export class PhilipsAmbilightTVAccessory {
 
     service
       .setCharacteristic(this.Characteristic.Active, this.Characteristic.Active.ACTIVE)
-      .setCharacteristic(this.Characteristic.VolumeControlType, this.Characteristic.VolumeControlType.ABSOLUTE);
+      // Volume is driven by VolumeUp/VolumeDown key presses, which is exactly
+      // what RELATIVE describes. ABSOLUTE promised a Volume characteristic this
+      // service has never had, so a controller asking for the level got nothing
+      // back — and the iPhone's hardware volume buttons, which the iOS Remote
+      // routes through VolumeSelector, went dead.
+      .setCharacteristic(this.Characteristic.VolumeControlType, this.Characteristic.VolumeControlType.RELATIVE);
 
     service.getCharacteristic(this.Characteristic.VolumeSelector)
       .onSet((value) => this.handleVolumeChange(value));
@@ -307,6 +329,29 @@ export class PhilipsAmbilightTVAccessory {
       this.log('warn', 'Failed to change volume');
     }
   }
+
+  // ==========================================================================
+  // SETTINGS BUTTON HANDLER
+  // ==========================================================================
+
+  /**
+   * The iOS Remote's settings button. HomeKit only ever writes SHOW/HIDE here,
+   * which carries no instruction of its own, so both are treated as "open the
+   * TV's menu" and sent as the configured key.
+   */
+  private async handleSettingsButton(): Promise<void> {
+    const key: RemoteKey = this.config.settingsButtonKey ?? 'Options';
+    this.log('debug', `Settings button: ${key}`);
+    try {
+      await this.tvClient.sendKey(key);
+    } catch {
+      this.log('warn', 'Failed to send settings key');
+    }
+  }
+
+  // ==========================================================================
+  // MUTE HANDLER
+  // ==========================================================================
 
   private async handleSetMute(value: CharacteristicValue): Promise<void> {
     const muted = value as boolean;

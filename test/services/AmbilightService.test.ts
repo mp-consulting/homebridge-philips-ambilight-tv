@@ -175,19 +175,29 @@ describe('AmbilightService configureService', () => {
     const deps = createMockDeps();
     const service = new AmbilightService(deps);
 
-    const tvService = createMockService();
-    const result = service.configureService(deps.accessory as never, tvService as never);
+    const result = service.configureService(deps.accessory as never);
 
     expect(result).toBeDefined();
-    expect(tvService.addLinkedService).toHaveBeenCalled();
+  });
+
+  it('should not link the bulb to the Television service', () => {
+    const deps = createMockDeps();
+    const service = new AmbilightService(deps);
+
+    // A Television's linked services are its input sources and its speaker;
+    // a Lightbulb among them is read as an input by controllers walking the
+    // list, which is why the bulb is left unlinked.
+    const tvService = createMockService();
+    service.configureService(deps.accessory as never);
+
+    expect(tvService.addLinkedService).not.toHaveBeenCalled();
   });
 
   it('should configure adaptive lighting controller', () => {
     const deps = createMockDeps();
     const service = new AmbilightService(deps);
 
-    const tvService = createMockService();
-    service.configureService(deps.accessory as never, tvService as never);
+    service.configureService(deps.accessory as never);
 
     expect((deps.accessory as { configureController: ReturnType<typeof vi.fn> }).configureController).toHaveBeenCalled();
   });
@@ -205,8 +215,7 @@ describe('AmbilightService updateFromPoll', () => {
     vi.useFakeTimers();
     deps = createMockDeps();
     ambilightService = new AmbilightService(deps);
-    const tvService = createMockService();
-    ambilightService.configureService(deps.accessory as never, tvService as never);
+    ambilightService.configureService(deps.accessory as never);
   });
 
   afterEach(() => {
@@ -277,8 +286,7 @@ describe('AmbilightService ambilight mode', () => {
   it('should use default mode FOLLOW_VIDEO/NATURAL when none configured', async () => {
     const deps = createMockDeps();
     const service = new AmbilightService(deps);
-    const tvService = createMockService();
-    service.configureService(deps.accessory as never, tvService as never);
+    service.configureService(deps.accessory as never);
 
     // Access the handler for On
     const hkService = service.getService();
@@ -294,8 +302,7 @@ describe('AmbilightService ambilight mode', () => {
   it('should use custom ambilight mode from config', async () => {
     const deps = createMockDeps({ ambilightMode: 'FOLLOW_AUDIO/ENERGY_ADAPTIVE_BRIGHTNESS' });
     const service = new AmbilightService(deps);
-    const tvService = createMockService();
-    service.configureService(deps.accessory as never, tvService as never);
+    service.configureService(deps.accessory as never);
 
     const hkService = service.getService();
     const onChar = hkService.getCharacteristic((deps.Characteristic as { On: unknown }).On);
@@ -320,8 +327,7 @@ describe('AmbilightService startWithConfiguredMode', () => {
   it('should power on and apply the configured mode', async () => {
     const deps = createMockDeps({ ambilightMode: 'FOLLOW_VIDEO/GAME' });
     const service = new AmbilightService(deps);
-    const tvService = createMockService();
-    service.configureService(deps.accessory as never, tvService as never);
+    service.configureService(deps.accessory as never);
 
     await service.startWithConfiguredMode();
 
@@ -334,8 +340,7 @@ describe('AmbilightService startWithConfiguredMode', () => {
     const deps = createMockDeps();
     (deps.tvClient.setAmbilightPower as ReturnType<typeof vi.fn>).mockResolvedValue(false);
     const service = new AmbilightService(deps);
-    const tvService = createMockService();
-    service.configureService(deps.accessory as never, tvService as never);
+    service.configureService(deps.accessory as never);
 
     await service.startWithConfiguredMode();
 
@@ -356,8 +361,7 @@ describe('AmbilightService reflectPowerOff', () => {
   it('should turn the Ambilight lightbulb off without calling the TV', async () => {
     const deps = createMockDeps();
     const service = new AmbilightService(deps);
-    const tvService = createMockService();
-    const hkService = service.configureService(deps.accessory as never, tvService as never);
+    const hkService = service.configureService(deps.accessory as never);
 
     // Turn it on first
     await service.startWithConfiguredMode();

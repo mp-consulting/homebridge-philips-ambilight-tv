@@ -648,12 +648,86 @@ describe('InputSourceManager', () => {
   // INPUT HANDLERS
   // ==========================================================================
 
+  // ==========================================================================
+  // IDENTIFIERS
+  //
+  // The Television service advertises a current input by identifier, so every
+  // identifier it can name has to belong to an input source that exists. These
+  // pin down the reserved low range that guarantees it.
+  // ==========================================================================
+
+  describe('identifier allocation', () => {
+    it('gives the static sources the reserved identifiers 1-6, in registration order', () => {
+      const deps = createMockDeps();
+      const manager = new InputSourceManager(deps);
+      manager.configureInputSources(createMockService() as never);
+
+      const byId = new Map(manager.getSources().map(s => [s.id, s.identifier]));
+      expect(byId.get(WATCH_TV_URI)).toBe(1);
+      expect(byId.get(HOME_URI)).toBe(2);
+      // HDMI 1-4 take 3-6, leaving nothing in the range unclaimed.
+      expect([...byId.values()].filter(i => i >= 1 && i <= 6).length).toBe(6);
+    });
+
+    it('numbers apps above the reserved range', () => {
+      const deps = createMockDeps({
+        customApps: [{ name: 'EON', packageName: 'com.ug.eon.android.tv' }],
+      });
+      const manager = new InputSourceManager(deps);
+      manager.configureInputSources(createMockService() as never);
+
+      const eon = manager.getSources().find(s => s.id === 'com.ug.eon.android.tv')!;
+      expect(eon.identifier).toBeGreaterThan(6);
+    });
+
+    it('keeps the identifiers an existing install already recorded', () => {
+      // Installs predating the reservation numbered their static sources from 7
+      // upwards. Renumbering them would move every input HomeKit has a rename
+      // or a visibility setting against, so the cache still wins.
+      mockReadFileSync.mockReturnValueOnce(JSON.stringify([
+        { id: WATCH_TV_URI, name: 'Watch TV', configuredName: 'Watch TV', type: 'source', identifier: 7, visibility: 0 },
+        { id: HOME_URI, name: 'Home', configuredName: 'Home', type: 'source', identifier: 8, visibility: 0 },
+      ]));
+
+      const deps = createMockDeps();
+      const manager = new InputSourceManager(deps);
+      manager.configureInputSources(createMockService() as never);
+
+      const byId = new Map(manager.getSources().map(s => [s.id, s.identifier]));
+      expect(byId.get(WATCH_TV_URI)).toBe(7);
+      expect(byId.get(HOME_URI)).toBe(8);
+    });
+
+    it('seeds ActiveIdentifier with an input that exists', () => {
+      const deps = createMockDeps();
+      const manager = new InputSourceManager(deps);
+      const tvService = createMockService();
+      manager.configureInputSources(tvService as never);
+
+      const seeded = tvService.updateCharacteristic.mock.calls
+        .filter(([char]) => (char as { UUID?: string })?.UUID === 'active-identifier')
+        .pop();
+      expect(seeded).toBeDefined();
+      expect(manager.getSources().map(s => s.identifier)).toContain(seeded![1]);
+    });
+  });
+
   describe('handleGetInput', () => {
-    it('should return current input identifier', () => {
+    it('should report no input before the sources are configured', () => {
       const deps = createMockDeps();
       const manager = new InputSourceManager(deps);
 
-      expect(manager.handleGetInput()).toBe(1);
+      expect(manager.handleGetInput()).toBe(0);
+    });
+
+    it('should return an identifier that belongs to a real input once configured', () => {
+      const deps = createMockDeps();
+      const manager = new InputSourceManager(deps);
+      const tvService = createMockService();
+      manager.configureInputSources(tvService as never);
+
+      const identifiers = manager.getSources().map(s => s.identifier);
+      expect(identifiers).toContain(manager.handleGetInput());
     });
   });
 

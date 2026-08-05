@@ -75,7 +75,16 @@ export class AmbilightService {
   // CONFIGURATION
   // ==========================================================================
 
-  configureService(accessory: PlatformAccessory, tvService: Service): Service {
+  /**
+   * Build the Ambilight bulb.
+   *
+   * Deliberately *not* linked to the Television service: HAP gives a Television
+   * only two kinds of linked service, its input sources and its speaker, and a
+   * controller reading the TV's links as a list of inputs finds a Lightbulb
+   * among them. The bulb still belongs to the same accessory, so the Home app
+   * groups it with the TV either way.
+   */
+  configureService(accessory: PlatformAccessory): Service {
     const { Service: Svc, Characteristic: Char } = this.deps;
 
     this.service = accessory.getService(Svc.Lightbulb)
@@ -107,8 +116,6 @@ export class AmbilightService {
     // Enable Adaptive Lighting (automatic mode — controller manages transitions)
     const adaptiveLightingController = new this.deps.AdaptiveLightingController(this.service);
     accessory.configureController(adaptiveLightingController);
-
-    tvService.addLinkedService(this.service);
 
     return this.service;
   }

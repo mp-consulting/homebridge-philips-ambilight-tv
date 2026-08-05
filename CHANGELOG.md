@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.6.8] - 2026-08-05
+
+### Fixed
+
+- **The TV no longer worked from the iOS Remote.** Four separate faults in how the accessory described itself to HomeKit, all of which the Control Center remote is more sensitive to than the Home app:
+
+  - **Nothing said the accessory was a television.** Alongside the TV itself the accessory publishes the Ambilight bulb, a switch per source and the state sensors — up to twenty services, none of them flagged as the primary one. The Home app has the accessory's category to fall back on; the remote has to work out which service it is actually controlling. The Television service is now marked primary, as it always should have been.
+  - **The TV reported a current input that did not exist.** The input identifiers 1-6 were reserved for the always-present sources (Watch TV, Home, HDMI 1-4), but nothing ever claimed them: every input, those included, was handed the next free number *above* the reserved range, so the lowest identifier in use was 7. Meanwhile the Television service advertised identifier **1** as its current input — a number belonging to nothing. HomeKit reads that value the moment it connects, and keeps reading it for as long as the TV is off, so the input picker had nothing to mark as selected and the remote had no input to open on. The static sources now take the range reserved for them, and the current input is seeded from an input that genuinely exists. **Existing setups keep the identifiers they already have** — a rename or a hidden input stays attached to the input it was set on — and simply get a valid current input instead of a dangling one.
+  - **The settings button was missing.** It is the one remote button that is not a `RemoteKey`: HomeKit sends it as `PowerModeSelection`, which the plugin never implemented, so iOS had nothing to write to and left the button out. It now opens the TV's menu, and the key it sends can be changed under **Settings Button Key** (default **Options**).
+  - **The volume buttons did nothing.** The speaker advertised `ABSOLUTE` volume control, which promises a volume *level* the service has never exposed — it presses `VolumeUp`/`VolumeDown` like a remote. It now correctly declares relative control, which is what the iPhone's hardware volume buttons use while the remote is open.
+
+- **The Ambilight bulb is no longer registered as a linked service of the television.** HomeKit gives a television two kinds of linked service — its input sources and its speaker — so a controller reading that list as the TV's inputs found a Lightbulb sitting among them. The bulb is unchanged and still grouped with the TV in the Home app; it is simply no longer described as part of the television itself.
+
 ## [1.6.7] - 2026-08-05
 
 ### Fixed

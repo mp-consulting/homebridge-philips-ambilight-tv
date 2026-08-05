@@ -138,6 +138,18 @@
                 { "title": "Online (smart TV portal)", "enum": ["Online"] }
               ]
             },
+            "settingsButtonKey": {
+              "title": "Settings Button Key",
+              "type": "string",
+              "default": "Options",
+              "description": "The TV key that the iOS Remote's settings button sends.",
+              "oneOf": [
+                { "title": "Options (context menu)", "enum": ["Options"] },
+                { "title": "Adjust (settings menu)", "enum": ["Adjust"] },
+                { "title": "Source (input picker)", "enum": ["Source"] },
+                { "title": "Home", "enum": ["Home"] }
+              ]
+            },
             "inputs": {
               "title": "Custom Input Sources",
               "type": "array",
@@ -304,6 +316,7 @@
             "devices[].infoButtonKey",
             "devices[].backButtonKey",
             "devices[].playPauseButtonKey",
+            "devices[].settingsButtonKey",
             "devices[].sourceSwitches",
             "devices[].ambilightHueSwitch",
             {

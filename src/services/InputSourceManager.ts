@@ -120,8 +120,23 @@ const SCENE_COALESCE_MS = 250;
 const TLV_ELEMENT_START = 0x01;
 const TLV_ELEMENT_END = 0x00;
 
+/**
+ * Identifiers reserved for the always-present sources, keyed by source id in
+ * the order getStaticSources() registers them: Watch TV = 1, Home = 2,
+ * HDMI 1-4 = 3-6. Apps are numbered from STATIC_SOURCE_COUNT + 1 upwards, so
+ * the two ranges never meet.
+ *
+ * The reservation existed from the start but nothing ever claimed it — every
+ * input, static ones included, was handed the next free number above the
+ * range, which left identifier 1 belonging to nothing while the Television
+ * service advertised exactly that as its current input.
+ */
+const STATIC_SOURCE_IDENTIFIERS: ReadonlyMap<string, number> = new Map(
+  [WATCH_TV_URI, HOME_URI, ...Object.keys(HDMI_SOURCES)].map((id, index) => [id, index + 1]),
+);
+
 /** Number of static sources (Watch TV + Home + HDMI 1-4) */
-const STATIC_SOURCE_COUNT = 2 + Object.keys(HDMI_SOURCES).length;
+const STATIC_SOURCE_COUNT = STATIC_SOURCE_IDENTIFIERS.size;
 
 /** System/launcher packages to exclude from auto-discovered apps */
 const EXCLUDED_PACKAGES = new Set([
@@ -267,7 +282,9 @@ export interface InputSourceManagerDeps {
 
 export class InputSourceManager {
   private inputSources: InputSource[] = [];
-  private currentInputId = 1;
+  /** 0 means "no input registered yet" — replaced by a real identifier as soon
+   *  as configureInputSources() has built the list. */
+  private currentInputId = 0;
   private tvService: Service | null = null;
 
   /** Identifier of a manual switch awaiting confirmation from the TV, and when
@@ -402,7 +419,26 @@ export class InputSourceManager {
 
     this.saveInputConfigs();
     this.updateDisplayOrder();
+    this.seedActiveIdentifier(tvService);
     this.deps.log('info', `Configured ${this.inputSources.length} input sources`);
+  }
+
+  /**
+   * Point the Television service at an input that actually exists.
+   *
+   * HomeKit reads ActiveIdentifier as soon as it connects — long before the
+   * first poll can say what the TV is really showing, and indefinitely so when
+   * the TV is off at startup. It used to be seeded with a hardcoded 1, which
+   * matched no input source at all (see STATIC_SOURCE_IDENTIFIERS), leaving the
+   * TV advertising a current input that did not exist: the input picker had
+   * nothing to mark as selected, and the iOS Remote had no input to open on.
+   */
+  private seedActiveIdentifier(tvService: Service): void {
+    if (this.inputSources.some(i => i.identifier === this.currentInputId)) {
+      return;
+    }
+    this.currentInputId = this.inputSources[0]?.identifier ?? 0;
+    tvService.updateCharacteristic(this.deps.Characteristic.ActiveIdentifier, this.currentInputId);
   }
 
   /**
@@ -1340,14 +1376,22 @@ export class InputSourceManager {
 
   /**
    * Resolve a stable identifier for an input.
-   * Static sources always use position-based IDs (1-5).
+   * Static sources always use position-based IDs (1-6).
    * Apps use persisted identifiers from cached configs, or get the next available.
    */
   private resolveIdentifier(inputId: string, cachedConfigs: InputSourceConfig[]): number {
-    // Check if this input already has a cached identifier
+    // Check if this input already has a cached identifier. This comes first so
+    // an install that predates the reservation below keeps the numbers HomeKit
+    // has already recorded against its inputs rather than renumbering them.
     const cached = cachedConfigs.find(c => c.id === inputId);
     if (cached) {
       return cached.identifier;
+    }
+
+    // Static sources own the reserved low range, by position.
+    const staticIdentifier = STATIC_SOURCE_IDENTIFIERS.get(inputId);
+    if (staticIdentifier !== undefined) {
+      return staticIdentifier;
     }
 
     // Assign next available identifier

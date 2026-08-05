@@ -341,6 +341,8 @@ export interface TVDeviceConfig {
   infoButtonKey?: RemoteKey;
   backButtonKey?: RemoteKey;
   playPauseButtonKey?: RemoteKey;
+  /** The TV key the iOS Remote's settings button sends (PowerModeSelection). */
+  settingsButtonKey?: RemoteKey;
   sourceSwitches?: boolean;
   ambilightHueSwitch?: boolean;
   customApps?: CustomAppConfig[];
