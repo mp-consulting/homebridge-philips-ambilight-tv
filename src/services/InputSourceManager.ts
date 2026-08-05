@@ -94,8 +94,27 @@ const WAKE_CONFIRM_SETTLE_MS = 1_500;
  *  the winner a coin flip (issue #17). The switch is the deliberate half of
  *  the pair: a user adds it on purpose, where the input comes along by
  *  itself. Short enough that changing the input by hand moments after using a
- *  switch still works. */
+ *  switch still works.
+ *
+ *  Measured from when the switch was recorded, but read after the coalescing
+ *  wait below — so an input is in practice suppressed for SCENE_COALESCE_MS
+ *  less than this. That shortens the window a deliberate pick has to clear,
+ *  which is the harmless direction to err in. */
 const SWITCH_PRECEDENCE_MS = 1_500;
+
+/** How long an ActiveIdentifier write waits before launching, in case the
+ *  source switch from the same scene is still on its way.
+ *
+ *  The precedence rule above can only suppress a write it can compare against
+ *  one already seen, so on its own it settled the scene conflict in exactly
+ *  one arrival order. The Home app sends the two halves as separate writes
+ *  milliseconds apart, and when the input arrived first it launched before the
+ *  switch had been heard from: the TV ran two launches back to back and the
+ *  first switch lit up in HomeKit only to go dark again when the second won
+ *  (issue #17). Waiting a beat makes the outcome the same either way. Well
+ *  under the gap between a real user's taps, and only ever waited when source
+ *  switches exist for a scene to carry. */
+const SCENE_COALESCE_MS = 250;
 
 /** TLV8 tags for DisplayOrder encoding */
 const TLV_ELEMENT_START = 0x01;
@@ -235,6 +254,11 @@ export interface InputSourceManagerDeps {
   /** Whether the TV was powered on recently enough that it may still be
    *  booting and rejecting launches. */
   readonly isWaking?: () => boolean;
+  /** Whether sources are also exposed as individual Switch services. Only then
+   *  can a scene carry both a switch and a contradicting input, so only then is
+   *  an ActiveIdentifier write held back to see if a switch follows it. See
+   *  SCENE_COALESCE_MS. */
+  readonly hasSourceSwitches?: () => boolean;
 }
 
 // ============================================================================
@@ -575,12 +599,25 @@ export class InputSourceManager {
    * HomeKit control it came from. Owns the launch queue, the latest-wins
    * generation counter and the parked wake selection, so exactly one selection
    * is ever outstanding.
+   *
+   * A selection from a switch is acted on at once; one from the wheel waits
+   * long enough to see whether a switch is arriving behind it, since a scene
+   * can carry both and the two would otherwise settle differently depending on
+   * the order the Home app sent them. See SCENE_COALESCE_MS.
    */
   private async requestSwitch(inputSource: InputSource, origin: SelectionOrigin): Promise<void> {
     if (origin === 'switch') {
       this.lastSwitchRequest = { input: inputSource, at: Date.now() };
-    } else if (this.isSupersededByRecentSwitch(inputSource)) {
-      return;
+    } else {
+      // Give the other half of a scene time to arrive before acting on this
+      // one — until it has, there is nothing to compare against and both
+      // orders of the same scene would not settle the same way.
+      if (this.deps.hasSourceSwitches?.()) {
+        await new Promise(resolve => setTimeout(resolve, SCENE_COALESCE_MS));
+      }
+      if (this.isSupersededByRecentSwitch(inputSource)) {
+        return;
+      }
     }
 
     // Coalesce bursts of selections: launches run one at a time, and a

@@ -508,4 +508,31 @@ describe('PhilipsAmbilightTVAccessory power handling', () => {
       expect(mocks.switchUpdateFromPoll).toHaveBeenCalledWith('com.netflix.ninja');
     });
   });
+
+  // ==========================================================================
+  // SCENE CONFLICT GATING
+  // ==========================================================================
+
+  describe('whether the input manager holds inputs back for a switch', () => {
+    /** Build the accessory with source switches on or off, and return the
+     *  predicate it hands the input manager. */
+    function build(sourceSwitches: boolean) {
+      const { platform, accessory } = createMocks();
+      accessory.context.device.sourceSwitches = sourceSwitches;
+      new PhilipsAmbilightTVAccessory(platform as never, accessory as never);
+      return (capture.inputManagerDeps as { hasSourceSwitches: () => boolean }).hasSourceSwitches;
+    }
+
+    it('holds them back when sources are also exposed as switches', () => {
+      // Only then can a scene carry a switch and a contradicting input, which
+      // is the conflict the wait exists to settle (issue #17).
+      expect(build(true)()).toBe(true);
+    });
+
+    it('does not hold them back when they are not', () => {
+      // Nothing can follow the input, so waiting for it would be pure latency
+      // on every selection from the wheel.
+      expect(build(false)()).toBe(false);
+    });
+  });
 });

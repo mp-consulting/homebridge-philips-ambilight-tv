@@ -86,6 +86,7 @@ export class PhilipsAmbilightTVAccessory {
       onInputSwitched: (sourceId) => this.sourceSwitchService.updateFromPoll(sourceId),
       isPoweredOn: () => this.isPoweredOn,
       isWaking: () => this.isWaking(),
+      hasSourceSwitches: () => !!this.config.sourceSwitches,
     });
 
     this.sourceSwitchService = new SourceSwitchService({

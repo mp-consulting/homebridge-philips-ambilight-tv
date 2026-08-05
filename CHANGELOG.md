@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.6.7] - 2026-08-05
+
+### Fixed
+
+- **A scene carrying both a source switch and a leftover input still launched two apps, and its switches still flickered** ([#17](https://github.com/mp-consulting/homebridge-philips-ambilight-tv/issues/17)): v1.6.6 decided which of the two halves wins, but it could only weigh a write against one it had already seen — so it settled the conflict in one arrival order only. When the Home app sent the leftover input first, that input launched before the switch had been heard from: the TV opened one app and then the other, and the first source's switch lit up in the Home app only to go dark again when the second won. An input arriving while source switches are in use now waits a quarter of a second for a switch that may be following it, so the scene produces a single launch, and a single lit switch, whichever order the two are written in. The log line naming the source that was dropped — and how to correct the scene — now appears in both orders as well.
+
 ## [1.6.6] - 2026-08-05
 
 ### Fixed

@@ -1100,6 +1100,65 @@ describe('InputSourceManager', () => {
       expect(manager.currentId).toBe(watchTv.identifier);
     });
 
+    it('should let a source switch win over an input the scene sent first', async () => {
+      // The same scene, with the Home app sending its two writes the other way
+      // round. The input used to launch before the switch had been heard from,
+      // so the TV ran both and the wheel's switch lit up and went dark again
+      // (issue #17) — the outcome has to be the one above either way.
+      const onInputSwitched = vi.fn();
+      const { deps, manager, app } = setup({
+        isPoweredOn: () => true,
+        isWaking: () => false,
+        hasSourceSwitches: () => true,
+        onInputSwitched,
+      });
+      const watchTv = manager.getSources().find(s => s.id === WATCH_TV_URI)!;
+
+      const wheel = manager.handleSetInput(watchTv.identifier);
+      // The two writes reach the plugin as separate HAP events, not in one tick.
+      await vi.advanceTimersByTimeAsync(5);
+      const fromSwitch = manager.requestSwitchById(app.id);
+      await vi.advanceTimersByTimeAsync(1000);
+      await Promise.all([wheel, fromSwitch]);
+
+      expect(deps.tvClient.launchWatchTV).not.toHaveBeenCalled();
+      expect(manager.currentId).toBe(app.identifier);
+      // The wheel's source must never have lit up on its way past.
+      expect(onInputSwitched.mock.calls).toEqual([[app.id]]);
+    });
+
+    it('should not hold an input back when there are no switches to wait for', async () => {
+      // Covered implicitly by every other wheel test — they would hang on fake
+      // timers if the wait were unconditional — but only by accident, and a
+      // hang says nothing about why. Assert it outright: with no switches
+      // configured there is no scene conflict to settle, so the input launches
+      // without waiting for anything.
+      const { deps, manager } = setup({ isPoweredOn: () => true, isWaking: () => false });
+      const watchTv = manager.getSources().find(s => s.id === WATCH_TV_URI)!;
+
+      await manager.handleSetInput(watchTv.identifier);
+
+      expect(deps.tvClient.launchWatchTV).toHaveBeenCalled();
+    });
+
+    it('should still launch an input picked on its own when switches exist', async () => {
+      // The coalescing wait only defers the launch; with no switch behind it
+      // the input still has to be applied.
+      const { deps, manager } = setup({
+        isPoweredOn: () => true,
+        isWaking: () => false,
+        hasSourceSwitches: () => true,
+      });
+      const watchTv = manager.getSources().find(s => s.id === WATCH_TV_URI)!;
+
+      const wheel = manager.handleSetInput(watchTv.identifier);
+      await vi.advanceTimersByTimeAsync(1000);
+      await wheel;
+
+      expect(deps.tvClient.launchWatchTV).toHaveBeenCalled();
+      expect(manager.currentId).toBe(watchTv.identifier);
+    });
+
     it('should not treat an input that agrees with the switch as a conflict', async () => {
       const { deps, manager, app } = setup({ isPoweredOn: () => false });
 
