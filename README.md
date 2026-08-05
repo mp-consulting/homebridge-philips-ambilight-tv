@@ -199,9 +199,14 @@ If the TV was working and then went unresponsive or disappeared — typically af
 re-running the pairing wizard — its MAC address was most likely rewritten in a
 different case, which used to republish it as a new, unpaired accessory. v1.6.8
 detects the pairing left behind and restores it automatically; restart Homebridge
-and look for a line saying the TV was found paired under a different MAC. If you
-have already removed the TV from the Home app, add it back once — its identity is
-now fixed and will not drift again.
+and look for a line saying the TV was found paired under a different MAC.
+
+If that line does not appear, the TV was paired under a spelling the plugin does
+not go looking for (a mixed-case address, say). Set `mac` in `config.json` back
+to exactly how it used to be written and restart — the configured address is
+followed as-is until a pairing is found, so this still works. Failing that, add
+the TV in the Home app once more. Either way, once it is paired the plugin
+records that identity and it will not drift again.
 
 ### "Write handler didn't respond at all" warnings
 

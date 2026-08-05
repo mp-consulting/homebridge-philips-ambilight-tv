@@ -16,12 +16,17 @@
  * paired on the controller but is no longer advertised, so the TV goes
  * unresponsive in the Home app and drops out of the iOS Remote.
  *
- * This store makes the identity decision once per TV and remembers it, so a
- * later change of spelling is inert. For a TV whose identity has already
- * drifted it first looks for the pairing left behind under another spelling and
- * keeps using that one, which puts the accessory back where the controller
- * expects it without the user re-adding the TV and losing its room, scenes and
- * automations.
+ * This store looks for the pairing a controller actually holds — including one
+ * left behind under a different spelling, which is what puts a TV that has
+ * already drifted back where HomeKit expects it, without the user re-adding it
+ * and losing its room, scenes and automations. Having found one it records that
+ * identity and keeps to it, so a later change of spelling is inert.
+ *
+ * It deliberately records nothing until a pairing exists to anchor the choice.
+ * A TV that has not been added to HomeKit yet has no identity worth preserving,
+ * and one whose pairing cannot be found is a TV whose owner may still be fixing
+ * this by hand — restoring the address as it used to be written. Freezing a
+ * guess would pin the TV to it and silently make that no longer work.
  */
 
 import fs from 'fs';
@@ -68,8 +73,15 @@ interface IdentityRecord {
 const uuidSeed = (mac: string): string => `${PLATFORM_NAME}-${mac}`;
 
 /**
- * Every spelling of `mac` that could have been used to derive an identity, the
+ * The spellings of `mac` that could have been used to derive an identity, the
  * configured one first so it always wins when more than one is paired.
+ *
+ * These are the ones anything actually produces: the settings UI writes the
+ * canonical form, the OS ARP table prints lowercase, and an address typed off
+ * the TV is all upper or all lower. The config also admits mixed case and mixed
+ * separators, which are not enumerated here — there are too many to probe, and
+ * a TV paired under one is recovered by putting that spelling back in
+ * config.json, which works because nothing is recorded until a pairing is found.
  */
 const macSpellings = (mac: string): string[] => {
   const hex = macHexDigits(mac);
@@ -115,8 +127,9 @@ export class AccessoryIdentityStore {
   // ==========================================================================
 
   /**
-   * The accessory UUID to publish this TV under. Decided on first sight and
-   * kept from then on, whatever the MAC's spelling in config.json later becomes.
+   * The accessory UUID to publish this TV under: the identity recorded for it
+   * if there is one, else whichever spelling of the MAC a controller is already
+   * paired with, else the configured spelling.
    */
   resolve(mac: string): string {
     const key = macHexDigits(mac) ?? mac;
@@ -129,33 +142,33 @@ export class AccessoryIdentityStore {
       return known.uuid;
     }
 
-    const seed = this.chooseSeed(mac);
-    const uuid = this.deps.generateUuid(seed);
-    this.records[key] = { seed, uuid };
-    this.save();
-    return uuid;
-  }
-
-  /**
-   * Pick the spelling to derive this TV's identity from: whichever one a
-   * controller is already paired with, else the configured one. Preferring an
-   * existing pairing is what recovers a TV whose MAC was re-detected in a
-   * different case and which therefore disappeared from HomeKit.
-   */
-  private chooseSeed(mac: string): string {
     const spellings = macSpellings(mac);
     const paired = spellings.find(spelling => this.isPaired(this.deps.generateUuid(uuidSeed(spelling))));
 
-    if (paired && paired !== spellings[0]) {
+    // Nothing paired to anchor a decision to — a TV not yet added to HomeKit,
+    // or one whose pairing was cleared, or one paired under a spelling this
+    // does not enumerate (an unusual mixed case, say). Follow config.json and
+    // record nothing: freezing a guess would pin the TV to it and quietly turn
+    // the standing fix for this — putting the address back as it was written —
+    // into a no-op.
+    if (!paired) {
+      this.deps.log('debug', `No existing HomeKit pairing found for ${normalizeMacAddress(mac)}; using the configured MAC`);
+      return this.deps.generateUuid(uuidSeed(mac));
+    }
+
+    if (paired !== spellings[0]) {
       this.deps.log(
         'info',
         `Found this TV already paired in HomeKit under MAC "${paired}" rather than the configured "${mac}". ` +
         'Publishing it under the paired identity so it stays the same accessory — no need to re-add it in the Home app.',
       );
-      return uuidSeed(paired);
     }
 
-    return uuidSeed(spellings[0]);
+    const seed = uuidSeed(paired);
+    const uuid = this.deps.generateUuid(seed);
+    this.records[key] = { seed, uuid };
+    this.save();
+    return uuid;
   }
 
   /** True when HAP holds a record for this accessory with at least one paired
