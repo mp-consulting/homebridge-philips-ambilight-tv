@@ -1,6 +1,7 @@
 import type { API, Characteristic, DynamicPlatformPlugin, Logging, PlatformAccessory, PlatformConfig, Service } from 'homebridge';
 
 import { PhilipsAmbilightTVAccessory } from './platformAccessory.js';
+import { AccessoryIdentityStore } from './services/AccessoryIdentityStore.js';
 import type { TVDeviceConfig } from './api/types.js';
 import { sanitizeForHomeKit } from './api/utils.js';
 import { PLATFORM_NAME, PLUGIN_NAME } from './settings.js';
@@ -23,6 +24,11 @@ export class PhilipsAmbilightTVPlatform implements DynamicPlatformPlugin {
   public readonly Service: typeof Service;
   public readonly Characteristic: typeof Characteristic;
 
+  /** Keeps each TV's HomeKit identity fixed once it has been decided, so a
+   *  cosmetic change to the configured MAC cannot republish it as a new,
+   *  unpaired accessory. */
+  private readonly identityStore: AccessoryIdentityStore;
+
   constructor(
     public readonly log: Logging,
     public readonly config: PlatformConfig,
@@ -30,6 +36,13 @@ export class PhilipsAmbilightTVPlatform implements DynamicPlatformPlugin {
   ) {
     this.Service = api.hap.Service;
     this.Characteristic = api.hap.Characteristic;
+
+    this.identityStore = new AccessoryIdentityStore({
+      storagePath: api.user.storagePath(),
+      persistPath: api.user.persistPath(),
+      generateUuid: (data) => api.hap.uuid.generate(data),
+      log: (level, message) => this.log[level](message),
+    });
 
     this.log.debug('Finished initializing platform:', this.config.platform);
 
@@ -108,7 +121,10 @@ export class PhilipsAmbilightTVPlatform implements DynamicPlatformPlugin {
       }
 
       const displayName = sanitizeForHomeKit(tv.name);
-      const uuid = this.api.hap.uuid.generate(PLATFORM_NAME + '-' + tv.mac);
+      // Never derive this from the configured MAC directly: the accessory's HAP
+      // username — and so the pairing HomeKit holds — follows the UUID, and the
+      // config accepts several spellings of the same address.
+      const uuid = this.identityStore.resolve(tv.mac);
 
       // Always create fresh and publish as external accessory (own HAP server).
       // Pairing is preserved across restarts via the persist/ directory.
