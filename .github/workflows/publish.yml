@@ -26,7 +26,7 @@ jobs:
       # self-upgrade can land a build whose bundled `sigstore` dependency is
       # not unpacked, breaking `npm publish --provenance` with
       # "Cannot find module 'sigstore'". The CI (build.yml) already runs
-      # `npm ci` on the bundled npm across Node 20/22/24, so it is sufficient
+      # `npm ci` on the bundled npm across Node 22/24/26, so it is sufficient
       # here too.
       - name: Install dependencies
         run: npm ci

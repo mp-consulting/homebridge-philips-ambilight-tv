@@ -82,7 +82,7 @@ Each sensor appears as a MotionSensor — "motion detected" means the state is a
 
 - Philips Android TV with JointSpace API v6 (2016+ models)
 - TV and Homebridge on the same network
-- Node.js 20.18.0 or later
+- Node.js 22.10.0 or later
 
 ## Installation
 

@@ -55,5 +55,5 @@ homebridge-ui/            # Uses Homebridge custom UI framework for plugin confi
 
 - Conventional commits: `feat:`, `fix:`, `chore:`, `refactor:`, `perf:`, `style:`
 - Do not include co-authored-by lines (setting: `includeCoAuthoredBy: false`)
-- CI runs on Node 20.x and 22.x
+- CI runs on Node 22.x, 24.x and 26.x
 - npm publish triggered by GitHub releases (trusted publishing with OIDC provenance)
