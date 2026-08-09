@@ -32,7 +32,7 @@
     "homebridge": "^1.8.0 || ^2.0.0-beta.0"
   },
   "scripts": {
-    "copy:ui-assets": "mkdir -p homebridge-ui/public/lib/fonts && cp node_modules/@mp-consulting/homebridge-ui-kit/dist/kit.css node_modules/@mp-consulting/homebridge-ui-kit/dist/kit.js homebridge-ui/public/lib/ && cp node_modules/bootstrap/dist/css/bootstrap.min.css node_modules/bootstrap/dist/js/bootstrap.bundle.min.js homebridge-ui/public/lib/ && cp node_modules/bootstrap-icons/font/bootstrap-icons.min.css homebridge-ui/public/lib/ && cp node_modules/bootstrap-icons/font/fonts/bootstrap-icons.woff node_modules/bootstrap-icons/font/fonts/bootstrap-icons.woff2 homebridge-ui/public/lib/fonts/",
+    "copy:ui-assets": "mkdir -p homebridge-ui/public/lib/fonts && cp node_modules/@mp-consulting/homebridge-ui-kit/dist/kit.css node_modules/@mp-consulting/homebridge-ui-kit/dist/kit.js homebridge-ui/public/lib/ && cp node_modules/bootstrap/dist/css/bootstrap.min.css node_modules/bootstrap/dist/js/bootstrap.bundle.min.js homebridge-ui/public/lib/ && cp node_modules/bootstrap-icons/font/bootstrap-icons.min.css homebridge-ui/public/lib/ && cp node_modules/bootstrap-icons/font/fonts/bootstrap-icons.woff node_modules/bootstrap-icons/font/fonts/bootstrap-icons.woff2 homebridge-ui/public/lib/fonts/ && perl -pi -e 's{^\\s*/[*/]# sourceMappingURL=.*$}{}' homebridge-ui/public/lib/bootstrap.min.css homebridge-ui/public/lib/bootstrap.bundle.min.js",
     "build": "npm run copy:ui-assets && rimraf ./dist && tsc",
     "lint": "eslint . --max-warnings=0",
     "prepublishOnly": "npm test && npm run lint && npm run build",
