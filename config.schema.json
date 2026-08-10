@@ -11,6 +11,13 @@
     ],
     "additionalProperties": false,
     "properties": {
+      "name": {
+        "title": "Name",
+        "type": "string",
+        "required": true,
+        "default": "Philips Ambilight TV",
+        "description": "Plugin name as displayed in the homebridge log"
+      },
       "devices": {
         "title": "TV Devices",
         "type": "array",
@@ -277,6 +284,7 @@
     }
   },
   "layout": [
+    "name",
     {
       "type": "fieldset",
       "title": "TV Devices",

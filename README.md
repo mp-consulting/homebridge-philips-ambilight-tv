@@ -118,6 +118,7 @@ Add the following to your `config.json`:
   "platforms": [
     {
       "platform": "PhilipsAmbilightTV",
+      "name": "Philips Ambilight TV",
       "devices": [
         {
           "name": "Living Room TV",

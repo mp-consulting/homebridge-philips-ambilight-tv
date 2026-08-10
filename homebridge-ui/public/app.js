@@ -24,6 +24,7 @@
 
   const SCREENS = ['wizardStep1', 'wizardStep2', 'wizardStep3', 'successScreen', 'editScreen', 'editSourcesScreen'];
   const PLATFORM_NAME = 'PhilipsAmbilightTV';
+  const DISPLAY_NAME = 'Philips Ambilight TV';
 
   const state = {
     currentConfig: { name: '', ip: '', mac: '', username: '', password: '' },
@@ -144,8 +145,10 @@
   /** Push the current config to Config UI X in memory only (no disk write, no
    *  settings-view re-render). Cheap and safe to call on every keystroke/toggle. */
   const pushPluginConfig = async () => {
+    const existing = (await homebridge.getPluginConfig())[0] || {};
     await homebridge.updatePluginConfig([{
       platform: PLATFORM_NAME,
+      name: existing.name || DISPLAY_NAME,
       devices: state.configuredTvs,
     }]);
   };
