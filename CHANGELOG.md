@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.6.10] - 2026-08-10
+
+### Fixed
+
+- **The Homebridge log showed `[PhilipsAmbilightTV]` instead of `[Philips Ambilight TV]`**: Homebridge derives a plugin's log prefix from `name` in its platform config, falling back to the plugin alias when that key is absent. `config.schema.json` had no `name` property at all, so the settings form never offered the field and nothing ever wrote it into `config.json`. `name` is now the first control in the form and defaults to `Philips Ambilight TV`. The custom UI compounded this by rebuilding the whole platform block from scratch on every keystroke, discarding any `name` already in the config; it now carries the existing value through.
+- **404s in the browser console on every visit to the settings page**: the vendored minified Bootstrap files kept their trailing `sourceMappingURL` comment, so the browser asked for `bootstrap.min.css.map` and `bootstrap.bundle.min.js.map` and got a 404 for each. The copy step now strips the comment instead of shipping ~920 kB of source maps.
+
 ## [1.6.9] - 2026-08-09
 
 ### Changed
