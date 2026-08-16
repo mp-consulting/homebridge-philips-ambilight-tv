@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.6.11] - 2026-08-16
+
+### Fixed
+
+- **A scene that switched the TV off left Ambilight and Ambilight+hue showing an error**, with `The write handler for the characteristic 'On' ... didn't respond at all` in the Homebridge log. A scene writes all of its commands in the same instant, so switching the TV, Ambilight and Ambilight+hue off together is a race the power-off wins: by the time the other two reach the TV it has reached standby and answers nothing. Commands are sent to the TV one at a time, so each of those waited out its own timeout behind the one before it, and the Ambilight command — which falls back to a second endpoint when the first is refused — was still waiting when Homebridge gave up on it ten seconds in. A command is now budgeted for its whole journey, the wait for its turn included, and a command that makes more than one request to the TV shares one budget across them instead of starting the clock again for each. Nothing HomeKit is waiting on can run past the limit again, whether it is Ambilight, the power, or a source being launched.
+- **Switching Ambilight or Ambilight+hue off no longer reports a failure when the TV simply reached standby first.** Both are off once the TV is, and both were already showing off in the Home app — the error was the only part of that scene that looked broken. Switching either off on a TV already known to be off now skips the trip to the TV altogether.
+
 ## [1.6.10] - 2026-08-10
 
 ### Fixed
