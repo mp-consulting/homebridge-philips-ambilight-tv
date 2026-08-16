@@ -80,6 +80,7 @@ function createMockDeps(overrides?: Partial<AmbilightServiceDeps>): AmbilightSer
       addService: vi.fn().mockReturnValue(lightbulbService),
       configureController: vi.fn(),
     } as never,
+    isPoweredOn: () => true,
     communicationError: () => new Error('comm error') as never,
     log: vi.fn(),
     ...overrides,
@@ -98,6 +99,7 @@ describe('AmbilightService color conversion', () => {
     ColorUtils: {} as never,
     tvClient: {} as never,
     accessory: {} as never,
+    isPoweredOn: () => true,
     communicationError: () => new Error('test') as never,
     log: () => {},
   });
@@ -341,6 +343,53 @@ describe('AmbilightService startWithConfiguredMode', () => {
 
     expect(deps.tvClient.setAmbilightStyle).not.toHaveBeenCalled();
     expect(service.isAmbilightOn).toBe(false);
+  });
+});
+
+describe('AmbilightService switching off around a power-off', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function setupWithPower(isPoweredOn: () => boolean) {
+    const deps = createMockDeps({ isPoweredOn });
+    const service = new AmbilightService(deps);
+    const tvService = createMockService();
+    service.configureService(deps.accessory as never, tvService as never);
+    const onChar = service.getService().getCharacteristic((deps.Characteristic as { On: unknown }).On);
+    return { deps, service, setOn: onChar._setter as (v: unknown) => Promise<void> };
+  }
+
+  it('should skip the round-trip when the TV is already off', async () => {
+    const { deps, setOn } = setupWithPower(() => false);
+
+    await expect(setOn(false)).resolves.toBeUndefined();
+
+    expect(deps.tvClient.setAmbilightOff).not.toHaveBeenCalled();
+  });
+
+  // A scene turning the TV and Ambilight off together races: the off command can
+  // land after the TV reaches standby and fail, though Ambilight is off anyway.
+  it('should not report a failure when an off command loses the race to standby', async () => {
+    const isPoweredOn = vi.fn().mockReturnValueOnce(true).mockReturnValue(false);
+    const { deps, setOn } = setupWithPower(isPoweredOn);
+    (deps.tvClient.setAmbilightOff as ReturnType<typeof vi.fn>).mockResolvedValue(false);
+
+    await expect(setOn(false)).resolves.toBeUndefined();
+
+    expect(deps.tvClient.setAmbilightOff).toHaveBeenCalled();
+    expect(deps.log).not.toHaveBeenCalledWith('warn', expect.anything());
+  });
+
+  it('should still report a failure when the TV is on', async () => {
+    const { deps, setOn } = setupWithPower(() => true);
+    (deps.tvClient.setAmbilightOff as ReturnType<typeof vi.fn>).mockResolvedValue(false);
+
+    await expect(setOn(false)).rejects.toThrow('comm error');
   });
 });
 

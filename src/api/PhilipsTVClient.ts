@@ -3,6 +3,7 @@
  * Handles all communication with the Philips TV JointSpace API (v6)
  */
 
+import { AsyncLocalStorage } from 'node:async_hooks';
 import type { Dispatcher } from 'undici';
 import { TV_API_VERSION } from './constants.js';
 import {
@@ -41,11 +42,21 @@ const DEFAULT_POST_TIMEOUT_MS = 3000;
 const INTER_REQUEST_DELAY_MS = 100;
 
 /**
- * Maximum time a request may wait in the queue before being dropped.
- * Prevents requests from piling up behind timed-out requests and
- * exceeding Homebridge's 10-second characteristic callback timeout.
+ * Total time a request may spend queued *and* in flight before it is given up
+ * on.
+ *
+ * Homebridge fails a characteristic handler that has not answered within 10
+ * seconds, and every handler here awaits a request that may be sitting behind
+ * others — so the limit has to cover the whole wait, not just the HTTP
+ * exchange. Bounding only the queue wait is not enough: a request admitted just
+ * under the limit still gets a full per-request timeout on top of it, which is
+ * how a scene that turns Ambilight, power and Ambilight+hue off at once put the
+ * Ambilight write past 10s once the TV had already reached standby.
  */
-const QUEUE_TIMEOUT_MS = 8000;
+const REQUEST_BUDGET_MS = 7000;
+
+/** Remaining budget below which a request is not worth starting. */
+const MIN_EXECUTION_MS = 500;
 
 /** Ambilight menu settings node IDs (from iOS app analysis) */
 const AMBILIGHT_BRIGHTNESS_NODE_ID = 2131230769;
@@ -124,6 +135,9 @@ export class PhilipsTVClient {
   /** Dispatcher pinned to this TV's certificate (unpinned on legacy configs) */
   private readonly agent: Dispatcher;
 
+  /** Deadline shared by every request made inside one interactive operation */
+  private readonly operationDeadline = new AsyncLocalStorage<number>();
+
   constructor(config: PhilipsTVClientConfig, debug?: (message: string) => void) {
     this.config = config;
     this.debug = debug ?? (() => {});
@@ -145,9 +159,11 @@ export class PhilipsTVClient {
    * exchange is in-flight at a time, with a small delay between requests
    * to avoid overwhelming the TV's lightweight JointSpace API server.
    *
-   * A queue-level timeout ensures requests that wait too long behind
-   * earlier (timed-out) requests are dropped before exceeding
-   * Homebridge's characteristic callback timeout.
+   * Each request carries a deadline covering both the queue wait and the HTTP
+   * exchange: one that waits too long behind earlier (timed-out) requests is
+   * dropped, and one admitted late runs with whatever budget is left rather
+   * than a full per-request timeout. Together that keeps every caller — and so
+   * every HomeKit characteristic handler — inside Homebridge's callback limit.
    */
   private request<T>(
     method: 'GET' | 'POST',
@@ -156,13 +172,13 @@ export class PhilipsTVClient {
     timeout = method === 'POST' ? DEFAULT_POST_TIMEOUT_MS : DEFAULT_GET_TIMEOUT_MS,
   ): Promise<T | null> {
     const enqueueTime = Date.now();
+    const deadline = this.operationDeadline.getStore() ?? enqueueTime + REQUEST_BUDGET_MS;
 
     return new Promise<T | null>((resolve) => {
       this.requestQueue = this.requestQueue.then(async () => {
-        // Drop requests that have been waiting in the queue too long
-        const waited = Date.now() - enqueueTime;
-        if (waited >= QUEUE_TIMEOUT_MS) {
-          this.debug(`API ${method} ${endpoint} → DROPPED (queued ${waited}ms)`);
+        // Drop requests left with too little budget to be worth starting
+        if (deadline - Date.now() < MIN_EXECUTION_MS) {
+          this.debug(`API ${method} ${endpoint} → DROPPED (queued ${Date.now() - enqueueTime}ms)`);
           resolve(null);
           return;
         }
@@ -173,7 +189,7 @@ export class PhilipsTVClient {
           this.debug(`API POST ${endpoint} ← ${JSON.stringify(body)}`);
         }
         try {
-          const result = await this.executeRequest<T>(method, endpoint, body, timeout);
+          const result = await this.executeRequest<T>(method, endpoint, body, timeout, deadline);
           if (method === 'POST') {
             const elapsed = Date.now() - start;
             const ok = result !== null;
@@ -190,12 +206,20 @@ export class PhilipsTVClient {
     });
   }
 
-  /** Performs the actual HTTP request with digest auth handling. */
+  /**
+   * Performs the actual HTTP request with digest auth handling.
+   *
+   * `deadline` bounds the request as a whole: an unauthenticated exchange costs
+   * two round-trips, and without a shared deadline each would get the full
+   * `timeout`, so a single request could take twice as long as its caller
+   * allowed for.
+   */
   private async executeRequest<T>(
     method: 'GET' | 'POST',
     endpoint: string,
     body?: unknown,
     timeout = method === 'POST' ? DEFAULT_POST_TIMEOUT_MS : DEFAULT_GET_TIMEOUT_MS,
+    deadline = Date.now() + REQUEST_BUDGET_MS,
   ): Promise<T | null> {
     const url = buildUrl(this.config.ip, endpoint);
     const uri = `/${TV_API_VERSION}${endpoint}`;
@@ -209,7 +233,7 @@ export class PhilipsTVClient {
         const response = await fetchWithTimeout(
           url,
           { method, headers: { ...headers, Authorization: authHeader }, body: requestBody, dispatcher: this.agent },
-          timeout,
+          this.budgetedTimeout(timeout, deadline),
         );
 
         if (response.ok) {
@@ -219,7 +243,7 @@ export class PhilipsTVClient {
         // Nonce expired — clear cache and fall through to fresh auth
         if (response.status === 401) {
           this.authSession.clear();
-          return this.freshDigestAuth<T>(response, method, url, uri, headers, requestBody, timeout);
+          return this.freshDigestAuth<T>(response, method, url, uri, headers, requestBody, timeout, deadline);
         }
 
         this.debug(`API ${method} ${endpoint} HTTP ${response.status}`);
@@ -230,7 +254,7 @@ export class PhilipsTVClient {
       const initialResponse = await fetchWithTimeout(
         url,
         { method, headers, body: requestBody, dispatcher: this.agent },
-        timeout,
+        this.budgetedTimeout(timeout, deadline),
       );
 
       if (initialResponse.ok) {
@@ -238,7 +262,7 @@ export class PhilipsTVClient {
       }
 
       if (initialResponse.status === 401) {
-        return this.freshDigestAuth<T>(initialResponse, method, url, uri, headers, requestBody, timeout);
+        return this.freshDigestAuth<T>(initialResponse, method, url, uri, headers, requestBody, timeout, deadline);
       }
 
       this.debug(`API ${method} ${endpoint} HTTP ${initialResponse.status}`);
@@ -260,9 +284,16 @@ export class PhilipsTVClient {
     headers: Record<string, string>,
     body: string | undefined,
     timeout: number,
+    deadline: number,
   ): Promise<T | null> {
     const wwwAuth = response.headers.get('www-authenticate');
     if (!wwwAuth || !this.authSession.cacheFromChallenge(wwwAuth)) {
+      return null;
+    }
+
+    // The challenge consumed part of the budget; give up rather than start a
+    // second round-trip the caller will no longer be waiting for.
+    if (deadline - Date.now() < MIN_EXECUTION_MS) {
       return null;
     }
 
@@ -276,10 +307,33 @@ export class PhilipsTVClient {
         body,
         dispatcher: this.agent,
       },
-      timeout,
+      this.budgetedTimeout(timeout, deadline),
     );
 
     return authResponse.ok ? this.parseJsonResponse<T>(authResponse) : null;
+  }
+
+  /**
+   * Run an operation whose requests all share a single deadline.
+   *
+   * Methods that chain requests — a fallback after a rejected command, a launch
+   * that refreshes the app list and retries — would otherwise hand each request
+   * a fresh budget, so the HomeKit handler awaiting the whole operation can
+   * still pass Homebridge's limit even though no individual request did. Nested
+   * calls inherit the outer deadline rather than extending it. Operations that
+   * never run inside one (discovery, polling) keep a per-request budget: they
+   * are not what a HomeKit handler is waiting on.
+   */
+  private interactive<T>(operation: () => Promise<T>): Promise<T> {
+    if (this.operationDeadline.getStore() !== undefined) {
+      return operation();
+    }
+    return this.operationDeadline.run(Date.now() + REQUEST_BUDGET_MS, operation);
+  }
+
+  /** The lesser of the per-request timeout and the budget left before `deadline`. */
+  private budgetedTimeout(timeout: number, deadline: number): number {
+    return Math.max(MIN_EXECUTION_MS, Math.min(timeout, deadline - Date.now()));
   }
 
   /**
@@ -316,21 +370,23 @@ export class PhilipsTVClient {
     return result?.powerstate === 'On';
   }
 
-  async setPowerState(on: boolean): Promise<boolean> {
-    if (on) {
-      // Send WoL first — if the TV is in deep standby its network stack may
-      // be down and the API POST will fail. WoL gives the TV the chance to
-      // wake, but we only return true when the API confirms the state change.
-      // Returning false here lets the caller keep isPoweredOn = false so the
-      // next attempt is not silently skipped — the poll will reconcile once
-      // the TV responds.
-      await this.tryWakeOnLan();
-      const result = await this.post('/powerstate', { powerstate: 'On' });
-      return result !== null;
-    }
+  setPowerState(on: boolean): Promise<boolean> {
+    return this.interactive(async () => {
+      if (on) {
+        // Send WoL first — if the TV is in deep standby its network stack may
+        // be down and the API POST will fail. WoL gives the TV the chance to
+        // wake, but we only return true when the API confirms the state change.
+        // Returning false here lets the caller keep isPoweredOn = false so the
+        // next attempt is not silently skipped — the poll will reconcile once
+        // the TV responds.
+        await this.tryWakeOnLan();
+        const result = await this.post('/powerstate', { powerstate: 'On' });
+        return result !== null;
+      }
 
-    const result = await this.post('/powerstate', { powerstate: 'Standby' });
-    return result !== null;
+      const result = await this.post('/powerstate', { powerstate: 'Standby' });
+      return result !== null;
+    });
   }
 
   private async tryWakeOnLan(): Promise<boolean> {
@@ -404,11 +460,13 @@ export class PhilipsTVClient {
    * from the home screen but often did nothing from inside an app (issue #14).
    * The key press remains as a fallback for sets that reject the intent.
    */
-  async launchWatchTV(): Promise<boolean> {
-    if (await this.setSource(WATCH_TV_URI)) {
-      return true;
-    }
-    return this.sendKey('WatchTV');
+  launchWatchTV(): Promise<boolean> {
+    return this.interactive(async () => {
+      if (await this.setSource(WATCH_TV_URI)) {
+        return true;
+      }
+      return this.sendKey('WatchTV');
+    });
   }
 
   async launchHome(): Promise<boolean> {
@@ -458,35 +516,37 @@ export class PhilipsTVClient {
    *   Android convention, e.g. `com.netflix.ninja.MainActivity`).
    * @param action - Intent action (defaults to `android.intent.action.MAIN`).
    */
-  async launchApplication(packageName: string, className?: string, action?: string): Promise<boolean> {
-    if (className) {
-      return this.launchIntent({
-        component: { packageName, className },
-        action: action ?? 'android.intent.action.MAIN',
+  launchApplication(packageName: string, className?: string, action?: string): Promise<boolean> {
+    return this.interactive(async () => {
+      if (className) {
+        return this.launchIntent({
+          component: { packageName, className },
+          action: action ?? 'android.intent.action.MAIN',
+        });
+      }
+
+      const cached = this.appIntents.get(packageName);
+      if (cached) {
+        return this.launchIntent(cached);
+      }
+
+      // No cached intent (the TV hasn't enumerated its apps since we started).
+      // The TV rejects a package-only launch, so guess the conventional
+      // `<package>.MainActivity` launcher activity.
+      const guessed = await this.launchIntent({
+        component: { packageName, className: `${packageName}.MainActivity` },
+        action: 'android.intent.action.MAIN',
       });
-    }
+      if (guessed) {
+        return true;
+      }
 
-    const cached = this.appIntents.get(packageName);
-    if (cached) {
-      return this.launchIntent(cached);
-    }
-
-    // No cached intent (the TV hasn't enumerated its apps since we started).
-    // The TV rejects a package-only launch, so guess the conventional
-    // `<package>.MainActivity` launcher activity.
-    const guessed = await this.launchIntent({
-      component: { packageName, className: `${packageName}.MainActivity` },
-      action: 'android.intent.action.MAIN',
+      // Guess rejected — refresh the TV's app list to learn the real launch
+      // intent and retry once (e.g. Disney+ uses a non-conventional activity).
+      await this.getApplications();
+      const learned = this.appIntents.get(packageName);
+      return learned ? this.launchIntent(learned) : false;
     });
-    if (guessed) {
-      return true;
-    }
-
-    // Guess rejected — refresh the TV's app list to learn the real launch
-    // intent and retry once (e.g. Disney+ uses a non-conventional activity).
-    await this.getApplications();
-    const learned = this.appIntents.get(packageName);
-    return learned ? this.launchIntent(learned) : false;
   }
 
   async getCurrentActivity(): Promise<string | null> {
@@ -689,12 +749,14 @@ export class PhilipsTVClient {
    * Turn Ambilight off.
    * Tries styleName OFF first, falls back to /ambilight/power.
    */
-  async setAmbilightOff(): Promise<boolean> {
-    const styleOff = await this.setAmbilightStyle('OFF');
-    if (styleOff) {
-      return true;
-    }
-    return this.setAmbilightPower(false);
+  setAmbilightOff(): Promise<boolean> {
+    return this.interactive(async () => {
+      const styleOff = await this.setAmbilightStyle('OFF');
+      if (styleOff) {
+        return true;
+      }
+      return this.setAmbilightPower(false);
+    });
   }
 
   /**

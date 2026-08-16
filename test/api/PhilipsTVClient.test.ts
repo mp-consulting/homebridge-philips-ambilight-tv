@@ -802,4 +802,69 @@ describe('PhilipsTVClient', () => {
       expect(mockFetch).toHaveBeenCalledTimes(2);
     });
   });
+  // ==========================================================================
+  // REQUEST BUDGET
+  // ==========================================================================
+
+  describe('request budget', () => {
+    /** A TV that accepts the connection and then never answers. */
+    function stallUntilTimeout() {
+      mockFetch.mockImplementation((_url, _options, timeout) =>
+        new Promise((_resolve, reject) => {
+          setTimeout(() => reject(new Error('The operation was aborted')), timeout);
+        }),
+      );
+    }
+
+    it('shortens a request that has been waiting so the caller stays inside the callback limit', async () => {
+      stallUntilTimeout();
+
+      // Three writes issued together, as a scene turning the TV, Ambilight and
+      // Ambilight+hue off does. They are serialized, so the last one starts
+      // with most of the budget already spent.
+      const start = Date.now();
+      const promises = [
+        client.setAmbilightOff(),
+        client.setPowerState(false),
+        client.setAmbilightHue(false),
+      ];
+      await vi.runAllTimersAsync();
+      await Promise.all(promises);
+
+      const timeouts = mockFetch.mock.calls.map(call => call[2]);
+      // First two get the full POST timeout; the third only what is left.
+      expect(timeouts[0]).toBe(3000);
+      expect(timeouts[1]).toBe(3000);
+      expect(timeouts[2]).toBeLessThan(3000);
+      // Every caller answered well inside Homebridge's 10s characteristic limit.
+      expect(Date.now() - start).toBeLessThan(10_000);
+    });
+
+    it('shares one deadline across the requests of a chained operation', async () => {
+      stallUntilTimeout();
+
+      // setAmbilightOff falls back to /ambilight/power when the style POST is
+      // rejected. Both requests belong to the same HomeKit write, so together
+      // they get one budget rather than one each.
+      const start = Date.now();
+      const promise = client.setAmbilightOff();
+      await vi.runAllTimersAsync();
+      await promise;
+
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+      expect(Date.now() - start).toBeLessThanOrEqual(7000);
+    });
+
+    it('drops a request whose budget is spent before it reaches the front of the queue', async () => {
+      stallUntilTimeout();
+
+      const promises = Array.from({ length: 6 }, () => client.setAmbilightHue(false));
+      await vi.runAllTimersAsync();
+      const results = await Promise.all(promises);
+
+      // The tail is dropped rather than issued against a TV nobody is waiting on.
+      expect(mockFetch.mock.calls.length).toBeLessThan(6);
+      expect(results.every(result => result === false)).toBe(true);
+    });
+  });
 });

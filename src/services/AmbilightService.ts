@@ -38,6 +38,8 @@ export interface AmbilightServiceDeps {
   readonly tvClient: PhilipsTVClient;
   readonly accessory: PlatformAccessory;
   readonly ambilightMode?: string;
+  /** Whether the TV is currently believed to be powered on. */
+  readonly isPoweredOn: () => boolean;
   readonly communicationError: () => HapStatusError;
   readonly log: (level: 'debug' | 'info' | 'warn' | 'error', message: string) => void;
 }
@@ -168,6 +170,15 @@ export class AmbilightService {
 
     this.lastUserAction = Date.now();
 
+    // Switching Ambilight off on a TV that is already off is already true —
+    // sending it costs a round-trip that can only time out.
+    if (!shouldBeOn && !this.deps.isPoweredOn()) {
+      this.cancelStyleRetry();
+      this.isOn = false;
+      this.deps.log('debug', 'Ambilight already off (TV powered off)');
+      return;
+    }
+
     try {
       let success: boolean;
       if (shouldBeOn) {
@@ -195,6 +206,16 @@ export class AmbilightService {
         throw this.deps.communicationError();
       }
     } catch (error) {
+      // A scene that turns the TV and Ambilight off together races: the TV can
+      // reach standby while this command is still queued behind the power-off,
+      // and it then fails against an unreachable TV. Ambilight is off either
+      // way, so reporting a communication failure would only paint the
+      // accessory "No Response" for something that did happen.
+      if (!shouldBeOn && !this.deps.isPoweredOn()) {
+        this.isOn = false;
+        this.deps.log('debug', 'Ambilight command dropped — TV reached standby first (Ambilight is off)');
+        return;
+      }
       this.deps.log('warn', 'Failed to change Ambilight state');
       throw error instanceof Error && 'hapStatus' in error ? error : this.deps.communicationError();
     }

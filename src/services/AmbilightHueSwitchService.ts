@@ -10,6 +10,8 @@ export interface AmbilightHueSwitchDeps {
   readonly Service: typeof Service;
   readonly Characteristic: typeof Characteristic;
   readonly tvClient: PhilipsTVClient;
+  /** Whether the TV is currently believed to be powered on. */
+  readonly isPoweredOn: () => boolean;
   readonly communicationError: () => HapStatusError;
   readonly log: (level: 'debug' | 'info' | 'warn' | 'error', message: string) => void;
 }
@@ -101,6 +103,14 @@ export class AmbilightHueSwitchService {
     const on = value as boolean;
     this.deps.log('info', `Ambilight + Hue: ${on ? 'on' : 'off'}`);
 
+    // The integration follows Ambilight, so a TV in standby already has it off
+    // — sending the command costs a round-trip that can only time out.
+    if (!on && !this.deps.isPoweredOn()) {
+      this.isOn = false;
+      this.deps.log('debug', 'Ambilight + Hue already off (TV powered off)');
+      return;
+    }
+
     try {
       const success = await this.deps.tvClient.setAmbilightHue(on);
       if (success) {
@@ -109,6 +119,14 @@ export class AmbilightHueSwitchService {
         throw this.deps.communicationError();
       }
     } catch (error) {
+      // Turning everything off in one scene races the TV into standby: this
+      // command can land after the power-off and fail against an unreachable
+      // TV even though the requested state (off) is what the TV now has.
+      if (!on && !this.deps.isPoweredOn()) {
+        this.isOn = false;
+        this.deps.log('debug', 'Ambilight + Hue command dropped — TV reached standby first (already off)');
+        return;
+      }
       this.deps.log('warn', 'Failed to toggle Ambilight + Hue');
       throw error instanceof Error && 'hapStatus' in error ? error : this.deps.communicationError();
     }

@@ -63,6 +63,7 @@ export class PhilipsAmbilightTVAccessory {
       tvClient: this.tvClient,
       accessory: this.accessory,
       ambilightMode: this.config.ambilightMode,
+      isPoweredOn: () => this.isPoweredOn,
       communicationError: () => this.communicationError(),
       log: (level, msg) => this.log(level, msg),
     });
@@ -109,6 +110,7 @@ export class PhilipsAmbilightTVAccessory {
       Service: this.Service,
       Characteristic: this.Characteristic,
       tvClient: this.tvClient,
+      isPoweredOn: () => this.isPoweredOn,
       communicationError: () => this.communicationError(),
       log: (level, msg) => this.log(level, msg),
     });

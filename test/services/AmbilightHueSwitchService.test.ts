@@ -31,7 +31,10 @@ function createMockService(subtype?: string) {
   return service;
 }
 
-function createMockDeps(overrides: Partial<AmbilightHueSwitchDeps['tvClient']> = {}): AmbilightHueSwitchDeps {
+function createMockDeps(
+  overrides: Partial<AmbilightHueSwitchDeps['tvClient']> = {},
+  isPoweredOn: () => boolean = () => true,
+): AmbilightHueSwitchDeps {
   return {
     Service: {
       Switch: { UUID: 'switch-uuid' },
@@ -46,6 +49,7 @@ function createMockDeps(overrides: Partial<AmbilightHueSwitchDeps['tvClient']> =
       setAmbilightHue: vi.fn().mockResolvedValue(true),
       ...overrides,
     } as never,
+    isPoweredOn,
     communicationError: () => new Error('comm error') as never,
     log: vi.fn(),
   };
@@ -229,6 +233,42 @@ describe('AmbilightHueSwitchService', () => {
 
       const { onSet } = getOnHandlers(accessory);
       await expect(onSet(true)).rejects.toThrow('comm error');
+    });
+
+    it('should skip the round-trip when switching off a TV that is already off', async () => {
+      const setAmbilightHue = vi.fn().mockResolvedValue(true);
+      const deps = createMockDeps({ setAmbilightHue }, () => false);
+      const service = new AmbilightHueSwitchService(deps);
+      const accessory = createMockAccessory();
+      service.configureSwitch(accessory as never, 'TV');
+
+      const { onSet } = getOnHandlers(accessory);
+      await expect(onSet(false)).resolves.toBeUndefined();
+      expect(setAmbilightHue).not.toHaveBeenCalled();
+    });
+
+    it('should not report a failure when an off command loses the race to standby', async () => {
+      // The TV reaches standby while the command is queued behind the power-off,
+      // so the write fails — but the requested state is what the TV now has.
+      const isPoweredOn = vi.fn().mockReturnValueOnce(true).mockReturnValue(false);
+      const deps = createMockDeps({ setAmbilightHue: vi.fn().mockResolvedValue(false) }, isPoweredOn);
+      const service = new AmbilightHueSwitchService(deps);
+      const accessory = createMockAccessory();
+      service.configureSwitch(accessory as never, 'TV');
+
+      const { onSet } = getOnHandlers(accessory);
+      await expect(onSet(false)).resolves.toBeUndefined();
+      expect(deps.log).not.toHaveBeenCalledWith('warn', expect.anything());
+    });
+
+    it('should still report a failure when the TV is on', async () => {
+      const deps = createMockDeps({ setAmbilightHue: vi.fn().mockResolvedValue(false) });
+      const service = new AmbilightHueSwitchService(deps);
+      const accessory = createMockAccessory();
+      service.configureSwitch(accessory as never, 'TV');
+
+      const { onSet } = getOnHandlers(accessory);
+      await expect(onSet(false)).rejects.toThrow('comm error');
     });
   });
 
