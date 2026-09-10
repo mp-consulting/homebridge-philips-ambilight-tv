@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.6.12] - 2026-09-10
+
+### Changed
+
+- **Dependencies**: Updated all dependencies to latest compatible versions, including a major bump for `undici` (7→8) — the HTTP client used for every TV request — along with `bonjour-service` ^1.4.4, `@homebridge/plugin-ui-utils` ^2.2.6 and, for the vendored config UI assets, Bootstrap ^5.3.8 and Bootstrap Icons ^1.13.1. Dev-only major bumps for `vitest` (4→5) and `@types/node` (25→26).
+
 ## [1.6.11] - 2026-08-16
 
 ### Fixed
