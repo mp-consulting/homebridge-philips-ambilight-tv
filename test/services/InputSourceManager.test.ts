@@ -625,6 +625,7 @@ describe('InputSourceManager', () => {
         'com.ug.eon.android.tv',
         'com.ug.eon.android.tv.MainActivity',
         'android.intent.action.VIEW',
+        expect.any(Function),
       );
     });
 
@@ -761,8 +762,10 @@ describe('InputSourceManager', () => {
       await vi.advanceTimersByTimeAsync(4000);
       await replay;
 
+      // The wake replay reports its own "could not switch after wake" failure,
+      // which names no launch activity, so it passes no attempt callback.
       expect(deps.tvClient.launchApplication).toHaveBeenCalledWith(
-        'com.ug.eon.android.tv', 'com.ug.eon.android.tv.MainActivity', undefined,
+        'com.ug.eon.android.tv', 'com.ug.eon.android.tv.MainActivity', undefined, undefined,
       );
       expect(manager.hasPendingWakeSelection()).toBe(false);
     });
@@ -788,6 +791,40 @@ describe('InputSourceManager', () => {
 
       await expect(manager.handleSetInput(app.identifier)).rejects.toThrow();
       expect(manager.hasPendingWakeSelection()).toBe(false);
+    });
+
+    it('should name the launch activity the client actually sent, not a guess', async () => {
+      // The client resolves the activity itself: the configured one, else the
+      // intent the TV reported for the app, else a `<package>.MainActivity`
+      // guess. A sideloaded app typically has no configured activity and a
+      // non-conventional real one, so reporting the guess sends the user off
+      // to correct an activity that was never tried.
+      const deps = createMockDeps({
+        customApps: [{ name: 'Ace Stream', packageName: 'org.acestream.node' }],
+        isPoweredOn: () => true,
+        isWaking: () => false,
+      });
+      const manager = new InputSourceManager(deps);
+      manager.configureInputSources(createMockService() as never);
+      const app = manager.getSources().find(s => s.id === 'org.acestream.node')!;
+
+      (deps.tvClient.launchApplication as ReturnType<typeof vi.fn>).mockImplementation(
+        async (_pkg: string, _className?: string, _action?: string, onAttempt?: (activity: string) => void) => {
+          onAttempt?.('org.acestream.engine.ui.MainWebViewActivity');
+          return false;
+        },
+      );
+
+      await expect(manager.handleSetInput(app.identifier)).rejects.toThrow();
+
+      expect(deps.log).toHaveBeenCalledWith(
+        'warn',
+        expect.stringContaining('org.acestream.engine.ui.MainWebViewActivity'),
+      );
+      expect(deps.log).not.toHaveBeenCalledWith(
+        'warn',
+        expect.stringContaining('org.acestream.node.MainActivity'),
+      );
     });
 
     it('should retry a replay that the TV rejects mid-boot', async () => {
@@ -1292,7 +1329,7 @@ describe('InputSourceManager', () => {
       const netflixSource = manager.getSources().find(s => s.id === 'com.netflix.ninja');
       await manager.requestSwitchById('com.netflix.ninja');
 
-      expect(deps.tvClient.launchApplication).toHaveBeenCalledWith('com.netflix.ninja', undefined, undefined);
+      expect(deps.tvClient.launchApplication).toHaveBeenCalledWith('com.netflix.ninja', undefined, undefined, expect.any(Function));
       expect(manager.currentId).toBe(netflixSource!.identifier);
     });
 
@@ -1433,7 +1470,7 @@ describe('InputSourceManager', () => {
       expect(results).toHaveLength(3); // superseded selections resolve, not reject
       const launch = deps.tvClient.launchApplication as ReturnType<typeof vi.fn>;
       expect(launch).toHaveBeenCalledTimes(1);
-      expect(launch).toHaveBeenCalledWith('com.hbo.max', undefined, undefined);
+      expect(launch).toHaveBeenCalledWith('com.hbo.max', undefined, undefined, expect.any(Function));
       expect(manager.currentId).toBe(ids[2]);
     });
 

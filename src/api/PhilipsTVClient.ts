@@ -515,11 +515,26 @@ export class PhilipsTVClient {
    *   falling back to a best-effort `<package>.MainActivity` guess (the common
    *   Android convention, e.g. `com.netflix.ninja.MainActivity`).
    * @param action - Intent action (defaults to `android.intent.action.MAIN`).
+   * @param onAttempt - Called with each launch activity actually sent to the
+   *   TV, in order. A caller that reports a rejected launch back to the user
+   *   cannot work out which activity was tried — the resolution below draws on
+   *   four different sources, and only this says which one was used. The last
+   *   activity reported before a `false` result is the one the TV rejected.
    */
-  launchApplication(packageName: string, className?: string, action?: string): Promise<boolean> {
+  launchApplication(
+    packageName: string,
+    className?: string,
+    action?: string,
+    onAttempt?: (activity: string) => void,
+  ): Promise<boolean> {
     return this.interactive(async () => {
+      const attempt = (intent: ApplicationIntent): Promise<boolean> => {
+        onAttempt?.(intent.component.className);
+        return this.launchIntent(intent);
+      };
+
       if (className) {
-        return this.launchIntent({
+        return attempt({
           component: { packageName, className },
           action: action ?? 'android.intent.action.MAIN',
         });
@@ -527,13 +542,13 @@ export class PhilipsTVClient {
 
       const cached = this.appIntents.get(packageName);
       if (cached) {
-        return this.launchIntent(cached);
+        return attempt(cached);
       }
 
       // No cached intent (the TV hasn't enumerated its apps since we started).
       // The TV rejects a package-only launch, so guess the conventional
       // `<package>.MainActivity` launcher activity.
-      const guessed = await this.launchIntent({
+      const guessed = await attempt({
         component: { packageName, className: `${packageName}.MainActivity` },
         action: 'android.intent.action.MAIN',
       });
@@ -545,7 +560,7 @@ export class PhilipsTVClient {
       // intent and retry once (e.g. Disney+ uses a non-conventional activity).
       await this.getApplications();
       const learned = this.appIntents.get(packageName);
-      return learned ? this.launchIntent(learned) : false;
+      return learned ? attempt(learned) : false;
     });
   }
 

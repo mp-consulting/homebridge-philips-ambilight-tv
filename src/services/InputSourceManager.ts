@@ -666,8 +666,14 @@ export class InputSourceManager {
   }
 
   private async performSwitch(inputSource: InputSource, generation: number): Promise<void> {
+    // Which launch activity the TV rejected is only settled inside the client,
+    // which falls back through the configured one, the intent the TV reported
+    // for the app, and a guess — so it has to report back what it sent.
+    let attemptedActivity: string | undefined;
     try {
-      const success = await this.switchInput(inputSource);
+      const success = await this.switchInput(inputSource, activity => {
+        attemptedActivity = activity;
+      });
       if (success) {
         this.currentInputId = inputSource.identifier;
         this.markPending(inputSource.identifier);
@@ -699,7 +705,7 @@ export class InputSourceManager {
       if (inputSource.type === 'app') {
         // The TV rejects a launch with the wrong activity — a common cause for
         // custom apps whose launch activity isn't the guessed default.
-        const attempted = inputSource.className ?? `${inputSource.id}.MainActivity`;
+        const attempted = attemptedActivity ?? inputSource.className ?? `${inputSource.id}.MainActivity`;
         this.deps.log('warn',
           `Failed to launch ${inputSource.name} (${inputSource.id}). The TV rejected the launch activity "${attempted}" — `
           + 'set the correct "Launch activity" for this custom app if it is wrong.');
@@ -1522,10 +1528,10 @@ export class InputSourceManager {
       });
   }
 
-  private async switchInput(input: InputSource): Promise<boolean> {
+  private async switchInput(input: InputSource, onAttempt?: (activity: string) => void): Promise<boolean> {
     switch (input.type) {
       case 'app':
-        return this.deps.tvClient.launchApplication(input.id, input.className, input.action);
+        return this.deps.tvClient.launchApplication(input.id, input.className, input.action, onAttempt);
       case 'source':
         if (input.id === WATCH_TV_URI) {
           return this.deps.tvClient.launchWatchTV();
