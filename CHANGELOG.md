@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.6.13] - 2026-09-16
+
+### Fixed
+
+- **A custom app that the TV refused to open named the wrong "Launch activity" in the log**, pointing you at a value that was never tried. The TV will only open an app when it is told which activity to start, and the plugin works that out in up to four ways: the activity set for the custom app, the one the TV itself reports for that app, a conventional `<package>.MainActivity` guess, and a second look at the TV's app list if the guess is refused. The warning knew only about the first and the third, so whenever the activity came from the TV's own app list the message quoted the guess instead of what had actually been sent — advice that sent you off to correct something that was not the problem. The warning now names the activity the TV really rejected.
+
 ## [1.6.12] - 2026-09-10
 
 ### Changed
