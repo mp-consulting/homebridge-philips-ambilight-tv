@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- **Custom buttons**: new optional HomeKit switches that each send one remote key when turned on, then turn themselves back off. Add them in the config UI (edit a TV → **Buttons** tab) or with `customButtons` in the config. Together with a key-remapping app on the TV such as Button Mapper, this reaches actions the TV's network API has no endpoint for. One example is opening Android's power menu to reboot or fully power off the TV ([#23](https://github.com/mp-consulting/homebridge-philips-ambilight-tv/issues/23)).
+
 ## [1.6.13] - 2026-09-16
 
 ### Fixed

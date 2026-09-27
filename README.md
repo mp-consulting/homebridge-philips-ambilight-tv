@@ -18,6 +18,7 @@ A Homebridge plugin to control Philips Android TVs with Ambilight as HomeKit Tel
 - **Ambilight color control** with brightness, color picker, and **Adaptive Lighting**
 - **Ambilight + Hue switch** — optional switch to toggle the Philips Hue integration independently
 - **Long-poll state detection** — near-instant updates when TV state changes, with interval polling fallback
+- **Custom buttons** — optional switches that send a single remote key (e.g. to trigger a Button Mapper action)
 - **State sensors** — optional MotionSensor services for power, ambilight, and mute (for HomeKit automations)
 - Multi-TV support
 - Custom UI for easy setup and configuration
@@ -65,6 +66,22 @@ You can also configure them directly:
 When no launch activity is given, the plugin launches `<packageName>.MainActivity` (the common Android convention, e.g. `com.netflix.ninja.MainActivity`), which works for most apps. Some apps use a different launcher (e.g. Prime Video is `com.amazon.ignition.IgnitionActivity`) — for those, set the exact **launch activity** (`className`) in the optional field, or capture it with **Detect from TV**.
 
 > **Detect from TV** reads the app currently open on the TV and fills in its package name and exact launch activity. Make sure the app is in the foreground first — if the TV is on live TV or the home screen, it reports that system activity instead.
+
+### Custom Buttons
+
+A custom button is a HomeKit switch that sends one remote key when you turn it on, then turns itself back off. Set them up in the config UI (edit a TV → **Buttons** tab) or directly:
+
+```json
+{
+  "customButtons": [
+    { "name": "Power Menu", "key": "Stop" }
+  ]
+}
+```
+
+These are most useful with an app on the TV that remaps keys, such as [Button Mapper](https://play.google.com/store/apps/details?id=flar2.homebutton). The TV's network API has no reboot or full power-off, but Android's power menu does. If you map a key you don't use (e.g. `Stop`) to Button Mapper's **Power dialog** action, a custom button sending that key opens the menu from HomeKit.
+
+Each key can be used by one button only. The plugin can't see what the key does on the TV, so the button always shows the key as sent, even when nothing on the TV reacts to it.
 
 ### State Sensors
 
@@ -149,6 +166,7 @@ Add the following to your `config.json`:
 | `devices[].ambilightOnStart` | Automatically turn Ambilight on (in `ambilightMode`) when the TV powers on | No |
 | `devices[].stateSensors` | Array of state sensors: `"power"`, `"ambilight"`, `"mute"` | No |
 | `devices[].ambilightHueSwitch` | Expose the Ambilight + Hue integration as a separate switch | No |
+| `devices[].customButtons` | Switches that send a single remote key when turned on; each has `name` and `key` (a JointSpace key name such as `Stop`) | No |
 | `devices[].customApps` | Apps the TV doesn't report (added on top of discovered apps); each has `name`, `packageName`, optional `className`/`action` | No |
 | `devices[].pollingInterval` | Polling interval in ms (1000-60000, default: 10000) | No |
 

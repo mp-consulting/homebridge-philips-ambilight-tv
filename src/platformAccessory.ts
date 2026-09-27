@@ -10,6 +10,7 @@ import { StatePollManager } from './services/StatePollManager.js';
 import { SourceSwitchService } from './services/SourceSwitchService.js';
 import { StateSensorService } from './services/StateSensorService.js';
 import { AmbilightHueSwitchService } from './services/AmbilightHueSwitchService.js';
+import { CustomButtonService } from './services/CustomButtonService.js';
 
 // ============================================================================
 // CONSTANTS
@@ -38,6 +39,7 @@ export class PhilipsAmbilightTVAccessory {
   private readonly statePollManager: StatePollManager;
   private readonly stateSensorService: StateSensorService;
   private readonly ambilightHueSwitchService: AmbilightHueSwitchService;
+  private readonly customButtonService: CustomButtonService;
 
   private isPoweredOn = false;
   private isMuted = false;
@@ -115,6 +117,14 @@ export class PhilipsAmbilightTVAccessory {
       log: (level, msg) => this.log(level, msg),
     });
 
+    this.customButtonService = new CustomButtonService({
+      Service: this.Service,
+      Characteristic: this.Characteristic,
+      tvClient: this.tvClient,
+      communicationError: () => this.communicationError(),
+      log: (level, msg) => this.log(level, msg),
+    });
+
     this.statePollManager = new StatePollManager(
       this.tvClient,
       this.config,
@@ -148,6 +158,9 @@ export class PhilipsAmbilightTVAccessory {
     } else {
       this.ambilightHueSwitchService.removeSwitch(this.accessory);
     }
+
+    // Configure custom buttons (momentary switches that send a remote key)
+    this.customButtonService.configureButtons(this.accessory, this.config.customButtons ?? [], sanitizeForHomeKit(this.config.name));
 
     this.statePollManager.start();
   }
@@ -457,5 +470,6 @@ export class PhilipsAmbilightTVAccessory {
 
   public cleanup(): void {
     this.statePollManager.cleanup();
+    this.customButtonService.cleanup();
   }
 }

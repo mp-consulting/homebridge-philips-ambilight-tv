@@ -92,6 +92,13 @@ vi.mock('../src/services/AmbilightHueSwitchService.js', () => ({
   },
 }));
 
+vi.mock('../src/services/CustomButtonService.js', () => ({
+  CustomButtonService: class {
+    configureButtons = vi.fn();
+    cleanup = vi.fn();
+  },
+}));
+
 vi.mock('../src/services/StatePollManager.js', () => ({
   StatePollManager: class {
     start = vi.fn();

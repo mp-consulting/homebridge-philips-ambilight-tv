@@ -26,6 +26,16 @@
   const PLATFORM_NAME = 'PhilipsAmbilightTV';
   const DISPLAY_NAME = 'Philips Ambilight TV';
 
+  /** Keys accepted by the TV's /input/key endpoint — keep in sync with REMOTE_KEYS in src/api/types.ts. */
+  const REMOTE_KEYS = [
+    'Standby', 'Back', 'Find', 'RedColour', 'GreenColour', 'YellowColour', 'BlueColour', 'Home',
+    'VolumeUp', 'VolumeDown', 'Mute', 'Options', 'Dot', 'Digit0', 'Digit1', 'Digit2',
+    'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'Info',
+    'CursorUp', 'CursorDown', 'CursorLeft', 'CursorRight', 'Confirm', 'Next', 'Previous', 'Adjust',
+    'WatchTV', 'Viewmode', 'Teletext', 'Subtitle', 'ChannelStepUp', 'ChannelStepDown', 'Source', 'AmbilightOnOff',
+    'PlayPause', 'Pause', 'FastForward', 'Stop', 'Rewind', 'Record', 'Online',
+  ];
+
   const state = {
     currentConfig: { name: '', ip: '', mac: '', username: '', password: '' },
     configuredTvs: [],
@@ -505,6 +515,10 @@
     state.editCustomApps = Array.isArray(tv.customApps) ? tv.customApps.map(a => ({ ...a })) : [];
     clearCustomAppInputs();
     renderCustomApps();
+    // Custom buttons — same copy-until-saved approach
+    state.editCustomButtons = Array.isArray(tv.customButtons) ? tv.customButtons.map(b => ({ ...b })) : [];
+    $('customButtonName').value = '';
+    renderCustomButtons();
     // Reset to General tab
     const generalTab = $('editGeneralTab');
     if (generalTab) {
@@ -618,6 +632,72 @@
     renderCustomApps();
   };
 
+  // ============================================================================
+  // CUSTOM BUTTONS
+  // ============================================================================
+
+  const renderCustomButtons = () => {
+    const list = $('editCustomButtonsList');
+    const buttons = state.editCustomButtons || [];
+    list.innerHTML = '';
+    if (buttons.length === 0) {
+      const empty = document.createElement('li');
+      empty.className = 'list-group-item text-muted small';
+      empty.textContent = 'No custom buttons yet.';
+      list.appendChild(empty);
+    }
+    buttons.forEach((button, i) => {
+      const li = document.createElement('li');
+      li.className = 'list-group-item d-flex justify-content-between align-items-center';
+      const info = document.createElement('div');
+      const title = document.createElement('div');
+      title.textContent = button.name;
+      const sub = document.createElement('small');
+      sub.className = 'text-muted';
+      sub.textContent = `Sends ${button.key}`;
+      info.appendChild(title);
+      info.appendChild(sub);
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'btn btn-sm btn-outline-danger';
+      remove.innerHTML = '<i class="bi bi-trash"></i>';
+      remove.addEventListener('click', () => {
+        state.editCustomButtons.splice(i, 1);
+        renderCustomButtons();
+      });
+      li.appendChild(info);
+      li.appendChild(remove);
+      list.appendChild(li);
+    });
+
+    // Only offer keys not already taken by another button
+    const used = new Set(buttons.map(b => b.key));
+    const select = $('customButtonKey');
+    select.innerHTML = '';
+    REMOTE_KEYS.filter(k => !used.has(k)).forEach(k => {
+      const option = document.createElement('option');
+      option.value = k;
+      option.textContent = k;
+      select.appendChild(option);
+    });
+    select.value = used.has('Stop') ? select.options[0]?.value : 'Stop';
+  };
+
+  const addCustomButton = () => {
+    const key = $('customButtonKey').value;
+    if (!key) {
+      homebridge.toast.error('Remote key is required');
+      return;
+    }
+    const name = $('customButtonName').value.trim() || key;
+    if (!state.editCustomButtons) {
+      state.editCustomButtons = [];
+    }
+    state.editCustomButtons.push({ name, key });
+    $('customButtonName').value = '';
+    renderCustomButtons();
+  };
+
   const detectCurrentApp = async () => {
     const tv = state.configuredTvs[state.editingTvIndex] || {};
     const ip = $('editTvIp').value.trim() || tv.ip;
@@ -693,6 +773,7 @@
         ambilightHueSwitch: $('editAmbilightHueSwitch').checked,
         stateSensors: editStateSensors,
         customApps: state.editCustomApps || [],
+        customButtons: state.editCustomButtons || [],
       });
       homebridge.toast.success('TV configuration updated');
       form.classList.remove('was-validated');
@@ -1273,6 +1354,9 @@
   // Custom apps
   $('addCustomAppBtn').addEventListener('click', addCustomApp);
   $('detectCurrentAppBtn').addEventListener('click', detectCurrentApp);
+
+  // Custom buttons
+  $('addCustomButtonBtn').addEventListener('click', addCustomButton);
 
   // Step 3 confirm screen
   $('confirmTvForm').addEventListener('submit', handleConfirmSubmit);

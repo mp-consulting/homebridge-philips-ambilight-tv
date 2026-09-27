@@ -232,6 +232,31 @@
                 ]
               }
             },
+            "customButtons": {
+              "title": "Custom Buttons",
+              "type": "array",
+              "description": "Switches that send a single remote key when turned on, then turn themselves back off. Useful with apps on the TV (e.g. Button Mapper) that remap a key to an action the TV's API doesn't offer, such as the power menu.",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "title": "Name",
+                    "type": "string",
+                    "description": "Display name shown in HomeKit."
+                  },
+                  "key": {
+                    "title": "Remote Key",
+                    "type": "string",
+                    "enum": ["Standby", "Back", "Find", "RedColour", "GreenColour", "YellowColour", "BlueColour", "Home", "VolumeUp", "VolumeDown", "Mute", "Options", "Dot", "Digit0", "Digit1", "Digit2", "Digit3", "Digit4", "Digit5", "Digit6", "Digit7", "Digit8", "Digit9", "Info", "CursorUp", "CursorDown", "CursorLeft", "CursorRight", "Confirm", "Next", "Previous", "Adjust", "WatchTV", "Viewmode", "Teletext", "Subtitle", "ChannelStepUp", "ChannelStepDown", "Source", "AmbilightOnOff", "PlayPause", "Pause", "FastForward", "Stop", "Rewind", "Record", "Online"],
+                    "description": "The remote key sent when the switch is turned on. Each key can be used by one button only."
+                  }
+                },
+                "required": [
+                  "name",
+                  "key"
+                ]
+              }
+            },
             "stateSensors": {
               "title": "State Sensors",
               "type": "array",
@@ -337,6 +362,18 @@
                 "devices[].inputs[].type",
                 "devices[].inputs[].identifier",
                 "devices[].inputs[].displayOrder"
+              ]
+            },
+            {
+              "key": "devices[].customButtons",
+              "type": "array",
+              "title": "Custom Buttons (Optional)",
+              "expandable": true,
+              "expanded": false,
+              "buttonText": "Add Button",
+              "items": [
+                "devices[].customButtons[].name",
+                "devices[].customButtons[].key"
               ]
             },
             {

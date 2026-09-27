@@ -270,54 +270,58 @@ export interface AmbilightCached {
   };
 }
 
-export type RemoteKey =
-  | 'Standby'
-  | 'Back'
-  | 'Find'
-  | 'RedColour'
-  | 'GreenColour'
-  | 'YellowColour'
-  | 'BlueColour'
-  | 'Home'
-  | 'VolumeUp'
-  | 'VolumeDown'
-  | 'Mute'
-  | 'Options'
-  | 'Dot'
-  | 'Digit0'
-  | 'Digit1'
-  | 'Digit2'
-  | 'Digit3'
-  | 'Digit4'
-  | 'Digit5'
-  | 'Digit6'
-  | 'Digit7'
-  | 'Digit8'
-  | 'Digit9'
-  | 'Info'
-  | 'CursorUp'
-  | 'CursorDown'
-  | 'CursorLeft'
-  | 'CursorRight'
-  | 'Confirm'
-  | 'Next'
-  | 'Previous'
-  | 'Adjust'
-  | 'WatchTV'
-  | 'Viewmode'
-  | 'Teletext'
-  | 'Subtitle'
-  | 'ChannelStepUp'
-  | 'ChannelStepDown'
-  | 'Source'
-  | 'AmbilightOnOff'
-  | 'PlayPause'
-  | 'Pause'
-  | 'FastForward'
-  | 'Stop'
-  | 'Rewind'
-  | 'Record'
-  | 'Online';
+/** Every key the JointSpace `/input/key` endpoint accepts. */
+export const REMOTE_KEYS = [
+  'Standby',
+  'Back',
+  'Find',
+  'RedColour',
+  'GreenColour',
+  'YellowColour',
+  'BlueColour',
+  'Home',
+  'VolumeUp',
+  'VolumeDown',
+  'Mute',
+  'Options',
+  'Dot',
+  'Digit0',
+  'Digit1',
+  'Digit2',
+  'Digit3',
+  'Digit4',
+  'Digit5',
+  'Digit6',
+  'Digit7',
+  'Digit8',
+  'Digit9',
+  'Info',
+  'CursorUp',
+  'CursorDown',
+  'CursorLeft',
+  'CursorRight',
+  'Confirm',
+  'Next',
+  'Previous',
+  'Adjust',
+  'WatchTV',
+  'Viewmode',
+  'Teletext',
+  'Subtitle',
+  'ChannelStepUp',
+  'ChannelStepDown',
+  'Source',
+  'AmbilightOnOff',
+  'PlayPause',
+  'Pause',
+  'FastForward',
+  'Stop',
+  'Rewind',
+  'Record',
+  'Online',
+] as const;
+
+export type RemoteKey = typeof REMOTE_KEYS[number];
 
 export interface TVDeviceConfig {
   name: string;
@@ -344,6 +348,19 @@ export interface TVDeviceConfig {
   sourceSwitches?: boolean;
   ambilightHueSwitch?: boolean;
   customApps?: CustomAppConfig[];
+  customButtons?: CustomButtonConfig[];
+}
+
+/**
+ * A user-defined HomeKit switch that sends a single remote key when turned on,
+ * then turns itself back off. Useful for keys that tools on the TV (e.g.
+ * Button Mapper) remap to actions the JointSpace API has no endpoint for.
+ */
+export interface CustomButtonConfig {
+  /** Display name shown in HomeKit. */
+  name: string;
+  /** Remote key sent when the switch is turned on. */
+  key: RemoteKey;
 }
 
 /**

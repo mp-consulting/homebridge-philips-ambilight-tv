@@ -287,6 +287,9 @@
         <li class="nav-item" role="presentation">
           <button class="nav-link" id="editAppsTab" data-bs-toggle="tab" data-bs-target="#editAppsPane" type="button" role="tab"><i class="bi bi-grid-1x2 me-1"></i>Apps</button>
         </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link" id="editButtonsTab" data-bs-toggle="tab" data-bs-target="#editButtonsPane" type="button" role="tab"><i class="bi bi-toggle-on me-1"></i>Buttons</button>
+        </li>
       </ul>
       <form id="editTvForm" class="needs-validation" novalidate>
         <div class="tab-content">
@@ -456,6 +459,25 @@
             </div>
             <input type="hidden" id="customAppAction">
             <div id="customAppDetectInfo" class="form-text mt-1"></div>
+          </div>
+          <!-- Buttons tab -->
+          <div class="tab-pane fade" id="editButtonsPane" role="tabpanel">
+            <p class="text-muted small mb-1">Each button appears in HomeKit as a switch that sends one remote key, then turns itself back off.</p>
+            <p class="text-muted small mb-3">Handy with apps on the TV such as <strong>Button Mapper</strong>: map a key you don't use (e.g. Stop) to an action like the power menu, then add a button here that sends that key. Each key can be used once.</p>
+            <ul id="editCustomButtonsList" class="list-group mb-3"></ul>
+            <div class="row g-2 align-items-end">
+              <div class="col-md-5">
+                <label for="customButtonName" class="form-label small mb-1">Name</label>
+                <input type="text" class="form-control form-control-sm" id="customButtonName" placeholder="Power Menu">
+              </div>
+              <div class="col-md-5">
+                <label for="customButtonKey" class="form-label small mb-1">Remote key</label>
+                <select class="form-select form-select-sm" id="customButtonKey"></select>
+              </div>
+              <div class="col-md-2">
+                <button type="button" class="btn btn-sm btn-primary text-nowrap w-100" id="addCustomButtonBtn"><i class="bi bi-plus-lg"></i> Add</button>
+              </div>
+            </div>
           </div>
         </div>
         <hr>
