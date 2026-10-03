@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.8.1] - 2026-10-03
+
+### Changed
+
+- **`@mp-consulting/homebridge-ui-kit` 1.1.0**: the config UI picks up the kit's fixes — helper output is HTML-escaped, settings cards and tab borders are visible in the light theme, the active tab keeps WCAG AA contrast in dark mode, and the support footer icons are inline SVG so they no longer depend on an icon font.
+
 ## [1.8.0] - 2026-10-03
 
 ### Added
