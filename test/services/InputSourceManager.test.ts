@@ -17,11 +17,14 @@ vi.mock('fs', () => ({
 
 vi.mock('fs/promises', () => ({
   writeFile: vi.fn().mockResolvedValue(undefined),
+  rename: vi.fn().mockResolvedValue(undefined),
 }));
 
 import fs from 'fs';
+import { writeFile } from 'fs/promises';
 
 const mockReadFileSync = vi.mocked(fs.readFileSync);
+const mockWriteFile = vi.mocked(writeFile);
 
 // ============================================================================
 // HOMEKIT MOCK HELPERS
@@ -650,11 +653,16 @@ describe('InputSourceManager', () => {
   // ==========================================================================
 
   describe('handleGetInput', () => {
-    it('should return current input identifier', () => {
+    it('should start on a real input (Watch TV), not a fixed number', () => {
       const deps = createMockDeps();
       const manager = new InputSourceManager(deps);
+      const tvService = createMockService();
+      manager.configureInputSources(tvService as never);
 
-      expect(manager.handleGetInput()).toBe(1);
+      const watchTv = manager.getSources().find(s => s.id === WATCH_TV_URI)!;
+      expect(manager.handleGetInput()).toBe(watchTv.identifier);
+      expect(manager.getSources().some(s => s.identifier === manager.handleGetInput())).toBe(true);
+      expect(tvService.updateCharacteristic).toHaveBeenCalledWith({ UUID: 'active-identifier' }, watchTv.identifier);
     });
   });
 
@@ -695,7 +703,7 @@ describe('InputSourceManager', () => {
 
       // Should call launchWatchTV() first, then setChannel
       expect(deps.tvClient.launchWatchTV).toHaveBeenCalled();
-      expect(deps.tvClient.setChannel).toHaveBeenCalledWith(42, undefined);
+      expect(deps.tvClient.setChannel).toHaveBeenCalledWith(42);
 
       // launchWatchTV should be called before setChannel
       const launchOrder = (deps.tvClient.launchWatchTV as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0];
@@ -1675,6 +1683,244 @@ describe('InputSourceManager', () => {
       const watchTV = manager.getSources().find(s => s.name === 'Watch TV')!;
       await manager.handleSetInput(watchTV.identifier);
       expect(manager.updateFromPoll('com.netflix.ninja', tvService as never)).toBeNull();
+    });
+  });
+
+  // ==========================================================================
+  // AUDIT FIXES
+  // ==========================================================================
+
+  describe('duplicate inputs', () => {
+    it('collapses an app the TV lists more than once into one input', async () => {
+      const deps = createMockDeps();
+      (deps.tvClient.getApplications as ReturnType<typeof vi.fn>).mockResolvedValue([
+        { label: 'YouTube', intent: { component: { packageName: 'com.youtube' } } },
+        { label: 'YouTube Kids', intent: { component: { packageName: 'com.youtube' } } },
+      ]);
+      const manager = new InputSourceManager(deps);
+      manager.configureInputSources(createMockService() as never);
+
+      await manager.fetchAppsFromTV();
+
+      expect(manager.getSources().filter(s => s.id === 'com.youtube')).toHaveLength(1);
+      const identifiers = manager.getSources().map(s => s.identifier);
+      expect(new Set(identifiers).size).toBe(identifiers.length);
+    });
+
+    it('does not register an inputs[] entry that duplicates a static source', () => {
+      const hdmi1 = 'content://android.media.tv/passthrough/com.mediatek.tvinput%2F.hdmi.HDMIInputService%2FHW5';
+      const deps = createMockDeps({
+        userInputs: [
+          { identifier: hdmi1, name: 'Console', type: 'source' },
+          { identifier: 'com.app', name: 'App', type: 'app' },
+          { identifier: 'com.app', name: 'App again', type: 'app' },
+        ],
+      });
+      const manager = new InputSourceManager(deps);
+      manager.configureInputSources(createMockService() as never);
+
+      expect(manager.getSources().filter(s => s.id === hdmi1)).toHaveLength(1);
+      expect(manager.getSources().filter(s => s.id === 'com.app')).toHaveLength(1);
+    });
+  });
+
+  describe('identifier stability', () => {
+    it('keeps every identifier across a restart from the cache', async () => {
+      const apps = [
+        { label: 'Netflix', intent: { component: { packageName: 'com.netflix.ninja' } } },
+        { label: 'YouTube', intent: { component: { packageName: 'com.youtube' } } },
+      ];
+      const first = createMockDeps();
+      (first.tvClient.getApplications as ReturnType<typeof vi.fn>).mockResolvedValue(apps);
+      const before = new InputSourceManager(first);
+      before.configureInputSources(createMockService() as never);
+      await before.fetchAppsFromTV();
+      await before.flushPendingSaves();
+
+      const written = mockWriteFile.mock.calls.at(-1)![1] as string;
+      mockReadFileSync.mockReturnValue(written);
+
+      const after = new InputSourceManager(createMockDeps());
+      after.configureInputSources(createMockService() as never);
+
+      const ids = (m: InputSourceManager) => Object.fromEntries(m.getSources().map(s => [s.id, s.identifier]));
+      expect(ids(after)).toEqual(ids(before));
+    });
+
+    it.each([
+      ['not JSON', '{oops'],
+      ['not an array', '{"id":"x"}'],
+      ['malformed entries', JSON.stringify([{ id: 5 }, null, { id: 'a', name: 'A', type: 'app', identifier: -1 }])],
+    ])('starts cleanly from a cache that is %s', (_label, contents) => {
+      mockReadFileSync.mockReturnValue(contents);
+      const manager = new InputSourceManager(createMockDeps());
+      expect(() => manager.configureInputSources(createMockService() as never)).not.toThrow();
+      expect(manager.getSources()).toHaveLength(6);
+    });
+
+    it('removes the service of a cached input that is no longer wanted', () => {
+      mockReadFileSync.mockReturnValue(JSON.stringify([
+        { id: 'com.old', name: 'Old', configuredName: 'Old', type: 'app', identifier: 20, visibility: 0 },
+      ]));
+      const deps = createMockDeps({ userInputs: [{ identifier: 'com.new', name: 'New', type: 'app' }] });
+      const stale = createMockService('input-20');
+      (deps.accessory.services as unknown[]).push(stale);
+
+      new InputSourceManager(deps).configureInputSources(createMockService() as never);
+
+      expect(deps.accessory.removeService).toHaveBeenCalledWith(stale);
+    });
+  });
+
+  describe('persistence', () => {
+    const visibilityHandler = (deps: InputSourceManagerDeps) => {
+      const service = (deps.accessory.services as ReturnType<typeof createMockService>[])[0];
+      const setter = service.getCharacteristic.mock.results
+        .map(r => r.value as { onSet: ReturnType<typeof vi.fn> })
+        .find(c => c.onSet.mock.calls.length > 0 && c === service.getCharacteristic({ UUID: 'target-visibility' }))!;
+      return setter.onSet.mock.calls[0][0] as (v: unknown) => void;
+    };
+
+    it('coalesces a burst of HomeKit changes into one disk write', async () => {
+      const deps = createMockDeps();
+      const manager = new InputSourceManager(deps);
+      manager.configureInputSources(createMockService() as never);
+      await vi.advanceTimersByTimeAsync(1000);
+      mockWriteFile.mockClear();
+
+      const setVisibility = visibilityHandler(deps);
+      setVisibility(1);
+      setVisibility(0);
+      setVisibility(1);
+      expect(mockWriteFile).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mockWriteFile).toHaveBeenCalledTimes(1);
+      // Written beside the cache and renamed over it, never truncated in place.
+      expect(String(mockWriteFile.mock.calls[0][0])).toMatch(/philips-tv-inputs-aabbccddeeff\.json\.\d+\.tmp$/);
+    });
+
+    it('warns when the cache cannot be written', async () => {
+      mockWriteFile.mockRejectedValueOnce(new Error('EACCES'));
+      const deps = createMockDeps();
+      const manager = new InputSourceManager(deps);
+      manager.configureInputSources(createMockService() as never);
+
+      await manager.flushPendingSaves();
+
+      expect(deps.log).toHaveBeenCalledWith('warn', 'Failed to persist input configs to disk');
+    });
+  });
+
+  describe('pruning uninstalled apps', () => {
+    const listing = (...packages: string[]) =>
+      packages.map(p => ({ label: p, intent: { component: { packageName: p } } }));
+
+    it('removes an app only after it is missing from two listings in a row', async () => {
+      const deps = createMockDeps();
+      const getApps = deps.tvClient.getApplications as ReturnType<typeof vi.fn>;
+      const manager = new InputSourceManager(deps);
+      manager.configureInputSources(createMockService() as never);
+
+      getApps.mockResolvedValue(listing('com.keep', 'com.gone'));
+      await manager.fetchAppsFromTV();
+      getApps.mockResolvedValue(listing('com.keep'));
+      await manager.fetchAppsFromTV();
+      expect(manager.getSources().some(s => s.id === 'com.gone')).toBe(true);
+
+      await manager.fetchAppsFromTV();
+      expect(manager.getSources().some(s => s.id === 'com.gone')).toBe(false);
+      expect(deps.accessory.removeService).toHaveBeenCalled();
+    });
+
+    it('never removes a custom app, a configured-visible source or the current input', async () => {
+      const deps = createMockDeps({
+        customApps: [{ name: 'Custom', packageName: 'com.custom' }],
+        sourceConfigs: [{ id: 'com.visible', visible: true }],
+      });
+      const getApps = deps.tvClient.getApplications as ReturnType<typeof vi.fn>;
+      const manager = new InputSourceManager(deps);
+      manager.configureInputSources(createMockService() as never);
+
+      getApps.mockResolvedValue(listing('com.current', 'com.other'));
+      await manager.fetchAppsFromTV();
+      const current = manager.getSources().find(s => s.id === 'com.current')!;
+      await manager.handleSetInput(current.identifier);
+
+      getApps.mockResolvedValue(listing('com.other'));
+      await manager.fetchAppsFromTV();
+      await manager.fetchAppsFromTV();
+
+      const ids = manager.getSources().map(s => s.id);
+      expect(ids).toEqual(expect.arrayContaining(['com.custom', 'com.visible', 'com.current']));
+    });
+  });
+
+  describe('superseded launches', () => {
+    it('does not commit a launch that finished after a newer selection was parked', async () => {
+      let poweredOn = true;
+      const deps = createMockDeps({ isPoweredOn: () => poweredOn });
+      const launch = deps.tvClient.launchApplication as ReturnType<typeof vi.fn>;
+      (deps.tvClient.getApplications as ReturnType<typeof vi.fn>).mockResolvedValue([
+        { label: 'Netflix', intent: { component: { packageName: 'com.netflix.ninja' } } },
+      ]);
+      const manager = new InputSourceManager(deps);
+      const tvService = createMockService();
+      manager.configureInputSources(tvService as never);
+      await manager.fetchAppsFromTV();
+      const netflix = manager.getSources().find(s => s.id === 'com.netflix.ninja')!;
+      const hdmi = manager.getSources().find(s => s.name === 'HDMI 1')!;
+
+      let finishLaunch!: (ok: boolean) => void;
+      launch.mockImplementationOnce(() => new Promise(resolve => {
+        finishLaunch = resolve;
+      }));
+      const slow = manager.handleSetInput(netflix.identifier);
+      await vi.advanceTimersByTimeAsync(0);
+
+      // The TV goes off and the user picks HDMI 1, which is parked.
+      poweredOn = false;
+      await manager.handleSetInput(hdmi.identifier);
+      expect(manager.currentId).toBe(hdmi.identifier);
+
+      finishLaunch(true);
+      await slow;
+
+      expect(manager.currentId).toBe(hdmi.identifier);
+      expect(manager.hasPendingWakeSelection()).toBe(true);
+    });
+  });
+
+  describe('channel inputs', () => {
+    it('still requests the channel when the tuner could not be brought up first', async () => {
+      const deps = createMockDeps({ userInputs: [{ identifier: '42', name: 'BBC One', type: 'channel' }] });
+      (deps.tvClient.launchWatchTV as ReturnType<typeof vi.fn>).mockResolvedValue(false);
+      const manager = new InputSourceManager(deps);
+      manager.configureInputSources(createMockService() as never);
+
+      const channel = manager.getSources().find(s => s.name === 'BBC One')!;
+      await manager.handleSetInput(channel.identifier);
+
+      expect(deps.tvClient.setChannel).toHaveBeenCalledWith(42);
+    });
+  });
+
+  describe('display order', () => {
+    it('honours inputs[] displayOrder when the sources config has no order', () => {
+      const deps = createMockDeps({
+        userInputs: [
+          { identifier: 'com.b', name: 'B', type: 'app', displayOrder: 1 },
+          { identifier: 'com.a', name: 'A', type: 'app', displayOrder: 0 },
+        ],
+      });
+      const manager = new InputSourceManager(deps);
+      const tvService = createMockService();
+      manager.configureInputSources(tvService as never);
+
+      const call = tvService.setCharacteristic.mock.calls.find(c => (c[0] as { UUID: string }).UUID === 'display-order')!;
+      const tlv = Buffer.from(call[1] as string, 'base64');
+      const first = tlv.readUInt32LE(2);
+      expect(first).toBe(manager.getSources().find(s => s.id === 'com.a')!.identifier);
     });
   });
 });

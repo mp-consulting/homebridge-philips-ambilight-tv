@@ -23,6 +23,10 @@ import { CustomButtonService } from './services/CustomButtonService.js';
  *  genuinely refuses later still surfaces as an error. */
 const WAKE_WINDOW_MS = 20_000;
 
+/** Pause before re-reading an ambiguous (NA/playtv) current-app report after
+ *  power-on, so a TV that wakes onto its home screen still aligns quickly. */
+const POWER_ON_RESYNC_DELAY_MS = 2500;
+
 // ============================================================================
 // PHILIPS AMBILIGHT TV ACCESSORY
 // ============================================================================
@@ -48,6 +52,9 @@ export class PhilipsAmbilightTVAccessory {
   /** When the TV was last commanded on, used to tell a launch rejected by a
    *  still-booting TV from one the TV genuinely refuses. */
   private powerOnAt: number | null = null;
+
+  /** Pending second read of the current app after a power-on. */
+  private powerOnResyncTimer?: ReturnType<typeof setTimeout>;
 
   constructor(
     private readonly platform: PhilipsAmbilightTVPlatform,
@@ -252,7 +259,7 @@ export class PhilipsAmbilightTVAccessory {
     }
     const tvName = sanitizeForHomeKit(this.config.name);
     const sources = this.inputSourceManager.getVisibleSources().map(s => ({
-      id: s.id, name: s.name, type: s.type, channelListId: s.channelListId, className: s.className, action: s.action,
+      id: s.id, name: s.name, type: s.type, className: s.className, action: s.action,
     }));
     this.sourceSwitchService.configureSwitches(this.accessory, sources, tvName);
   }
@@ -314,27 +321,28 @@ export class PhilipsAmbilightTVAccessory {
   // ==========================================================================
 
   private async handleVolumeChange(value: CharacteristicValue): Promise<void> {
-    const key: RemoteKey = value === 0 ? 'VolumeUp' : 'VolumeDown';
-    this.log('debug', `Volume ${value === 0 ? 'up' : 'down'}`);
-    try {
-      await this.tvClient.sendKey(key);
-    } catch {
+    const key: RemoteKey = value === this.Characteristic.VolumeSelector.INCREMENT ? 'VolumeUp' : 'VolumeDown';
+    this.log('debug', `Volume ${key === 'VolumeUp' ? 'up' : 'down'}`);
+    if (!(await this.tvClient.sendKey(key))) {
       this.log('warn', 'Failed to change volume');
+      throw this.communicationError();
     }
   }
 
+  /**
+   * Set mute to the requested state. The `Mute` remote key toggles, so with a
+   * stale idea of the current state it unmuted a TV asked to mute; the volume
+   * endpoint takes the absolute value instead.
+   */
   private async handleSetMute(value: CharacteristicValue): Promise<void> {
     const muted = value as boolean;
     this.log('debug', `Setting mute to ${muted}`);
-    try {
-      const success = await this.tvClient.sendKey('Mute');
-      if (success) {
-        this.isMuted = muted;
-        this.stateSensorService.update('mute', muted);
-      }
-    } catch {
+    if (!(await this.tvClient.setMuted(muted))) {
       this.log('warn', 'Failed to set mute state');
+      throw this.communicationError();
     }
+    this.isMuted = muted;
+    this.stateSensorService.update('mute', muted);
   }
 
   // ==========================================================================
@@ -411,17 +419,21 @@ export class PhilipsAmbilightTVAccessory {
    */
   private async syncActiveSourceOnPowerOn(): Promise<void> {
     await this.inputSourceManager.fetchAppsFromTV();
-    try {
-      const accepted = this.applyInputReport(await this.tvClient.getCurrentActivity());
-      if (!accepted) {
-        // An ambiguous system report (NA/playtv) needs a second consecutive
-        // sighting before it is applied — read again after a short settle so
-        // a TV that wakes onto its home screen still aligns right away.
-        await new Promise(resolve => setTimeout(resolve, 2500));
-        this.applyInputReport(await this.tvClient.getCurrentActivity());
-      }
-    } catch {
-      // TV not reachable yet — the periodic poll will sync shortly.
+    const accepted = this.applyInputReport(await this.tvClient.getCurrentActivity());
+    if (accepted) {
+      return;
+    }
+    // An ambiguous system report (NA/playtv) needs a second consecutive
+    // sighting before it is applied — read again after a short settle so a TV
+    // that wakes onto its home screen still aligns right away. If the TV is
+    // not reachable yet, the periodic poll will sync shortly.
+    clearTimeout(this.powerOnResyncTimer);
+    await new Promise<void>(resolve => {
+      this.powerOnResyncTimer = setTimeout(resolve, POWER_ON_RESYNC_DELAY_MS);
+    });
+    this.powerOnResyncTimer = undefined;
+    if (this.isPoweredOn) {
+      this.applyInputReport(await this.tvClient.getCurrentActivity());
     }
   }
 
@@ -471,5 +483,9 @@ export class PhilipsAmbilightTVAccessory {
   public cleanup(): void {
     this.statePollManager.cleanup();
     this.customButtonService.cleanup();
+    this.ambilightService.cleanup();
+    void this.inputSourceManager.flushPendingSaves();
+    clearTimeout(this.powerOnResyncTimer);
+    void this.tvClient.close().catch(() => {});
   }
 }

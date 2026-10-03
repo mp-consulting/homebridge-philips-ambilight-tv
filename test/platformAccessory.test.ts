@@ -23,6 +23,12 @@ const mocks = vi.hoisted(() => ({
   hasPendingWakeSelection: vi.fn().mockReturnValue(false),
   replayWakeSelection: vi.fn().mockResolvedValue(undefined),
   clearWakeSelection: vi.fn(),
+  sendKey: vi.fn().mockResolvedValue(true),
+  setMuted: vi.fn().mockResolvedValue(true),
+  closeClient: vi.fn().mockResolvedValue(undefined),
+  ambilightCleanup: vi.fn(),
+  pollCleanup: vi.fn(),
+  flushInputs: vi.fn().mockResolvedValue(undefined),
 }));
 
 /** Holder for the poll callbacks the accessory hands to StatePollManager,
@@ -33,6 +39,9 @@ vi.mock('../src/api/PhilipsTVClient.js', () => ({
   PhilipsTVClient: class {
     setPowerState = mocks.setPowerState;
     getCurrentActivity = mocks.getCurrentActivity;
+    sendKey = mocks.sendKey;
+    setMuted = mocks.setMuted;
+    close = mocks.closeClient;
   },
   // Re-exported URI constants used elsewhere; unused here but keep the shape.
   HDMI_SOURCES: {},
@@ -46,6 +55,7 @@ vi.mock('../src/services/AmbilightService.js', () => ({
     reflectPowerOff = mocks.reflectPowerOff;
     updateFromPoll = vi.fn();
     startWithConfiguredMode = vi.fn();
+    cleanup = mocks.ambilightCleanup;
   },
 }));
 
@@ -63,6 +73,7 @@ vi.mock('../src/services/InputSourceManager.js', () => ({
     replayWakeSelection = mocks.replayWakeSelection;
     clearWakeSelection = mocks.clearWakeSelection;
     markAwaitingWakeAlignment = vi.fn();
+    flushPendingSaves = mocks.flushInputs;
     constructor(deps: unknown) {
       capture.inputManagerDeps = deps;
     }
@@ -103,7 +114,7 @@ vi.mock('../src/services/StatePollManager.js', () => ({
   StatePollManager: class {
     start = vi.fn();
     stop = vi.fn();
-    cleanup = vi.fn();
+    cleanup = mocks.pollCleanup;
     constructor(_client: unknown, _config: unknown, callbacks: unknown) {
       capture.pollCallbacks = callbacks;
     }
@@ -155,7 +166,7 @@ const Characteristic = {
   CurrentMediaState: { INTERRUPTED: 0 },
   RemoteKey: {},
   VolumeControlType: { ABSOLUTE: 3 },
-  VolumeSelector: {},
+  VolumeSelector: { INCREMENT: 0, DECREMENT: 1 },
   Mute: {},
   Manufacturer: {},
   Model: {},
@@ -541,5 +552,63 @@ describe('PhilipsAmbilightTVAccessory power handling', () => {
       // on every selection from the wheel.
       expect(build(false)()).toBe(false);
     });
+  });
+});
+
+describe('PhilipsAmbilightTVAccessory speaker and lifecycle', () => {
+  beforeEach(() => {
+    Object.values(mocks).forEach(m => m.mockClear());
+    mocks.sendKey.mockResolvedValue(true);
+    mocks.setMuted.mockResolvedValue(true);
+    mocks.closeClient.mockResolvedValue(undefined);
+    mocks.getVisibleSources.mockReturnValue([]);
+  });
+
+  const speakerSetter = (services: Map<unknown, ReturnType<typeof createMockService>>, char: unknown) =>
+    (services.get(Service.TelevisionSpeaker)!.getCharacteristic(char) as unknown as MockCharacteristic)._onSet!;
+
+  it('sets mute to the requested state rather than toggling it', async () => {
+    const { platform, accessory, services } = createMocks();
+    new PhilipsAmbilightTVAccessory(platform as never, accessory as never);
+
+    await speakerSetter(services, Characteristic.Mute)(true);
+
+    expect(mocks.setMuted).toHaveBeenCalledWith(true);
+    expect(mocks.sendKey).not.toHaveBeenCalledWith('Mute');
+    expect(mocks.sensorUpdate).toHaveBeenCalledWith('mute', true);
+  });
+
+  it('reports a failed mute to HomeKit', async () => {
+    const { platform, accessory, services } = createMocks();
+    new PhilipsAmbilightTVAccessory(platform as never, accessory as never);
+    mocks.setMuted.mockResolvedValue(false);
+
+    await expect(speakerSetter(services, Characteristic.Mute)(true)).rejects.toBeInstanceOf(platform.api.hap.HapStatusError);
+    expect(mocks.sensorUpdate).not.toHaveBeenCalledWith('mute', true);
+  });
+
+  it('sends the matching volume key and reports a failure', async () => {
+    const { platform, accessory, services } = createMocks();
+    new PhilipsAmbilightTVAccessory(platform as never, accessory as never);
+    const setVolume = speakerSetter(services, Characteristic.VolumeSelector);
+
+    await setVolume(Characteristic.VolumeSelector.INCREMENT);
+    await setVolume(Characteristic.VolumeSelector.DECREMENT);
+    expect(mocks.sendKey.mock.calls.map(c => c[0])).toEqual(['VolumeUp', 'VolumeDown']);
+
+    mocks.sendKey.mockResolvedValue(false);
+    await expect(setVolume(Characteristic.VolumeSelector.INCREMENT)).rejects.toBeInstanceOf(platform.api.hap.HapStatusError);
+  });
+
+  it('cleans up every service and releases the TV connection on shutdown', () => {
+    const { platform, accessory } = createMocks();
+    const tv = new PhilipsAmbilightTVAccessory(platform as never, accessory as never);
+
+    tv.cleanup();
+
+    expect(mocks.pollCleanup).toHaveBeenCalled();
+    expect(mocks.ambilightCleanup).toHaveBeenCalled();
+    expect(mocks.closeClient).toHaveBeenCalled();
+    expect(mocks.flushInputs).toHaveBeenCalled();
   });
 });
