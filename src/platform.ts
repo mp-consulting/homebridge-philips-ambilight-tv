@@ -3,14 +3,13 @@ import type { API, Characteristic, DynamicPlatformPlugin, Logging, PlatformAcces
 import { PhilipsAmbilightTVAccessory } from './platformAccessory.js';
 import { AccessoryIdentityStore } from './services/AccessoryIdentityStore.js';
 import type { TVDeviceConfig } from './api/types.js';
-import { sanitizeForHomeKit } from './api/utils.js';
+import { isValidIpv4, macHexDigits, sanitizeForHomeKit } from './api/utils.js';
 import { PLATFORM_NAME, PLUGIN_NAME } from './settings.js';
 
 // ============================================================================
 // VALIDATION
 // ============================================================================
 
-const IPV4_REGEX = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
 const MAC_REGEX = /^([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}$/;
 const MIN_POLLING_INTERVAL_MS = 1000;
 const MAX_POLLING_INTERVAL_MS = 60000;
@@ -70,8 +69,12 @@ export class PhilipsAmbilightTVPlatform implements DynamicPlatformPlugin {
     });
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private validateDeviceConfig(device: any, index: number): device is TVDeviceConfig {
+  private validateDeviceConfig(candidate: unknown, index: number): candidate is TVDeviceConfig {
+    if (!candidate || typeof candidate !== 'object') {
+      this.log.error(`Device #${index + 1}: Invalid device entry. Skipping.`);
+      return false;
+    }
+    const device = candidate as Record<string, unknown>;
     const requiredFields = ['name', 'ip', 'mac', 'username', 'password'] as const;
 
     for (const field of requiredFields) {
@@ -81,7 +84,7 @@ export class PhilipsAmbilightTVPlatform implements DynamicPlatformPlugin {
       }
     }
 
-    if (!IPV4_REGEX.test(device.ip as string)) {
+    if (!isValidIpv4(device.ip as string)) {
       this.log.error(`Device "${device.name}": Invalid IP address format "${device.ip}". Skipping.`);
       return false;
     }
@@ -92,7 +95,7 @@ export class PhilipsAmbilightTVPlatform implements DynamicPlatformPlugin {
     }
 
     if (device.pollingInterval !== undefined) {
-      const interval = device.pollingInterval as number;
+      const interval = device.pollingInterval;
       if (typeof interval !== 'number' || interval < MIN_POLLING_INTERVAL_MS || interval > MAX_POLLING_INTERVAL_MS) {
         this.log.warn(
           `Device "${device.name}": pollingInterval ${interval}ms is out of range ` +
@@ -113,12 +116,22 @@ export class PhilipsAmbilightTVPlatform implements DynamicPlatformPlugin {
     }
 
     const accessories: PhilipsAmbilightTVAccessory[] = [];
+    const seenMacs = new Set<string>();
 
     for (let i = 0; i < devices.length; i++) {
-      const tv = devices[i];
+      const tv: unknown = devices[i];
       if (!this.validateDeviceConfig(tv, i)) {
         continue;
       }
+
+      // The same TV configured twice would publish two accessories under one
+      // UUID, which Homebridge refuses — and takes every other TV down with it.
+      const macKey = macHexDigits(tv.mac)!;
+      if (seenMacs.has(macKey)) {
+        this.log.error(`Device "${tv.name}": MAC ${tv.mac} is already used by another configured TV. Skipping.`);
+        continue;
+      }
+      seenMacs.add(macKey);
 
       const displayName = sanitizeForHomeKit(tv.name);
       // Never derive this from the configured MAC directly: the accessory's HAP

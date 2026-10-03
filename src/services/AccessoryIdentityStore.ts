@@ -33,6 +33,7 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 
+import { writeJsonAtomicSync } from '../api/persist.js';
 import { macHexDigits, normalizeMacAddress } from '../api/utils.js';
 import { PLATFORM_NAME } from '../settings.js';
 
@@ -273,18 +274,28 @@ export class AccessoryIdentityStore {
 
   private load(): void {
     try {
-      this.records = JSON.parse(fs.readFileSync(this.filePath, 'utf-8'));
+      const parsed: unknown = JSON.parse(fs.readFileSync(this.filePath, 'utf-8'));
+      this.records = {};
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        for (const [key, value] of Object.entries(parsed)) {
+          const record = value as Partial<IdentityRecord> | null;
+          if (typeof record?.seed === 'string' && typeof record.uuid === 'string') {
+            this.records[key] = { seed: record.seed, uuid: record.uuid };
+          }
+        }
+      }
     } catch {
       // No file yet — normal on first run.
       this.records = {};
     }
   }
 
-  /** Written synchronously: the identity has to survive a crash between here
-   *  and the accessory being published, or the next run could decide differently. */
+  /** Written synchronously and atomically: the identity has to survive a crash
+   *  between here and the accessory being published, or the next run could
+   *  decide differently — and a half-written file would lose every TV's record. */
   private save(): void {
     try {
-      fs.writeFileSync(this.filePath, JSON.stringify(this.records, null, 2), 'utf-8');
+      writeJsonAtomicSync(this.filePath, this.records, 2);
     } catch {
       this.deps.log('warn', 'Failed to persist the accessory identity to disk');
     }

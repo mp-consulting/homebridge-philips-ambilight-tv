@@ -713,4 +713,174 @@ describe('StatePollManager', () => {
       expect((tvClient.getPowerState as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(callCount);
     });
   });
+
+  // ==========================================================================
+  // UNREADABLE POWER STATE
+  // ==========================================================================
+
+  describe('unreadable power state', () => {
+    const getPower = () => tvClient.getPowerState as ReturnType<typeof vi.fn>;
+
+    it('does not report a TV that was on as off after a single unanswered read', async () => {
+      getPower().mockResolvedValue(true);
+      manager = new StatePollManager(tvClient, TEST_CONFIG, callbacks, debugLog);
+      manager.start();
+      await vi.advanceTimersByTimeAsync(5100);
+      (callbacks.onPowerChange as ReturnType<typeof vi.fn>).mockClear();
+
+      getPower().mockResolvedValue(null);
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      expect(callbacks.onPowerChange).not.toHaveBeenCalled();
+      // The rest of the state is not read on a poll that could not see the TV.
+      expect(callbacks.onInputUpdate).toHaveBeenCalledTimes(1);
+    });
+
+    it('reports a TV that stays silent as off (deep standby)', async () => {
+      getPower().mockResolvedValue(true);
+      manager = new StatePollManager(tvClient, TEST_CONFIG, callbacks, debugLog);
+      manager.start();
+      await vi.advanceTimersByTimeAsync(5100);
+
+      getPower().mockResolvedValue(null);
+      await vi.advanceTimersByTimeAsync(20_000);
+
+      expect(callbacks.onPowerChange).toHaveBeenLastCalledWith(false);
+    });
+
+    it('resets the count once the TV answers again', async () => {
+      getPower().mockResolvedValue(true);
+      manager = new StatePollManager(tvClient, TEST_CONFIG, callbacks, debugLog);
+      manager.start();
+      await vi.advanceTimersByTimeAsync(5100);
+      (callbacks.onPowerChange as ReturnType<typeof vi.fn>).mockClear();
+
+      getPower().mockResolvedValueOnce(null).mockResolvedValueOnce(true).mockResolvedValueOnce(null);
+      await vi.advanceTimersByTimeAsync(30_000);
+
+      expect(callbacks.onPowerChange).not.toHaveBeenCalledWith(false);
+    });
+
+    it('reports a TV never seen as off right away', async () => {
+      getPower().mockResolvedValue(null);
+      manager = new StatePollManager(tvClient, TEST_CONFIG, callbacks, debugLog);
+      manager.start();
+      await vi.advanceTimersByTimeAsync(5100);
+
+      expect(callbacks.onPowerChange).toHaveBeenCalledWith(false);
+    });
+  });
+
+  // ==========================================================================
+  // POLL COALESCING
+  // ==========================================================================
+
+  describe('overlapping polls', () => {
+    it('shares a running poll and runs at most one follow-up', async () => {
+      (tvClient.getPowerState as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+      manager = new StatePollManager(tvClient, TEST_CONFIG, callbacks, debugLog);
+      manager.start();
+      await vi.advanceTimersByTimeAsync(5100);
+
+      // Make the next poll slow, then fire several triggers while it runs.
+      let release!: () => void;
+      (tvClient.getAmbilightStyle as ReturnType<typeof vi.fn>).mockImplementationOnce(
+        () => new Promise(resolve => {
+          release = () => resolve(null);
+        }),
+      );
+      const before = (tvClient.getPowerState as ReturnType<typeof vi.fn>).mock.calls.length;
+      const client = notifyInstances[notifyInstances.length - 1];
+      client.emit('notification', { 'audio/volume': {} });
+      await vi.advanceTimersByTimeAsync(0);
+      client.emit('notification', { powerstate: {} });
+      client.emit('notification', { 'ambilight/power': {} });
+      client.emit('notification', { 'activities/current': {} });
+
+      release();
+      await vi.advanceTimersByTimeAsync(0);
+
+      // The running poll plus exactly one follow-up, not one per trigger.
+      expect((tvClient.getPowerState as ReturnType<typeof vi.fn>).mock.calls.length - before).toBe(2);
+    });
+  });
+
+  // ==========================================================================
+  // NOTIFICATION PAYLOADS
+  // ==========================================================================
+
+  describe('notification payloads', () => {
+    const startOn = async () => {
+      (tvClient.getPowerState as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+      manager = new StatePollManager(tvClient, TEST_CONFIG, callbacks, debugLog);
+      manager.start();
+      await vi.advanceTimersByTimeAsync(5100);
+      Object.values(callbacks).forEach(fn => (fn as ReturnType<typeof vi.fn>).mockClear());
+      (tvClient.getPowerState as ReturnType<typeof vi.fn>).mockClear();
+      return notifyInstances[notifyInstances.length - 1];
+    };
+
+    it('applies the values a notification carries without re-reading the TV', async () => {
+      const client = await startOn();
+
+      client.emit('notification', {
+        'audio/volume': { current: 12, muted: true, min: 0, max: 60 },
+        'activities/current': { component: { packageName: 'com.netflix.ninja', className: 'x' } },
+        'ambilight/currentconfiguration': { styleName: 'FOLLOW_VIDEO', algorithm: 'NATURAL' },
+      });
+      await vi.advanceTimersByTimeAsync(100);
+
+      expect(callbacks.onVolumeUpdate).toHaveBeenCalledWith(true);
+      expect(callbacks.onInputUpdate).toHaveBeenCalledWith('com.netflix.ninja');
+      expect(callbacks.onAmbilightUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({ styleName: 'FOLLOW_VIDEO' }), false,
+      );
+      expect(tvClient.getPowerState).not.toHaveBeenCalled();
+    });
+
+    it('applies a standby notification and nothing after it', async () => {
+      const client = await startOn();
+
+      client.emit('notification', {
+        'audio/volume': { current: 12, muted: false },
+        powerstate: { powerstate: 'Standby' },
+      });
+
+      expect(callbacks.onPowerChange).toHaveBeenCalledWith(false);
+      expect(callbacks.onVolumeUpdate).not.toHaveBeenCalled();
+    });
+
+    it('applies standby even when other resources in the same notification were skipped', async () => {
+      const client = await startOn();
+
+      client.emit('notification', {
+        'ambilight/power': { power: 'On' },
+        'ambilight/currentconfiguration': { styleName: 'FOLLOW_VIDEO' },
+        powerstate: { powerstate: 'Standby' },
+      });
+
+      expect(callbacks.onPowerChange).toHaveBeenCalledWith(false);
+      expect(callbacks.onAmbilightUpdate).not.toHaveBeenCalled();
+    });
+
+    it('uses ambilight/power only when the configuration did not come too', async () => {
+      const client = await startOn();
+
+      client.emit('notification', { 'ambilight/power': { power: 'On' } });
+      expect(callbacks.onAmbilightUpdate).toHaveBeenCalledWith(null, true);
+    });
+
+    it('falls back to a full poll when any payload is unrecognised', async () => {
+      const client = await startOn();
+
+      client.emit('notification', {
+        'audio/volume': { current: 12, muted: true },
+        'activities/current': { unexpected: true },
+      });
+      await vi.advanceTimersByTimeAsync(100);
+
+      // Nothing from the partial payload was applied ahead of the poll's read.
+      expect(tvClient.getPowerState).toHaveBeenCalled();
+    });
+  });
 });

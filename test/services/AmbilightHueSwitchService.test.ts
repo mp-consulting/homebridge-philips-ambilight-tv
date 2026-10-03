@@ -74,7 +74,7 @@ function getOnHandlers(accessory: ReturnType<typeof createMockAccessory>) {
   const onChar = sw.getCharacteristic({ UUID: 'on' });
   return {
     sw,
-    onGet: onChar.onGet.mock.calls[0][0] as () => Promise<unknown>,
+    onGet: onChar.onGet.mock.calls[0][0] as () => unknown,
     onSet: onChar.onSet.mock.calls[0][0] as (v: unknown) => Promise<void>,
   };
 }
@@ -180,25 +180,56 @@ describe('AmbilightHueSwitchService', () => {
   });
 
   describe('switch handlers', () => {
-    it('should report the live state from the TV on get', async () => {
+    it('answers from the last known state and refreshes from the TV in the background', async () => {
       const deps = createMockDeps({ getAmbilightHue: vi.fn().mockResolvedValue(true) });
       const service = new AmbilightHueSwitchService(deps);
       const accessory = createMockAccessory();
       service.configureSwitch(accessory as never, 'TV');
 
-      const { onGet } = getOnHandlers(accessory);
-      expect(await onGet()).toBe(true);
-      expect(deps.tvClient.getAmbilightHue).toHaveBeenCalled();
+      const { sw, onGet } = getOnHandlers(accessory);
+      // Immediate answer: no network round-trip on the read itself.
+      expect(onGet()).toBe(false);
+      expect(deps.tvClient.getAmbilightHue).toHaveBeenCalledTimes(1);
+
+      await vi.waitFor(() => expect(sw.updateCharacteristic).toHaveBeenCalledWith({ UUID: 'on' }, true));
+      expect(onGet()).toBe(true);
     });
 
-    it('should fall back to the last known state when the TV is unreachable', async () => {
+    it('throttles background refreshes', async () => {
+      const deps = createMockDeps({ getAmbilightHue: vi.fn().mockResolvedValue(false) });
+      const service = new AmbilightHueSwitchService(deps);
+      const accessory = createMockAccessory();
+      service.configureSwitch(accessory as never, 'TV');
+
+      const { onGet } = getOnHandlers(accessory);
+      onGet();
+      await Promise.resolve();
+      onGet();
+      onGet();
+      expect(deps.tvClient.getAmbilightHue).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not query a TV that is off', () => {
+      const deps = createMockDeps({}, () => false);
+      const service = new AmbilightHueSwitchService(deps);
+      const accessory = createMockAccessory();
+      service.configureSwitch(accessory as never, 'TV');
+
+      const { onGet } = getOnHandlers(accessory);
+      expect(onGet()).toBe(false);
+      expect(deps.tvClient.getAmbilightHue).not.toHaveBeenCalled();
+    });
+
+    it('keeps the last known state when the TV is unreachable', async () => {
       const deps = createMockDeps({ getAmbilightHue: vi.fn().mockRejectedValue(new Error('offline')) });
       const service = new AmbilightHueSwitchService(deps);
       const accessory = createMockAccessory();
       service.configureSwitch(accessory as never, 'TV');
 
       const { onGet } = getOnHandlers(accessory);
-      expect(await onGet()).toBe(false);
+      expect(onGet()).toBe(false);
+      await Promise.resolve();
+      expect(onGet()).toBe(false);
     });
 
     it('should enable Ambilight + Hue when turned on', async () => {

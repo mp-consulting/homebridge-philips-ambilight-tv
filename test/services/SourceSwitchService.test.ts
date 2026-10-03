@@ -16,6 +16,7 @@ vi.mock('fs', () => ({
 
 vi.mock('fs/promises', () => ({
   writeFile: vi.fn().mockResolvedValue(undefined),
+  rename: vi.fn().mockResolvedValue(undefined),
 }));
 
 import fs from 'fs';
@@ -85,7 +86,7 @@ function createMockAccessory() {
 const TEST_SOURCES = [
   { id: 'com.netflix.ninja', name: 'Netflix', type: 'app' as const },
   { id: 'content://android.media.tv/passthrough/HW5', name: 'HDMI 1', type: 'source' as const },
-  { id: '42', name: 'BBC One', type: 'channel' as const, channelListId: 'allcab' },
+  { id: '42', name: 'BBC One', type: 'channel' as const },
 ];
 
 // ============================================================================
@@ -195,7 +196,7 @@ describe('SourceSwitchService', () => {
   describe('switch name persistence', () => {
     const CONFIGURED_NAME = { UUID: 'configured-name' };
 
-    it('persists a switch name the user changes in HomeKit', () => {
+    it('persists a switch name the user changes in HomeKit', async () => {
       const deps = createMockDeps();
       const service = new SourceSwitchService(deps);
       const accessory = createMockAccessory();
@@ -204,8 +205,7 @@ describe('SourceSwitchService', () => {
       const netflix = accessory.services.find(s => s.subtype === 'source-switch-com.netflix.ninja')!;
       const onSet = netflix.getCharacteristic(CONFIGURED_NAME).onSet.mock.calls[0][0] as (v: unknown) => void;
       onSet('My Netflix');
-
-      expect(mockWriteFile).toHaveBeenCalled();
+      await vi.waitFor(() => expect(mockWriteFile).toHaveBeenCalled());
       const written = JSON.parse(mockWriteFile.mock.calls.at(-1)![1] as string);
       expect(written['com.netflix.ninja']).toBe('My Netflix');
     });

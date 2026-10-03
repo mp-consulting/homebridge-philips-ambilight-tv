@@ -22,6 +22,11 @@ import {
   sanitizeForLog,
   sanitizeForHomeKit,
   createDeviceInfo,
+  MAX_RESPONSE_BYTES,
+  HOMEKIT_NAME_MAX_LENGTH,
+  buildDigestHeader,
+  directedBroadcastFor,
+  isValidIpv4,
 } from '../../src/api/utils.js';
 import type { DiscoveredDevice } from '../../src/api/types.js';
 
@@ -441,17 +446,14 @@ describe('fetchWithTimeout', () => {
   it('aborts when the TV sends headers then stalls the body', async () => {
     // Response headers arrive immediately, but the body never completes —
     // reject only when the request is aborted (as undici would).
-    mockedFetch.mockImplementation((_url, opts) => Promise.resolve({
-      ok: true,
-      status: 200,
-      headers: new Headers(),
-      text: () => new Promise((_resolve, reject) => {
+    mockedFetch.mockImplementation((_url, opts) => Promise.resolve(new Response(new ReadableStream({
+      start(controller) {
         (opts as { signal: AbortSignal }).signal.addEventListener(
           'abort',
-          () => reject(new Error('The operation was aborted')),
+          () => controller.error(new Error('The operation was aborted')),
         );
-      }),
-    } as never));
+      },
+    })) as never));
 
     const promise = fetchWithTimeout('https://tv/6/sources', { method: 'GET' }, 2000);
     const assertion = expect(promise).rejects.toThrow();
@@ -460,12 +462,7 @@ describe('fetchWithTimeout', () => {
   });
 
   it('buffers the body and resolves on a normal response', async () => {
-    mockedFetch.mockResolvedValue({
-      ok: true,
-      status: 200,
-      headers: new Headers(),
-      text: () => Promise.resolve('{"sources":[{"id":"hdmi1"}]}'),
-    } as never);
+    mockedFetch.mockResolvedValue(new Response('{"sources":[{"id":"hdmi1"}]}', { status: 200 }) as never);
 
     const res = await fetchWithTimeout('https://tv/6/sources', { method: 'GET' }, 2000);
 
@@ -473,5 +470,105 @@ describe('fetchWithTimeout', () => {
     expect(res.status).toBe(200);
     expect(await res.text()).toBe('{"sources":[{"id":"hdmi1"}]}');
     expect(await res.json()).toEqual({ sources: [{ id: 'hdmi1' }] });
+  });
+
+  it('refuses a body that declares more than the size limit', async () => {
+    mockedFetch.mockResolvedValue(new Response('x', {
+      status: 200,
+      headers: { 'content-length': String(MAX_RESPONSE_BYTES + 1) },
+    }) as never);
+
+    await expect(fetchWithTimeout('https://tv/6/sources', { method: 'GET' }, 2000)).rejects.toThrow('too large');
+  });
+
+  it('stops reading a body that streams past the size limit', async () => {
+    const chunk = new Uint8Array(64 * 1024);
+    let sent = 0;
+    mockedFetch.mockResolvedValue(new Response(new ReadableStream({
+      pull(controller) {
+        sent += chunk.byteLength;
+        controller.enqueue(chunk);
+      },
+    })) as never);
+
+    await expect(fetchWithTimeout('https://tv/6/sources', { method: 'GET' }, 2000)).rejects.toThrow('too large');
+    expect(sent).toBeLessThanOrEqual(MAX_RESPONSE_BYTES + 2 * chunk.byteLength);
+  });
+});
+
+// ============================================================================
+// directedBroadcastFor / isValidIpv4
+// ============================================================================
+
+describe('directedBroadcastFor', () => {
+  const iface = (address: string, netmask: string, internal = false) => ({
+    address, netmask, family: 'IPv4' as const, internal, mac: '00:00:00:00:00:00', cidr: null,
+  });
+
+  it('returns the broadcast of the interface sharing the TV subnet', () => {
+    const interfaces = {
+      docker0: [iface('172.17.0.1', '255.255.0.0')],
+      en0: [iface('192.168.1.20', '255.255.255.0')],
+    };
+    expect(directedBroadcastFor('192.168.1.42', interfaces)).toBe('192.168.1.255');
+  });
+
+  it('handles non-/24 masks', () => {
+    expect(directedBroadcastFor('10.0.3.7', { eth0: [iface('10.0.1.2', '255.255.252.0')] })).toBe('10.0.3.255');
+  });
+
+  it('returns null when no interface shares the subnet, or for loopback only', () => {
+    expect(directedBroadcastFor('192.168.1.42', { lo: [iface('127.0.0.1', '255.0.0.0', true)] })).toBeNull();
+    expect(directedBroadcastFor('192.168.1.42', { en0: [iface('10.0.0.2', '255.255.255.0')] })).toBeNull();
+  });
+
+  it('returns null for an invalid target', () => {
+    expect(directedBroadcastFor('not-an-ip', {})).toBeNull();
+  });
+});
+
+describe('isValidIpv4', () => {
+  it('accepts dotted quads with octets in range only', () => {
+    expect(isValidIpv4('192.168.1.1')).toBe(true);
+    expect(isValidIpv4('999.1.1.1')).toBe(false);
+    expect(isValidIpv4('192.168.1')).toBe(false);
+    expect(isValidIpv4('host/x?#')).toBe(false);
+  });
+});
+
+// ============================================================================
+// buildDigestHeader
+// ============================================================================
+
+describe('buildDigestHeader', () => {
+  it('matches createDigestAuth for the first use of a nonce', () => {
+    const challenge = 'Digest realm="XTV", nonce="n1", qop="auth", opaque="op"';
+    vi.spyOn(crypto, 'randomBytes').mockReturnValue(Buffer.alloc(16) as never);
+    try {
+      const viaChallenge = createDigestAuth('user', 'pass', challenge, 'GET', '/6/system');
+      const direct = buildDigestHeader(
+        { username: 'user', realm: 'XTV', nonce: 'n1', qop: 'auth', opaque: 'op', ha1: md5('user:XTV:pass'), nc: 1 },
+        'GET',
+        '/6/system',
+      );
+      expect(direct).toBe(viaChallenge);
+      expect(direct).toContain('nc=00000001');
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
+  it('omits qop fields when the challenge has no qop', () => {
+    const header = buildDigestHeader({ username: 'u', realm: 'r', nonce: 'n', qop: '', ha1: 'h', nc: 3 }, 'GET', '/x');
+    expect(header).not.toContain('qop=');
+    expect(header).not.toContain('nc=');
+  });
+});
+
+describe('sanitizeForHomeKit length cap', () => {
+  it('caps names at HomeKit\'s 64 characters and ends on an alphanumeric', () => {
+    const name = sanitizeForHomeKit(`${'a'.repeat(63)} b`);
+    expect(name.length).toBeLessThanOrEqual(HOMEKIT_NAME_MAX_LENGTH);
+    expect(name).toMatch(/[a-zA-Z0-9]$/);
   });
 });

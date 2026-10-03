@@ -4,6 +4,8 @@
 
 import crypto from 'crypto';
 import dgram from 'dgram';
+import { isIPv4 } from 'net';
+import os from 'os';
 import type { TLSSocket } from 'tls';
 import { Agent, buildConnector, type Dispatcher, type Headers, fetch } from 'undici';
 import {
@@ -146,6 +148,38 @@ export interface TimedResponse {
   json: () => Promise<unknown>;
 }
 
+/**
+ * Largest response body accepted from a TV. The biggest legitimate payload —
+ * the `/applications` list on a set with many apps installed — is well under
+ * this; anything larger is a misbehaving or hostile device, and buffering it
+ * whole would let it exhaust Homebridge's memory.
+ */
+export const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
+
+/** Read a response body as text, refusing one larger than `limit` bytes. */
+const readBodyWithLimit = async (response: Awaited<ReturnType<typeof fetch>>, limit: number): Promise<string> => {
+  const declared = Number(response.headers.get('content-length'));
+  if (Number.isFinite(declared) && declared > limit) {
+    await response.body?.cancel();
+    throw new Error(`Response body too large (${declared} bytes)`);
+  }
+  if (!response.body) {
+    return '';
+  }
+
+  const chunks: Uint8Array[] = [];
+  let received = 0;
+  for await (const chunk of response.body) {
+    received += chunk.byteLength;
+    if (received > limit) {
+      await response.body.cancel().catch(() => {});
+      throw new Error(`Response body too large (over ${limit} bytes)`);
+    }
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks).toString('utf-8');
+};
+
 export const fetchWithTimeout = async (
   url: string,
   options: { method: string; headers?: Record<string, string>; body?: string; dispatcher?: Dispatcher },
@@ -170,7 +204,7 @@ export const fetchWithTimeout = async (
     // soon as the response headers arrive, so a TV that sends headers then
     // stalls the body would otherwise hang an un-guarded `response.text()`
     // forever. Buffering here keeps the whole exchange under `timeout`.
-    const bodyText = await response.text();
+    const bodyText = await readBodyWithLimit(response, MAX_RESPONSE_BYTES);
 
     return {
       ok: response.ok,
@@ -264,18 +298,28 @@ export const parseWwwAuthenticate = (header: string): DigestAuthParams => {
   };
 };
 
-export const createDigestAuth = (
-  username: string,
-  password: string,
-  wwwAuthHeader: string,
-  method: string,
-  uri: string,
-): string => {
-  const { realm, nonce, qop, opaque } = parseWwwAuthenticate(wwwAuthHeader);
-  const cnonce = crypto.randomBytes(16).toString('hex');
-  const nc = '00000001';
+export interface DigestHeaderParams {
+  username: string;
+  realm: string;
+  nonce: string;
+  qop: string;
+  opaque?: string;
+  /** Precomputed `md5(username:realm:password)`. */
+  ha1: string;
+  /** Nonce count for this use (1 for the first request on a nonce). */
+  nc: number;
+}
 
-  const ha1 = md5(`${username}:${realm}:${password}`);
+/**
+ * Build a Digest `Authorization` header (RFC 7616, MD5) from already-known
+ * challenge parameters. The single implementation behind both the cached
+ * session (`DigestAuthSession`) and the one-shot `createDigestAuth`.
+ */
+export const buildDigestHeader = (params: DigestHeaderParams, method: string, uri: string): string => {
+  const { username, realm, nonce, qop, opaque, ha1 } = params;
+  const nc = params.nc.toString(16).padStart(8, '0');
+  const cnonce = crypto.randomBytes(16).toString('hex');
+
   const ha2 = md5(`${method}:${uri}`);
   const response = qop
     ? md5(`${ha1}:${nonce}:${nc}:${cnonce}:${qop}:${ha2}`)
@@ -291,6 +335,21 @@ export const createDigestAuth = (
   }
 
   return header;
+};
+
+export const createDigestAuth = (
+  username: string,
+  password: string,
+  wwwAuthHeader: string,
+  method: string,
+  uri: string,
+): string => {
+  const params = parseWwwAuthenticate(wwwAuthHeader);
+  return buildDigestHeader(
+    { ...params, username, ha1: md5(`${username}:${params.realm}:${password}`), nc: 1 },
+    method,
+    uri,
+  );
 };
 
 // ============================================================================
@@ -385,9 +444,13 @@ export const sanitizeForLog = (text: string, maxLength = 200): string => {
   return stripped.length > maxLength ? `${stripped.slice(0, maxLength)}…` : stripped;
 };
 
+/** HAP's default maximum length for a string characteristic such as Name. */
+export const HOMEKIT_NAME_MAX_LENGTH = 64;
+
 /**
  * Sanitize a name for HomeKit compatibility.
- * HomeKit only allows alphanumeric, space, and apostrophe characters.
+ * HomeKit only allows alphanumeric, space, and apostrophe characters, and
+ * rejects a Name longer than 64 characters.
  */
 export const sanitizeForHomeKit = (name: string): string =>
   name
@@ -400,7 +463,27 @@ export const sanitizeForHomeKit = (name: string): string =>
     .trim()
     .replace(/^[^a-zA-Z0-9]+/, '')
     .replace(/[^a-zA-Z0-9]+$/, '')
+    .slice(0, HOMEKIT_NAME_MAX_LENGTH)
+    .replace(/[^a-zA-Z0-9]+$/, '')
     || 'Unknown';
+
+/**
+ * Clean a name a HomeKit controller wrote (a rename in the Home app) before it
+ * is persisted or shown again: drop control characters and cap the length.
+ *
+ * Deliberately gentler than sanitizeForHomeKit — the controller has already
+ * validated the name, and stripping to ASCII would mangle every accented or
+ * non-Latin name a user chose ("Télé" → "T l").
+ */
+export const cleanControllerName = (name: string): string =>
+  name.replace(/[^\x20-\x7E\u00A0-\uFFFF]/g, '').replace(/\s+/g, ' ').trim().slice(0, HOMEKIT_NAME_MAX_LENGTH).trim();
+
+// ============================================================================
+// ADDRESS VALIDATION
+// ============================================================================
+
+/** True for a dotted-quad IPv4 address with every octet in range. */
+export const isValidIpv4 = (ip: string): boolean => isIPv4(ip);
 
 // ============================================================================
 // MAC ADDRESSES
@@ -444,9 +527,9 @@ const createMagicPacket = (mac: string): Buffer => {
   return packet;
 };
 
-const wolSendPacket = (socket: dgram.Socket, packet: Buffer): Promise<void> =>
+const wolSendPacket = (socket: dgram.Socket, packet: Buffer, address: string): Promise<void> =>
   new Promise((resolve, reject) => {
-    socket.send(packet, 0, packet.length, WOL_PORT, WOL_BROADCAST_IP, (err) =>
+    socket.send(packet, 0, packet.length, WOL_PORT, address, (err) =>
       err ? reject(err) : resolve(),
     );
   });
@@ -454,18 +537,60 @@ const wolSendPacket = (socket: dgram.Socket, packet: Buffer): Promise<void> =>
 const wolSleep = (ms: number): Promise<void> =>
   new Promise(resolve => setTimeout(resolve, ms));
 
+const ipv4ToInt = (ip: string): number =>
+  ip.split('.').reduce((acc, octet) => ((acc << 8) | parseInt(octet, 10)) >>> 0, 0);
+
+const intToIpv4 = (n: number): string =>
+  [n >>> 24, (n >>> 16) & 0xff, (n >>> 8) & 0xff, n & 0xff].join('.');
+
+/**
+ * Subnet-directed broadcast address of the local interface that shares a
+ * subnet with `targetIp`, or null when none does.
+ *
+ * The limited broadcast (255.255.255.255) leaves through whichever interface
+ * the OS picks — on a host with several networks, or in a container with a
+ * bridge, that is often not the one the TV is on. A directed broadcast to the
+ * TV's own subnet is routed out of the right interface.
+ */
+export const directedBroadcastFor = (
+  targetIp: string,
+  interfaces: ReturnType<typeof os.networkInterfaces> = os.networkInterfaces(),
+): string | null => {
+  if (!isIPv4(targetIp)) {
+    return null;
+  }
+  const target = ipv4ToInt(targetIp);
+  for (const addresses of Object.values(interfaces)) {
+    for (const iface of addresses ?? []) {
+      if (iface.family !== 'IPv4' || iface.internal || !isIPv4(iface.netmask)) {
+        continue;
+      }
+      const mask = ipv4ToInt(iface.netmask);
+      const local = ipv4ToInt(iface.address);
+      if ((local & mask) >>> 0 === (target & mask) >>> 0) {
+        return intToIpv4(((local & mask) | (~mask >>> 0)) >>> 0);
+      }
+    }
+  }
+  return null;
+};
+
 /**
  * Send Wake-on-LAN magic packets in bursts (matching official Philips app).
  * Sends WOL_BURST_COUNT bursts of WOL_PACKETS_PER_BURST packets each,
- * with WOL_BURST_INTERVAL_MS between bursts.
+ * with WOL_BURST_INTERVAL_MS between bursts — to the limited broadcast and,
+ * when the TV's IP is known, to its subnet's directed broadcast as well.
  */
-export const sendWakeOnLan = (macAddress: string): Promise<void> =>
+export const sendWakeOnLan = (macAddress: string, targetIp?: string): Promise<void> =>
   new Promise((resolve, reject) => {
     const mac = macHexDigits(macAddress);
 
     if (!mac) {
       return reject(new Error('Invalid MAC address format'));
     }
+
+    const directed = targetIp ? directedBroadcastFor(targetIp) : null;
+    const addresses = directed && directed !== WOL_BROADCAST_IP ? [WOL_BROADCAST_IP, directed] : [WOL_BROADCAST_IP];
 
     const socket = dgram.createSocket('udp4');
     const packet = createMagicPacket(mac);
@@ -480,7 +605,9 @@ export const sendWakeOnLan = (macAddress: string): Promise<void> =>
       try {
         for (let burst = 0; burst < WOL_BURST_COUNT; burst++) {
           for (let i = 0; i < WOL_PACKETS_PER_BURST; i++) {
-            await wolSendPacket(socket, packet);
+            for (const address of addresses) {
+              await wolSendPacket(socket, packet, address);
+            }
           }
           if (burst < WOL_BURST_COUNT - 1) {
             await wolSleep(WOL_BURST_INTERVAL_MS);

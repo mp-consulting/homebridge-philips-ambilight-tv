@@ -11,6 +11,7 @@ vi.mock('fs', () => ({
   default: {
     readFileSync: vi.fn(),
     writeFileSync: vi.fn(),
+    renameSync: vi.fn(),
     readdirSync: vi.fn(),
   },
 }));
@@ -19,11 +20,14 @@ import fs from 'fs';
 
 const mockReadFileSync = vi.mocked(fs.readFileSync);
 const mockWriteFileSync = vi.mocked(fs.writeFileSync);
+const mockRenameSync = vi.mocked(fs.renameSync);
 const mockReaddirSync = vi.mocked(fs.readdirSync);
 
 const STORAGE_PATH = '/storage';
 const PERSIST_PATH = '/storage/persist';
 const IDENTITY_PATH = '/storage/philips-tv-accessory-identity.json';
+/** The identity file is written to a sibling temp file and renamed over the original. */
+const IDENTITY_TEMP_PATH = expect.stringMatching(/^\/storage\/philips-tv-accessory-identity\.json\.\d+\.tmp$/);
 
 /** Stand-in for `api.hap.uuid.generate` — only has to be deterministic and
  *  collision-free, not byte-identical to HAP's. */
@@ -91,6 +95,8 @@ const unpairedRecord = { pairedClients: {} };
 describe('AccessoryIdentityStore', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // clearAllMocks keeps implementations; a write made to fail must not leak.
+    mockWriteFileSync.mockReset();
     withFiles({});
   });
 
@@ -112,8 +118,9 @@ describe('AccessoryIdentityStore', () => {
 
       createStore().resolve('AA:BB:CC:DD:EE:FF');
 
+      expect(mockRenameSync).toHaveBeenCalledWith(IDENTITY_TEMP_PATH, IDENTITY_PATH);
       expect(mockWriteFileSync).toHaveBeenCalledWith(
-        IDENTITY_PATH,
+        IDENTITY_TEMP_PATH,
         expect.stringContaining('PhilipsAmbilightTV-AA:BB:CC:DD:EE:FF'),
         'utf-8',
       );
@@ -155,8 +162,9 @@ describe('AccessoryIdentityStore', () => {
       withFiles({ [persistFileFor('AA:BB:CC:DD:EE:FF')]: pairedRecord });
       createStore().resolve('AA:BB:CC:DD:EE:FF');
 
+      expect(mockRenameSync).toHaveBeenCalledWith(IDENTITY_TEMP_PATH, IDENTITY_PATH);
       expect(mockWriteFileSync).toHaveBeenCalledWith(
-        IDENTITY_PATH,
+        IDENTITY_TEMP_PATH,
         expect.stringContaining('PhilipsAmbilightTV-AA:BB:CC:DD:EE:FF'),
         'utf-8',
       );
@@ -283,8 +291,9 @@ describe('AccessoryIdentityStore', () => {
 
       createStore().resolve('aa:bb:cc:dd:ee:ff');
 
+      expect(mockRenameSync).toHaveBeenCalledWith(IDENTITY_TEMP_PATH, IDENTITY_PATH);
       expect(mockWriteFileSync).toHaveBeenCalledWith(
-        IDENTITY_PATH,
+        IDENTITY_TEMP_PATH,
         expect.stringContaining('PhilipsAmbilightTV-AA:BB:CC:DD:EE:FF'),
         'utf-8',
       );
@@ -307,6 +316,17 @@ describe('AccessoryIdentityStore', () => {
       });
 
       expect(createStore().resolve('aa:bb:cc:dd:ee:ff')).toBe(generateUuid('PhilipsAmbilightTV-aa:bb:cc:dd:ee:ff'));
+    });
+  });
+
+  describe('identity file robustness', () => {
+    it('ignores malformed records in the identity file', () => {
+      withFiles({
+        [IDENTITY_PATH]: { aabbccddeeff: { seed: 42 }, '112233445566': 'nope' },
+      });
+      const store = createStore();
+      // Nothing usable recorded and nothing paired: follow the configured MAC.
+      expect(store.resolve('AA:BB:CC:DD:EE:FF')).toBe(generateUuid('PhilipsAmbilightTV-AA:BB:CC:DD:EE:FF'));
     });
   });
 });

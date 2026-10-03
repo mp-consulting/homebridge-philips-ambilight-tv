@@ -97,6 +97,10 @@ export class NotifyChangeClient extends EventEmitter {
       this.abortController.abort();
       this.abortController = null;
     }
+    // A stopped client is never restarted — the poll manager builds a fresh
+    // one — so release its pooled connections rather than leaving them to
+    // idle out.
+    void this.agent.close().catch(() => {});
   }
 
   // ==========================================================================

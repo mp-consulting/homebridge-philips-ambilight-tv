@@ -1,9 +1,9 @@
 import type { Characteristic, CharacteristicValue, HapStatusError, PlatformAccessory, Service } from 'homebridge';
 import fs from 'fs';
-import { writeFile } from 'fs/promises';
 import path from 'path';
 
-import { sanitizeForHomeKit } from '../api/utils.js';
+import { AtomicJsonFile } from '../api/persist.js';
+import { cleanControllerName, sanitizeForHomeKit, sanitizeForLog } from '../api/utils.js';
 
 // ============================================================================
 // TYPES
@@ -58,16 +58,26 @@ export class SourceSwitchService {
    *  TV accessory is external and its context is not saved across restarts. */
   private customNames: Record<string, string> = {};
   private readonly namesCachePath: string;
+  private readonly namesFile: AtomicJsonFile;
 
   constructor(private readonly deps: SourceSwitchDeps) {
     const safeId = deps.deviceId.replace(/[:-]/g, '').toLowerCase();
     this.namesCachePath = path.join(deps.storagePath, `philips-tv-switch-names-${safeId}.json`);
+    this.namesFile = new AtomicJsonFile(this.namesCachePath);
     this.loadCustomNames();
   }
 
   private loadCustomNames(): void {
     try {
-      this.customNames = JSON.parse(fs.readFileSync(this.namesCachePath, 'utf-8'));
+      const parsed: unknown = JSON.parse(fs.readFileSync(this.namesCachePath, 'utf-8'));
+      this.customNames = {};
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        for (const [id, name] of Object.entries(parsed)) {
+          if (typeof name === 'string') {
+            this.customNames[id] = cleanControllerName(name);
+          }
+        }
+      }
     } catch {
       // No file yet — normal on first run.
       this.customNames = {};
@@ -75,7 +85,7 @@ export class SourceSwitchService {
   }
 
   private saveCustomNames(): void {
-    writeFile(this.namesCachePath, JSON.stringify(this.customNames), 'utf-8')
+    this.namesFile.write(this.customNames)
       .catch(() => this.deps.log('warn', 'Failed to persist source switch names to disk'));
   }
 
@@ -85,7 +95,7 @@ export class SourceSwitchService {
 
   configureSwitches(
     accessory: PlatformAccessory,
-    sources: ReadonlyArray<{ id: string; name: string; type: 'app' | 'source' | 'channel'; channelListId?: string; className?: string; action?: string }>,
+    sources: ReadonlyArray<{ id: string; name: string; type: 'app' | 'source' | 'channel'; className?: string; action?: string }>,
     tvName: string,
   ): void {
     const { Service: Svc, Characteristic: Char } = this.deps;
@@ -179,7 +189,9 @@ export class SourceSwitchService {
 
   /** Persist a switch name the user changed in HomeKit so it survives restarts. */
   private handleRenameSwitch(sourceId: string, value: CharacteristicValue): void {
-    const newName = (typeof value === 'string' ? value : '').trim();
+    // Written by a HomeKit controller: strip control characters and cap the
+    // length before it is persisted and shown again.
+    const newName = cleanControllerName(typeof value === 'string' ? value : '');
     if (!newName) {
       return;
     }
@@ -188,7 +200,7 @@ export class SourceSwitchService {
     }
     this.customNames[sourceId] = newName;
     this.saveCustomNames();
-    this.deps.log('debug', `Source switch renamed: ${sourceId} → ${newName}`);
+    this.deps.log('debug', `Source switch renamed: ${sanitizeForLog(sourceId)} → ${sanitizeForLog(newName)}`);
   }
 
   private handleGetSwitch(sourceId: string): CharacteristicValue {

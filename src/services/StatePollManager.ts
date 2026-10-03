@@ -1,5 +1,5 @@
 import type { PhilipsTVClient } from '../api/PhilipsTVClient.js';
-import type { TVDeviceConfig, AmbilightCached } from '../api/types.js';
+import type { TVDeviceConfig, AmbilightCached, VolumeState } from '../api/types.js';
 import { sanitizeForLog } from '../api/utils.js';
 import { NotifyChangeClient } from './NotifyChangeClient.js';
 
@@ -48,6 +48,15 @@ const LONG_POLL_STALE_MS = 60_000;
 /** How often the staleness check above runs. */
 const HEALTH_CHECK_INTERVAL_MS = 15_000;
 
+/** Consecutive unanswered power reads before a TV believed on is reported off.
+ *
+ *  A TV in deep standby takes its network stack down, so silence is sometimes
+ *  the only "off" signal there is — but a single dropped request is far more
+ *  often a busy queue or a network blip. Reporting that as standby flipped the
+ *  tile off and replayed every power-on side effect (Ambilight auto-start, wake
+ *  alignment) when the next poll answered. */
+const UNREACHABLE_POLLS_BEFORE_OFF = 2;
+
 // ============================================================================
 // TYPES
 // ============================================================================
@@ -88,6 +97,13 @@ export class StatePollManager {
   /** True once the health check has reported this channel stale, so a TV that
    *  simply has little to say warns the user once instead of on every lapse. */
   private staleReported = false;
+  /** Consecutive power reads that got no answer — see UNREACHABLE_POLLS_BEFORE_OFF. */
+  private unreachablePolls = 0;
+  /** The poll currently running, so overlapping triggers share it. */
+  private pollInFlight: Promise<void> | null = null;
+  /** Set when a poll is requested while one is running: the running one may
+   *  have read a resource before the change that prompted the request. */
+  private pollRequested = false;
 
   constructor(
     private readonly tvClient: PhilipsTVClient,
@@ -217,6 +233,15 @@ export class StatePollManager {
       // straight off the wire, so sanitize before they reach the log.
       const actionableKeys = keys.filter(k => k !== 'activities/tv');
       if (actionableKeys.length > 0) {
+        // The notification already carries the new value of each resource that
+        // changed, so apply it directly rather than re-reading every resource
+        // through the TV's one-at-a-time queue. Only fall back to a full poll
+        // when a payload is not in a shape we recognise.
+        if (this.applyNotification(data, actionableKeys)) {
+          this.lastNotifyRefresh = Date.now();
+          this.log('debug', `NotifyChange applied: ${sanitizeForLog(actionableKeys.join(', '))}`);
+          return;
+        }
         this.refresh(`NotifyChange trigger: ${sanitizeForLog(actionableKeys.join(', '))}`);
         return;
       }
@@ -260,7 +285,84 @@ export class StatePollManager {
   private refresh(reason: string): void {
     this.lastNotifyRefresh = Date.now();
     this.log('debug', reason);
-    this.pollState();
+    void this.pollState();
+  }
+
+  /**
+   * Apply the resource values a notification carries. Returns false — leaving
+   * the caller to run a full poll — as soon as any actionable resource is
+   * missing a payload we can read, before anything has been applied.
+   */
+  private applyNotification(data: Record<string, unknown>, keys: string[]): boolean {
+    const updates: Array<() => void> = [];
+    let powerState: boolean | null = null;
+
+    for (const key of keys) {
+      const value = data[key];
+      if (!value || typeof value !== 'object') {
+        return false;
+      }
+      const payload = value as Record<string, unknown>;
+
+      switch (key) {
+        case 'powerstate': {
+          if (typeof payload.powerstate !== 'string') {
+            return false;
+          }
+          powerState = payload.powerstate === 'On';
+          break;
+        }
+        case 'ambilight/currentconfiguration': {
+          if (typeof payload.styleName !== 'string') {
+            return false;
+          }
+          updates.push(() => this.applyAmbilightStyle(payload as unknown as AmbilightCached));
+          break;
+        }
+        case 'ambilight/power': {
+          if (typeof payload.power !== 'string') {
+            return false;
+          }
+          // The configuration, when it came too, is the richer of the two.
+          if (!keys.includes('ambilight/currentconfiguration')) {
+            const on = payload.power === 'On';
+            updates.push(() => this.applyAmbilightPower(on));
+          }
+          break;
+        }
+        case 'audio/volume': {
+          if (typeof payload.muted !== 'boolean' && typeof payload.current !== 'number') {
+            return false;
+          }
+          updates.push(() => this.applyVolume(payload as unknown as VolumeState));
+          break;
+        }
+        case 'activities/current': {
+          const component = payload.component as { packageName?: unknown } | undefined;
+          if (typeof component?.packageName !== 'string') {
+            return false;
+          }
+          const pkg = component.packageName;
+          updates.push(() => this.applyCurrentApp(pkg));
+          break;
+        }
+        default:
+          return false;
+      }
+    }
+
+    // Power first: a TV reporting standby makes the rest moot, and one coming
+    // on has to be on before its other state is applied.
+    if (powerState !== null) {
+      this.applyPower(powerState);
+      if (!powerState) {
+        return true;
+      }
+    }
+    for (const update of updates) {
+      update();
+    }
+    return true;
   }
 
   private stopLongPoll(): void {
@@ -314,83 +416,150 @@ export class StatePollManager {
   // FULL STATE POLL (initial sync and fallback)
   // ==========================================================================
 
-  private async pollState(): Promise<void> {
+  /**
+   * Read the TV's full state. Overlapping requests — the interval, a
+   * notification, the health check — share the poll already running instead
+   * of stacking more reads behind it in the TV's one-at-a-time queue, where
+   * they would delay the user's own commands. A request that arrives mid-poll
+   * earns exactly one follow-up, since the running poll may have read a
+   * resource before the change that prompted it.
+   */
+  private pollState(): Promise<void> {
+    if (this.pollInFlight) {
+      this.pollRequested = true;
+      return this.pollInFlight;
+    }
+    this.pollInFlight = (async () => {
+      try {
+        do {
+          this.pollRequested = false;
+          await this.readState();
+        } while (this.pollRequested);
+      } finally {
+        this.pollInFlight = null;
+      }
+    })();
+    return this.pollInFlight;
+  }
+
+  private async readState(): Promise<void> {
     // Stamped on entry rather than on completion: a poll that hangs is not
     // evidence the plugin has stopped watching, and tripping the health check
     // underneath one would start a second poller alongside it.
     this.lastTvSignal = Date.now();
     try {
-      const isOn = await this.tvClient.getPowerState();
-      const changed = isOn !== this.isPoweredOn;
-      // Always report the very first observed state so consumers can establish
-      // a baseline (otherwise a TV that is off at startup never reports until
-      // it turns on, which then looks like the initial sync rather than a
-      // genuine power-on — breaking auto-start-on-power-on).
-      if (changed || !this.initialPowerReported) {
-        this.isPoweredOn = isOn;
-        this.initialPowerReported = true;
-        if (changed) {
-          this.log('info', `Power: ${isOn ? 'On' : 'Standby'}`);
+      const reported = await this.tvClient.getPowerState();
+      let isOn: boolean;
+      if (reported === null) {
+        this.unreachablePolls++;
+        // Believed on and only just gone quiet: wait for a second miss before
+        // calling it standby. A TV never yet seen is simply reported off.
+        if (this.isPoweredOn && this.unreachablePolls < UNREACHABLE_POLLS_BEFORE_OFF) {
+          this.log('debug', 'Power state unreadable — keeping the last known state for now');
+          return;
         }
-        this.callbacks.onPowerChange(isOn);
-
-        if (isOn && !this.notifyClient) {
-          // TV just came back — restart long-poll
-          this.startLongPoll();
-        } else if (!isOn) {
-          // TV turned off — stop long-poll immediately. The baseline has to
-          // come back with it: if a notification had confirmed the channel,
-          // interval polling was dropped and the long-poll was the only thing
-          // left watching the TV. Tearing it down without this left nothing
-          // polling at all, so the TV coming back on — or anything the user
-          // did with the remote afterwards — never reached HomeKit again until
-          // Homebridge was restarted (issue #14).
-          this.stopLongPoll();
-          this.cancelLongPollRetry();
-          this.startIntervalPolling();
-        }
+        isOn = false;
+      } else {
+        this.unreachablePolls = 0;
+        isOn = reported;
       }
 
-      if (isOn) {
-        const ambilightStyle = await this.tvClient.getAmbilightStyle();
-        if (ambilightStyle) {
-          const ambilightKey = `${ambilightStyle.styleName}/${ambilightStyle.algorithm ?? ''}`;
-          if (ambilightKey !== this.lastAmbilight) {
-            this.lastAmbilight = ambilightKey;
-            this.log('debug', `Ambilight: ${ambilightStyle.styleName}${ambilightStyle.algorithm ? ` (${ambilightStyle.algorithm})` : ''}`);
-          }
-          this.callbacks.onAmbilightUpdate(ambilightStyle, false);
-        } else {
-          const ambilightOn = await this.tvClient.getAmbilightPower();
-          const ambilightKey = ambilightOn ? 'power:on' : 'power:off';
-          if (ambilightKey !== this.lastAmbilight) {
-            this.lastAmbilight = ambilightKey;
-            this.log('debug', `Ambilight power: ${ambilightOn ? 'On' : 'Off'}`);
-          }
-          this.callbacks.onAmbilightUpdate(null, ambilightOn);
-        }
-
-        const volume = await this.tvClient.getVolume();
-        if (volume) {
-          const muted = volume.muted ?? false;
-          const current = volume.current ?? 0;
-          if (muted !== this.lastMuted || current !== this.lastVolume) {
-            this.lastMuted = muted;
-            this.lastVolume = current;
-            this.log('debug', `Volume: ${current}${muted ? ' (muted)' : ''}`);
-          }
-          this.callbacks.onVolumeUpdate(muted);
-        }
-
-        const currentApp = await this.tvClient.getCurrentActivity();
-        if (currentApp !== this.lastApp) {
-          this.lastApp = currentApp;
-          this.log('debug', `Active app: ${currentApp ?? 'none'}`);
-        }
-        this.callbacks.onInputUpdate(currentApp);
+      this.applyPower(isOn);
+      if (!isOn) {
+        return;
       }
-    } catch {
-      // TV might be off or unreachable - this is expected
+
+      const ambilightStyle = await this.tvClient.getAmbilightStyle();
+      if (ambilightStyle) {
+        this.applyAmbilightStyle(ambilightStyle);
+      } else {
+        this.applyAmbilightPower(await this.tvClient.getAmbilightPower());
+      }
+
+      const volume = await this.tvClient.getVolume();
+      if (volume) {
+        this.applyVolume(volume);
+      }
+
+      this.applyCurrentApp(await this.tvClient.getCurrentActivity());
+    } catch (error) {
+      // The client reports failures as null rather than throwing, so reaching
+      // here means a bug in a callback — say so rather than staying silent.
+      this.log('debug', `State poll failed: ${error instanceof Error ? error.message : String(error)}`);
     }
+  }
+
+  // ==========================================================================
+  // STATE APPLICATION (shared by polls and notifications)
+  // ==========================================================================
+
+  private applyPower(isOn: boolean): void {
+    const changed = isOn !== this.isPoweredOn;
+    // Always report the very first observed state so consumers can establish
+    // a baseline (otherwise a TV that is off at startup never reports until
+    // it turns on, which then looks like the initial sync rather than a
+    // genuine power-on — breaking auto-start-on-power-on).
+    if (!changed && this.initialPowerReported) {
+      return;
+    }
+    this.isPoweredOn = isOn;
+    this.initialPowerReported = true;
+    if (changed) {
+      this.log('info', `Power: ${isOn ? 'On' : 'Standby'}`);
+    }
+    this.callbacks.onPowerChange(isOn);
+
+    if (isOn && !this.notifyClient) {
+      // TV just came back — restart long-poll
+      this.startLongPoll();
+    } else if (!isOn) {
+      // TV turned off — stop long-poll immediately. The baseline has to
+      // come back with it: if a notification had confirmed the channel,
+      // interval polling was dropped and the long-poll was the only thing
+      // left watching the TV. Tearing it down without this left nothing
+      // polling at all, so the TV coming back on — or anything the user
+      // did with the remote afterwards — never reached HomeKit again until
+      // Homebridge was restarted (issue #14).
+      this.stopLongPoll();
+      this.cancelLongPollRetry();
+      this.startIntervalPolling();
+    }
+  }
+
+  private applyAmbilightStyle(style: AmbilightCached): void {
+    const ambilightKey = `${style.styleName}/${style.algorithm ?? ''}`;
+    if (ambilightKey !== this.lastAmbilight) {
+      this.lastAmbilight = ambilightKey;
+      this.log('debug', `Ambilight: ${sanitizeForLog(style.styleName)}${style.algorithm ? ` (${sanitizeForLog(style.algorithm)})` : ''}`);
+    }
+    this.callbacks.onAmbilightUpdate(style, false);
+  }
+
+  private applyAmbilightPower(on: boolean): void {
+    const ambilightKey = on ? 'power:on' : 'power:off';
+    if (ambilightKey !== this.lastAmbilight) {
+      this.lastAmbilight = ambilightKey;
+      this.log('debug', `Ambilight power: ${on ? 'On' : 'Off'}`);
+    }
+    this.callbacks.onAmbilightUpdate(null, on);
+  }
+
+  private applyVolume(volume: VolumeState): void {
+    const muted = volume.muted ?? false;
+    const current = volume.current ?? 0;
+    if (muted !== this.lastMuted || current !== this.lastVolume) {
+      this.lastMuted = muted;
+      this.lastVolume = current;
+      this.log('debug', `Volume: ${current}${muted ? ' (muted)' : ''}`);
+    }
+    this.callbacks.onVolumeUpdate(muted);
+  }
+
+  private applyCurrentApp(currentApp: string | null): void {
+    if (currentApp !== this.lastApp) {
+      this.lastApp = currentApp;
+      this.log('debug', `Active app: ${currentApp === null ? 'none' : sanitizeForLog(currentApp)}`);
+    }
+    this.callbacks.onInputUpdate(currentApp);
   }
 }

@@ -137,21 +137,6 @@ export interface TVApplicationList {
   version?: number;
 }
 
-export interface TVChannel {
-  ccid: number;
-  name: string;
-  preset?: string;
-  onid?: number;
-  tsid?: number;
-  sid?: number;
-  channelListId?: string;
-}
-
-export interface TVChannelList {
-  Channel?: TVChannel[];
-  version?: number;
-}
-
 export interface CurrentActivity {
   pkg?: {
     name?: string;
@@ -242,15 +227,6 @@ export interface AmbilightColor {
   hue: number;        // 0-255
   saturation: number; // 0-255
   brightness: number; // 0-255
-}
-
-// Ambilight topology (number of LEDs on each side)
-export interface AmbilightTopology {
-  layers: number;
-  left: number;
-  top: number;
-  right: number;
-  bottom: number;
 }
 
 // Current ambilight mode response

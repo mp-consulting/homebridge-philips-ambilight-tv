@@ -22,6 +22,9 @@ export interface AmbilightHueSwitchDeps {
 
 const SWITCH_SUBTYPE = 'ambilight-hue-switch';
 
+/** Minimum gap between background refreshes triggered by HomeKit reads. */
+const REFRESH_THROTTLE_MS = 30_000;
+
 /**
  * Switch label. HomeKit rejects '+' in a Name characteristic, so the feature
  * Philips brands "Ambilight+hue" is spelled out — matching how
@@ -46,6 +49,8 @@ const LEGACY_SWITCH_LABEL = 'Ambilight + Hue';
 export class AmbilightHueSwitchService {
   private service: Service | null = null;
   private isOn = false;
+  private lastRefresh = 0;
+  private refreshing = false;
 
   constructor(private readonly deps: AmbilightHueSwitchDeps) {}
 
@@ -90,13 +95,34 @@ export class AmbilightHueSwitchService {
   // HANDLERS
   // ==========================================================================
 
-  private async handleGet(): Promise<CharacteristicValue> {
-    try {
-      this.isOn = await this.deps.tvClient.getAmbilightHue();
-    } catch {
-      // TV unreachable (e.g. powered off) — fall back to last known state
+  /**
+   * Answer from the last known state right away. Reading the TV here put a
+   * network round-trip — queued behind every other request to the TV — on
+   * each Home-app refresh, even with the TV off, which is what earns
+   * Homebridge's "slow to respond" warning. The TV is re-read in the
+   * background instead, and the tile updated if it changed.
+   */
+  private handleGet(): CharacteristicValue {
+    if (this.deps.isPoweredOn() && !this.refreshing && Date.now() - this.lastRefresh >= REFRESH_THROTTLE_MS) {
+      void this.refresh();
     }
     return this.isOn;
+  }
+
+  private async refresh(): Promise<void> {
+    this.refreshing = true;
+    this.lastRefresh = Date.now();
+    try {
+      const on = await this.deps.tvClient.getAmbilightHue();
+      if (on !== null && on !== this.isOn) {
+        this.isOn = on;
+        this.service?.updateCharacteristic(this.deps.Characteristic.On, on);
+      }
+    } catch {
+      // TV unreachable — keep the last known state.
+    } finally {
+      this.refreshing = false;
+    }
   }
 
   private async handleSet(value: CharacteristicValue): Promise<void> {

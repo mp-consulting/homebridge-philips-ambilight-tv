@@ -81,14 +81,23 @@ describe('PhilipsTVClient', () => {
       expect(result).toBe(false);
     });
 
-    it('should return false when request fails', async () => {
+    it('should return null — unknown, not off — when the request fails', async () => {
       mockFetch.mockReturnValue(mockResponse(null, 500));
 
       const promise = client.getPowerState();
       await vi.runAllTimersAsync();
       const result = await promise;
 
-      expect(result).toBe(false);
+      expect(result).toBeNull();
+    });
+
+    it('should return null for a response without a power state', async () => {
+      mockFetch.mockReturnValue(mockResponse({}));
+
+      const promise = client.getPowerState();
+      await vi.runAllTimersAsync();
+
+      expect(await promise).toBeNull();
     });
   });
 
@@ -100,7 +109,7 @@ describe('PhilipsTVClient', () => {
       await vi.runAllTimersAsync();
       await promise;
 
-      expect(mockWol).toHaveBeenCalledWith('AA:BB:CC:DD:EE:FF');
+      expect(mockWol).toHaveBeenCalledWith('AA:BB:CC:DD:EE:FF', '192.168.1.100');
     });
 
     it('should not send WOL packet when turning off', async () => {
@@ -534,28 +543,6 @@ describe('PhilipsTVClient', () => {
       const result = await promise;
 
       expect(result).toEqual(sysInfo);
-    });
-  });
-
-  describe('isReachable', () => {
-    it('should return true when system info is available', async () => {
-      mockFetch.mockReturnValue(mockResponse({ model: 'TV' }));
-
-      const promise = client.isReachable();
-      await vi.runAllTimersAsync();
-      const result = await promise;
-
-      expect(result).toBe(true);
-    });
-
-    it('should return false when system info fails', async () => {
-      mockFetch.mockReturnValue(mockResponse(null, 500));
-
-      const promise = client.isReachable();
-      await vi.runAllTimersAsync();
-      const result = await promise;
-
-      expect(result).toBe(false);
     });
   });
 

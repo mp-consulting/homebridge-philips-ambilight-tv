@@ -73,6 +73,7 @@ function createMockDeps(overrides?: Partial<AmbilightServiceDeps>): AmbilightSer
       setAmbilightStyle: vi.fn().mockResolvedValue(true),
       setAmbilightOff: vi.fn().mockResolvedValue(true),
       setAmbilightFollowColor: vi.fn().mockResolvedValue(true),
+      setAmbilightBrightness: vi.fn().mockResolvedValue(true),
       getAmbilightStyle: vi.fn().mockResolvedValue(null),
     } as never,
     accessory: {
@@ -422,5 +423,111 @@ describe('AmbilightService reflectPowerOff', () => {
     expect(updateSpy).toHaveBeenCalledWith((deps.Characteristic as { On: unknown }).On, false);
     expect(deps.tvClient.setAmbilightPower).not.toHaveBeenCalled();
     expect(deps.tvClient.setAmbilightOff).not.toHaveBeenCalled();
+  });
+});
+
+// ============================================================================
+// COLOUR AND BRIGHTNESS WRITES
+// ============================================================================
+
+describe('AmbilightService colour and brightness writes', () => {
+  let deps: AmbilightServiceDeps;
+  let ambilightService: AmbilightService;
+  let adaptiveActive: boolean;
+
+  const setter = (uuid: string) => {
+    const service = ambilightService.getService() as unknown as ReturnType<typeof createMockService>;
+    return service._characteristics.get(uuid)!._setter as (v: unknown) => Promise<void>;
+  };
+  const client = () => deps.tvClient as unknown as Record<string, ReturnType<typeof vi.fn>>;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    adaptiveActive = false;
+    deps = createMockDeps({
+      AdaptiveLightingController: class {
+        isAdaptiveLightingActive = () => adaptiveActive;
+      } as never,
+    });
+    ambilightService = new AmbilightService(deps);
+    ambilightService.configureService(deps.accessory as never, createMockService() as never);
+    // Past the post-action cooldown so poll updates apply.
+    vi.advanceTimersByTime(20_000);
+  });
+
+  afterEach(() => {
+    ambilightService.cleanup();
+    vi.useRealTimers();
+  });
+
+  it('coalesces a colour pick into one FOLLOW_COLOR command', async () => {
+    ambilightService.updateFromPoll({ styleName: 'FOLLOW_COLOR', colorSettings: { color: { hue: 0, saturation: 0, brightness: 255 } } } as never, false);
+
+    const writes = Promise.all([setter('hue')(180), setter('saturation')(50), setter('brightness')(40)]);
+    await vi.advanceTimersByTimeAsync(60);
+    await writes;
+
+    expect(client().setAmbilightFollowColor).toHaveBeenCalledTimes(1);
+    expect(client().setAmbilightFollowColor).toHaveBeenCalledWith({ hue: 128, saturation: 128, brightness: 102 });
+  });
+
+  it('reports a failed colour write to every handler in the burst', async () => {
+    ambilightService.updateFromPoll({ styleName: 'FOLLOW_COLOR' } as never, false);
+    client().setAmbilightFollowColor.mockResolvedValue(false);
+
+    const hue = setter('hue')(10);
+    const sat = setter('saturation')(10);
+    const assertions = Promise.all([
+      expect(hue).rejects.toThrow('comm error'),
+      expect(sat).rejects.toThrow('comm error'),
+    ]);
+    await vi.advanceTimersByTimeAsync(60);
+    await assertions;
+  });
+
+  it('maps brightness to the TV menu setting while following video, keeping the mode', async () => {
+    ambilightService.updateFromPoll({ styleName: 'FOLLOW_VIDEO', algorithm: 'NATURAL' }, false);
+
+    await setter('brightness')(70);
+
+    expect(client().setAmbilightBrightness).toHaveBeenCalledWith(7);
+    expect(client().setAmbilightFollowColor).not.toHaveBeenCalled();
+  });
+
+  it('reports a failed brightness change', async () => {
+    ambilightService.updateFromPoll({ styleName: 'FOLLOW_VIDEO' }, false);
+    client().setAmbilightBrightness.mockResolvedValue(false);
+
+    await expect(setter('brightness')(30)).rejects.toThrow('comm error');
+  });
+
+  it('does not let Adaptive Lighting override a video mode', async () => {
+    ambilightService.updateFromPoll({ styleName: 'FOLLOW_VIDEO' }, false);
+    adaptiveActive = true;
+
+    await setter('color-temp')(300);
+    await vi.advanceTimersByTimeAsync(60);
+
+    expect(client().setAmbilightFollowColor).not.toHaveBeenCalled();
+  });
+
+  it('applies a colour temperature the user picks', async () => {
+    ambilightService.updateFromPoll({ styleName: 'FOLLOW_VIDEO' }, false);
+
+    const write = setter('color-temp')(300);
+    await vi.advanceTimersByTimeAsync(60);
+    await write;
+
+    expect(client().setAmbilightFollowColor).toHaveBeenCalledTimes(1);
+  });
+
+  it('cancels a pending colour write on cleanup', async () => {
+    ambilightService.updateFromPoll({ styleName: 'FOLLOW_COLOR' } as never, false);
+    void setter('hue')(10).catch(() => {});
+
+    ambilightService.cleanup();
+    await vi.advanceTimersByTimeAsync(100);
+
+    expect(client().setAmbilightFollowColor).not.toHaveBeenCalled();
   });
 });

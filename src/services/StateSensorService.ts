@@ -94,10 +94,4 @@ export class StateSensorService {
       this.deps.log('debug', `State sensor "${type}": ${active ? 'active' : 'inactive'}`);
     }
   }
-
-  resetAll(): void {
-    for (const [, service] of this.sensors) {
-      service.updateCharacteristic(this.deps.Characteristic.MotionDetected, false);
-    }
-  }
 }

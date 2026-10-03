@@ -4,8 +4,7 @@
  * on every request. Used by both PhilipsTVClient and NotifyChangeClient.
  */
 
-import crypto from 'crypto';
-import { parseWwwAuthenticate, md5 } from './utils.js';
+import { buildDigestHeader, parseWwwAuthenticate, md5 } from './utils.js';
 
 // ============================================================================
 // TYPES
@@ -54,24 +53,7 @@ export class DigestAuthSession {
 
     const auth = this.cachedAuth;
     auth.nc++;
-    const nc = auth.nc.toString(16).padStart(8, '0');
-    const cnonce = crypto.randomBytes(16).toString('hex');
-
-    const ha2 = md5(`${method}:${uri}`);
-    const response = auth.qop
-      ? md5(`${auth.ha1}:${auth.nonce}:${nc}:${cnonce}:${auth.qop}:${ha2}`)
-      : md5(`${auth.ha1}:${auth.nonce}:${ha2}`);
-
-    let header = `Digest username="${this.username}", realm="${auth.realm}", nonce="${auth.nonce}", uri="${uri}", response="${response}"`;
-
-    if (auth.qop) {
-      header += `, qop=${auth.qop}, nc=${nc}, cnonce="${cnonce}"`;
-    }
-    if (auth.opaque) {
-      header += `, opaque="${auth.opaque}"`;
-    }
-
-    return header;
+    return buildDigestHeader({ ...auth, username: this.username }, method, uri);
   }
 
   /**

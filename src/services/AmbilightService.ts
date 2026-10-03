@@ -26,6 +26,15 @@ const DEFAULT_AMBILIGHT_MODE = 'FOLLOW_VIDEO/NATURAL';
 /** Ignore poll updates for this long after a user action (ms) */
 const USER_ACTION_COOLDOWN_MS = 10_000;
 
+/** A colour pick in the Home app writes Hue, Saturation (and often Brightness)
+ *  as separate characteristics within a few milliseconds. Waiting this long
+ *  lets them land as one FOLLOW_COLOR command instead of up to three. */
+const COLOR_COALESCE_MS = 50;
+
+/** The TV's menu brightness scale (0-10) that HomeKit's 0-100 maps onto when
+ *  Ambilight is following video or audio rather than showing a colour. */
+const MENU_BRIGHTNESS_MAX = 10;
+
 // ============================================================================
 // TYPES
 // ============================================================================
@@ -58,6 +67,13 @@ export class AmbilightService {
   private colorTemperature = COLOR_TEMP_DEFAULT; // mireds
   private lastUserAction = 0; // Timestamp of last user-initiated change
   private styleRetryTimer?: ReturnType<typeof setTimeout>;
+  /** The TV's current Ambilight style as last seen or set (e.g. FOLLOW_VIDEO). */
+  private currentStyle: string | null = null;
+  private adaptiveLighting?: AdaptiveLightingController;
+  /** The coalesced colour write waiting to be sent, shared by every handler
+   *  that changed a component of the colour in the meantime. */
+  private pendingColorWrite: Promise<void> | null = null;
+  private colorWriteTimer?: ReturnType<typeof setTimeout>;
 
   constructor(private readonly deps: AmbilightServiceDeps) {}
 
@@ -107,8 +123,8 @@ export class AmbilightService {
       .onSet((value) => this.handleSetColorTemperature(value));
 
     // Enable Adaptive Lighting (automatic mode — controller manages transitions)
-    const adaptiveLightingController = new this.deps.AdaptiveLightingController(this.service);
-    accessory.configureController(adaptiveLightingController);
+    this.adaptiveLighting = new this.deps.AdaptiveLightingController(this.service);
+    accessory.configureController(this.adaptiveLighting);
 
     tvService.addLinkedService(this.service);
 
@@ -136,6 +152,7 @@ export class AmbilightService {
       const success = await this.deps.tvClient.setAmbilightStyle(style as AmbilightStyleName, algorithm || undefined);
       if (success) {
         this.isOn = true;
+        this.currentStyle = style;
         this.service.updateCharacteristic(this.deps.Characteristic.On, true);
       }
       // TV restores its own default mode async after power ON; re-apply in background
@@ -151,6 +168,7 @@ export class AmbilightService {
    */
   reflectPowerOff(): void {
     this.cancelStyleRetry();
+    this.cancelColorWrite();
     if (this.isOn) {
       this.isOn = false;
       this.service.updateCharacteristic(this.deps.Characteristic.On, false);
@@ -190,13 +208,18 @@ export class AmbilightService {
         success = await this.deps.tvClient.setAmbilightStyle(style as AmbilightStyleName, algorithm || undefined);
         if (success) {
           this.isOn = true;
+          this.currentStyle = style;
           this.lastUserAction = Date.now();
         }
         // TV restores its own default mode async after power ON; re-apply in background
         this.scheduleStyleRetry(style as AmbilightStyleName, algorithm || undefined);
       } else {
         this.cancelStyleRetry();
+        this.cancelColorWrite();
         success = await this.deps.tvClient.setAmbilightOff();
+        if (success) {
+          this.currentStyle = 'OFF';
+        }
       }
 
       if (success) {
@@ -226,46 +249,40 @@ export class AmbilightService {
     this.deps.log('debug', `Setting Ambilight brightness to ${newBrightness}%`);
     this.brightness = newBrightness;
 
-    if (this.isOn) {
-      try {
-        const color = this.homekitToPhilipsColor(this.hue, this.saturation, newBrightness);
-        await this.deps.tvClient.setAmbilightFollowColor(color);
-        this.lastUserAction = Date.now();
-      } catch {
-        this.deps.log('warn', 'Failed to update Ambilight brightness');
-      }
+    if (!this.isOn) {
+      return;
     }
+
+    // Following video or audio there is no colour to dim: switching to a
+    // static colour just to change brightness would throw away the mode the
+    // user chose. The TV's own brightness setting is the faithful mapping.
+    if (!this.isShowingColor()) {
+      const level = Math.round((newBrightness / HOMEKIT_BRIGHTNESS_MAX) * MENU_BRIGHTNESS_MAX);
+      const ok = await this.deps.tvClient.setAmbilightBrightness(level);
+      if (!ok) {
+        this.deps.log('warn', 'Failed to update Ambilight brightness');
+        throw this.deps.communicationError();
+      }
+      this.lastUserAction = Date.now();
+      return;
+    }
+
+    await this.writeColor('brightness');
   }
 
   private async handleSetHue(value: CharacteristicValue): Promise<void> {
-    const newHue = value as number;
-    this.deps.log('debug', `Setting Ambilight hue to ${newHue}`);
-    this.hue = newHue;
-
+    this.hue = value as number;
+    this.deps.log('debug', `Setting Ambilight hue to ${this.hue}`);
     if (this.isOn) {
-      try {
-        const color = this.homekitToPhilipsColor(newHue, this.saturation, this.brightness);
-        await this.deps.tvClient.setAmbilightFollowColor(color);
-        this.lastUserAction = Date.now();
-      } catch {
-        this.deps.log('warn', 'Failed to update Ambilight hue');
-      }
+      await this.writeColor('hue');
     }
   }
 
   private async handleSetSaturation(value: CharacteristicValue): Promise<void> {
-    const newSaturation = value as number;
-    this.deps.log('debug', `Setting Ambilight saturation to ${newSaturation}%`);
-    this.saturation = newSaturation;
-
+    this.saturation = value as number;
+    this.deps.log('debug', `Setting Ambilight saturation to ${this.saturation}%`);
     if (this.isOn) {
-      try {
-        const color = this.homekitToPhilipsColor(this.hue, newSaturation, this.brightness);
-        await this.deps.tvClient.setAmbilightFollowColor(color);
-        this.lastUserAction = Date.now();
-      } catch {
-        this.deps.log('warn', 'Failed to update Ambilight saturation');
-      }
+      await this.writeColor('saturation');
     }
   }
 
@@ -284,15 +301,68 @@ export class AmbilightService {
     this.service.getCharacteristic(Char.Hue).updateValue(hue);
     this.service.getCharacteristic(Char.Saturation).updateValue(saturation);
 
-    if (this.isOn) {
-      try {
-        const color = this.homekitToPhilipsColor(hue, saturation, this.brightness);
-        await this.deps.tvClient.setAmbilightFollowColor(color);
-        this.lastUserAction = Date.now();
-      } catch {
-        this.deps.log('warn', 'Failed to update Ambilight color temperature');
-      }
+    if (!this.isOn) {
+      return;
     }
+
+    // Adaptive Lighting re-sends the temperature every few minutes on its
+    // own. Letting that flip a TV following video into a static colour would
+    // silently undo the user's mode; only a colour the user picked follows it.
+    if (this.adaptiveLighting?.isAdaptiveLightingActive() && !this.isShowingColor()) {
+      this.deps.log('debug', 'Adaptive Lighting update ignored — Ambilight is not in a colour mode');
+      return;
+    }
+
+    await this.writeColor('color temperature');
+  }
+
+  /** True when Ambilight shows a fixed colour, so colour/brightness writes apply. */
+  private isShowingColor(): boolean {
+    return this.currentStyle === 'FOLLOW_COLOR';
+  }
+
+  /**
+   * Send the current hue/saturation/brightness as one FOLLOW_COLOR command,
+   * coalescing the burst of writes a single colour pick produces. Every
+   * caller in the burst awaits the same command, so each handler still
+   * reports a failure to HomeKit.
+   */
+  private writeColor(component: string): Promise<void> {
+    if (!this.pendingColorWrite) {
+      this.pendingColorWrite = new Promise<void>((resolve, reject) => {
+        this.colorWriteTimer = setTimeout(async () => {
+          this.pendingColorWrite = null;
+          this.colorWriteTimer = undefined;
+          const color = this.homekitToPhilipsColor(this.hue, this.saturation, this.brightness);
+          const ok = await this.deps.tvClient.setAmbilightFollowColor(color);
+          if (ok) {
+            this.currentStyle = 'FOLLOW_COLOR';
+            this.lastUserAction = Date.now();
+            resolve();
+          } else {
+            reject(this.deps.communicationError());
+          }
+        }, COLOR_COALESCE_MS);
+      });
+    }
+    return this.pendingColorWrite.catch((error: unknown) => {
+      this.deps.log('warn', `Failed to update Ambilight ${component}`);
+      throw error;
+    });
+  }
+
+  private cancelColorWrite(): void {
+    if (this.colorWriteTimer) {
+      clearTimeout(this.colorWriteTimer);
+      this.colorWriteTimer = undefined;
+    }
+    this.pendingColorWrite = null;
+  }
+
+  /** Stop every pending timer (Homebridge shutdown). */
+  cleanup(): void {
+    this.cancelStyleRetry();
+    this.cancelColorWrite();
   }
 
   /**
@@ -323,9 +393,14 @@ export class AmbilightService {
         }
         try {
           const current = await this.deps.tvClient.getAmbilightStyle();
+          if (current?.styleName) {
+            this.currentStyle = current.styleName.toUpperCase();
+          }
           if (current?.styleName?.toUpperCase() !== style.toUpperCase()) {
             this.deps.log('debug', `Ambilight style drift detected (${current?.styleName}), re-applying ${style}`);
-            await this.deps.tvClient.setAmbilightStyle(style, algorithm);
+            if (await this.deps.tvClient.setAmbilightStyle(style, algorithm)) {
+              this.currentStyle = style.toUpperCase();
+            }
             this.lastUserAction = Date.now();
           }
         } catch {
@@ -352,7 +427,8 @@ export class AmbilightService {
     }
 
     if (ambilightStyle) {
-      const ambilightOn = ambilightStyle.styleName?.toUpperCase() !== 'OFF';
+      this.currentStyle = ambilightStyle.styleName?.toUpperCase() ?? null;
+      const ambilightOn = this.currentStyle !== 'OFF';
 
       if (ambilightOn !== this.isOn) {
         this.isOn = ambilightOn;

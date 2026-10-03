@@ -42,7 +42,7 @@
             "mac": {
               "title": "MAC Address",
               "type": "string",
-              "pattern": "^([A-Fa-f0-9]{2}:){5}[A-Fa-f0-9]{2}$",
+              "pattern": "^([A-Fa-f0-9]{2}[:-]){5}[A-Fa-f0-9]{2}$",
               "placeholder": "AA:BB:CC:DD:EE:FF",
               "description": "The MAC address of the TV (required for Wake-on-LAN)."
             },

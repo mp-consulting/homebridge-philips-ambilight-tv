@@ -20,13 +20,10 @@ import type {
   TVSourceList,
   TVApplication,
   TVApplicationList,
-  TVChannel,
-  TVChannelList,
   RemoteKey,
   SystemInfo,
   AmbilightStyleName,
   AmbilightConfig,
-  AmbilightTopology,
   AmbilightCached,
   AmbilightColor,
 } from './types.js';
@@ -58,9 +55,8 @@ const REQUEST_BUDGET_MS = 7000;
 /** Remaining budget below which a request is not worth starting. */
 const MIN_EXECUTION_MS = 500;
 
-/** Ambilight menu settings node IDs (from iOS app analysis) */
+/** Ambilight menu brightness node ID (from iOS app analysis) */
 const AMBILIGHT_BRIGHTNESS_NODE_ID = 2131230769;
-const AMBILIGHT_SATURATION_NODE_ID = 2131230771;
 
 /** Ambilight menu settings range */
 const AMBILIGHT_SETTING_MIN = 0;
@@ -69,8 +65,7 @@ const AMBILIGHT_SETTING_MAX = 10;
 /** HDMI passthrough URI prefix for Android TV */
 const HDMI_PASSTHROUGH_PREFIX = 'content://android.media.tv/passthrough/com.mediatek.tvinput%2F.hdmi.HDMIInputService%2F';
 
-/** Channel list IDs from official Philips app (cable, terrestrial, satellite) */
-const CHANNEL_LIST_IDS = ['allcab', 'allter', 'allsat'] as const;
+/** Default channel list ID (cable) from the official Philips app */
 const DEFAULT_CHANNEL_LIST_ID = 'allcab';
 
 /** Built-in HDMI sources for Android TV (Philips) */
@@ -365,9 +360,21 @@ export class PhilipsTVClient {
   // POWER
   // ==========================================================================
 
-  async getPowerState(): Promise<boolean> {
+  /**
+   * The TV's power state, or null when it could not be read.
+   *
+   * "Could not be read" is deliberately not "off": a request dropped from a
+   * busy queue or lost to a network blip says nothing about the TV, and
+   * reporting it as standby flips the HomeKit tile off and replays every
+   * power-on side effect when the next poll succeeds. The caller decides how
+   * long a silence has to last before it means the TV went to deep standby.
+   */
+  async getPowerState(): Promise<boolean | null> {
     const result = await this.get<PowerState>('/powerstate');
-    return result?.powerstate === 'On';
+    if (!result || typeof result.powerstate !== 'string') {
+      return null;
+    }
+    return result.powerstate === 'On';
   }
 
   setPowerState(on: boolean): Promise<boolean> {
@@ -391,7 +398,7 @@ export class PhilipsTVClient {
 
   private async tryWakeOnLan(): Promise<boolean> {
     try {
-      await sendWakeOnLan(this.config.mac);
+      await sendWakeOnLan(this.config.mac, this.config.ip);
       return true;
     } catch {
       return false;
@@ -404,11 +411,6 @@ export class PhilipsTVClient {
 
   async getVolume(): Promise<VolumeState | null> {
     return this.get<VolumeState>('/audio/volume');
-  }
-
-  async setVolume(volume: number): Promise<boolean> {
-    const result = await this.post('/audio/volume', { current: volume, muted: false });
-    return result !== null;
   }
 
   async setMuted(muted: boolean): Promise<boolean> {
@@ -600,29 +602,6 @@ export class PhilipsTVClient {
   // CHANNELS
   // ==========================================================================
 
-  async getChannels(): Promise<TVChannel[]> {
-    const allChannels: TVChannel[] = [];
-
-    for (const listId of CHANNEL_LIST_IDS) {
-      const result = await this.get<TVChannelList>(`/channeldb/tv/channelLists/${listId}`);
-      if (result?.Channel) {
-        for (const ch of result.Channel) {
-          allChannels.push({ ...ch, channelListId: listId });
-        }
-      }
-    }
-
-    if (allChannels.length === 0) {
-      const result = await this.get<TVChannelList>('/channeldb/tv/channelLists/all');
-      return (result?.Channel ?? []).map(ch => ({
-        ...ch,
-        channelListId: DEFAULT_CHANNEL_LIST_ID,
-      }));
-    }
-
-    return allChannels;
-  }
-
   async setChannel(ccid: number, channelListId: string = DEFAULT_CHANNEL_LIST_ID): Promise<boolean> {
     const result = await this.post('/activities/tv', {
       channel: { ccid },
@@ -646,11 +625,6 @@ export class PhilipsTVClient {
 
   async getSystemInfo(): Promise<SystemInfo | null> {
     return this.get<SystemInfo>('/system');
-  }
-
-  async isReachable(): Promise<boolean> {
-    const result = await this.getSystemInfo();
-    return result !== null;
   }
 
   // ==========================================================================
@@ -694,34 +668,6 @@ export class PhilipsTVClient {
   }
 
   /**
-   * Set Ambilight to Follow Video mode
-   * @param style - Video style: STANDARD, NATURAL, FOOTBALL, VIVID, GAME, COMFORT, RELAX
-   */
-  async setAmbilightFollowVideo(style: string = 'STANDARD'): Promise<boolean> {
-    const config: AmbilightConfig = {
-      styleName: 'FOLLOW_VIDEO',
-      isExpert: true,
-      algorithm: style,
-    };
-    const result = await this.post('/ambilight/currentconfiguration', config);
-    return result !== null;
-  }
-
-  /**
-   * Set Ambilight to Follow Audio mode
-   * @param algorithm - Audio algorithm: ENERGY_ADAPTIVE_BRIGHTNESS, VU_METER, SPECTRUM_ANALYZER, etc.
-   */
-  async setAmbilightFollowAudio(algorithm: string = 'ENERGY_ADAPTIVE_BRIGHTNESS'): Promise<boolean> {
-    const config: AmbilightConfig = {
-      styleName: 'FOLLOW_AUDIO',
-      isExpert: true,
-      algorithm,
-    };
-    const result = await this.post('/ambilight/currentconfiguration', config);
-    return result !== null;
-  }
-
-  /**
    * Set Ambilight to Follow Color (static color) mode
    * @param color - The color to display (hue, saturation, brightness each 0-255)
    * @param speed - Animation speed (0-255), 0 = static
@@ -743,24 +689,6 @@ export class PhilipsTVClient {
   }
 
   /**
-   * Set Ambilight to Lounge Light mode (preset colors)
-   * @param preset - Preset name: 'Hot lava', 'Deep water', 'Fresh nature', 'Warm White', 'Cool white'
-   */
-  async setAmbilightLounge(preset: string = 'Warm White'): Promise<boolean> {
-    // Lounge light presets map to specific colors
-    const presets: Record<string, AmbilightColor> = {
-      'Hot lava': { hue: 0, saturation: 255, brightness: 255 },
-      'Deep water': { hue: 170, saturation: 255, brightness: 255 },
-      'Fresh nature': { hue: 85, saturation: 255, brightness: 255 },
-      'Warm White': { hue: 30, saturation: 80, brightness: 255 },
-      'Cool white': { hue: 200, saturation: 40, brightness: 255 },
-    };
-
-    const color = presets[preset] ?? presets['Warm White'];
-    return this.setAmbilightFollowColor(color, 0);
-  }
-
-  /**
    * Turn Ambilight off.
    * Tries styleName OFF first, falls back to /ambilight/power.
    */
@@ -775,23 +703,16 @@ export class PhilipsTVClient {
   }
 
   /**
-   * Get Ambilight topology (number of LEDs on each side)
-   */
-  async getAmbilightTopology(): Promise<AmbilightTopology | null> {
-    return this.get<AmbilightTopology>('/ambilight/topology');
-  }
-
-  /**
    * Set Ambilight brightness
    * @param brightness - Brightness level (0-10)
    */
   async setAmbilightBrightness(brightness: number): Promise<boolean> {
-    const clampedBrightness = Math.max(AMBILIGHT_SETTING_MIN, Math.min(AMBILIGHT_SETTING_MAX, brightness));
+    const clamped = Math.round(Math.max(AMBILIGHT_SETTING_MIN, Math.min(AMBILIGHT_SETTING_MAX, brightness)));
     const result = await this.post('/menuitems/settings/update', {
       values: [{
         value: {
           Nodeid: AMBILIGHT_BRIGHTNESS_NODE_ID,
-          data: { value: clampedBrightness },
+          data: { value: clamped },
         },
       }],
     });
@@ -799,28 +720,12 @@ export class PhilipsTVClient {
   }
 
   /**
-   * Set Ambilight saturation
-   * @param saturation - Saturation level (0-10)
+   * Get whether the Ambilight+Hue integration (Hue lamps follow Ambilight) is
+   * on, or null when the TV did not answer.
    */
-  async setAmbilightSaturation(saturation: number): Promise<boolean> {
-    const clampedSaturation = Math.max(AMBILIGHT_SETTING_MIN, Math.min(AMBILIGHT_SETTING_MAX, saturation));
-    const result = await this.post('/menuitems/settings/update', {
-      values: [{
-        value: {
-          Nodeid: AMBILIGHT_SATURATION_NODE_ID,
-          data: { value: clampedSaturation },
-        },
-      }],
-    });
-    return result !== null;
-  }
-
-  /**
-   * Get whether the Ambilight+Hue integration (Hue lamps follow Ambilight) is on.
-   */
-  async getAmbilightHue(): Promise<boolean> {
+  async getAmbilightHue(): Promise<boolean | null> {
     const result = await this.get<{ power?: string }>('/HueLamp/power');
-    return result?.power === 'On';
+    return typeof result?.power === 'string' ? result.power === 'On' : null;
   }
 
   /**
@@ -835,8 +740,9 @@ export class PhilipsTVClient {
   // UTILITIES
   // ==========================================================================
 
-  async wakeUp(): Promise<void> {
-    await sendWakeOnLan(this.config.mac);
+  /** Release the pooled TLS connections held for this TV. */
+  async close(): Promise<void> {
+    await this.agent.close();
   }
 
   private sleep(ms: number): Promise<void> {
