@@ -26,11 +26,14 @@ src/
 ├── settings.ts           # PLATFORM_NAME, PLUGIN_NAME constants
 ├── platform.ts           # Homebridge DynamicPlatformPlugin
 ├── platformAccessory.ts  # TV accessory setup & HAP handlers
-├── api/                  # JointSpace v6 client, digest auth, fetch helpers
+├── api/                  # JointSpace v6 client, digest auth, fetch helpers, atomic JSON persistence
 └── services/             # Ambilight, polling, long-poll, input sources, sensors
+    └── inputs/           # InputSourceManager parts: catalog, config store, HomeKit service factory, constants
 
 test/                     # Unit tests (mirrors src/ structure)
 homebridge-ui/            # Uses Homebridge custom UI framework for plugin configuration management (pairing wizard & source config)
+├── server.js             # UI server; imports the compiled plugin from ../dist (tests alias it to src/)
+└── public/helpers.js     # Pure UI logic (escaping, MAC/IP, source ordering), unit-tested; app.js is DOM wiring
 ```
 
 ## Code conventions
@@ -45,11 +48,13 @@ homebridge-ui/            # Uses Homebridge custom UI framework for plugin confi
 
 ## Testing
 
-- **Vitest v4** with globals (`describe`, `it`, `expect`, `vi`)
+- **Vitest v5** with globals (`describe`, `it`, `expect`, `vi`)
+- Coverage thresholds are enforced in CI (`npm run test:coverage`)
 - Tests in `test/` directory, mirroring `src/` structure
 - Mocking: `vi.mock()` for modules, `vi.fn()` for stubs
 - Fake timers: `vi.useFakeTimers()` in beforeEach, `vi.useRealTimers()` in afterEach
 - Use `vi.advanceTimersByTimeAsync()` for async timer tests
+- Never interpolate TV- or network-supplied strings into HTML (use `escapeHtml`/`textContent`) or logs (use `sanitizeForLog`)
 
 ## Git conventions
 

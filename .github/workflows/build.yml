@@ -7,6 +7,10 @@ on:
     branches: [main]
   pull_request:
 
+# Least privilege: CI only needs to read the repository.
+permissions:
+  contents: read
+
 jobs:
   build:
     name: Node ${{ matrix.node-version }}
@@ -35,5 +39,5 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Test
-        run: npm test
+      - name: Test (with coverage thresholds)
+        run: npm run test:coverage
