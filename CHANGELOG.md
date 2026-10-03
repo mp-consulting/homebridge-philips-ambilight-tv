@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.8.2] - 2026-10-03
+
+### Changed
+
+- **`undici` 8.11.2.**
+- Development tooling updated (ESLint, typescript-eslint, Vitest, `@types/node`) and CI moved to `actions/setup-node` v7. TypeScript stays on 6.x, which typescript-eslint 8.x still requires.
+
 ## [1.8.1] - 2026-10-03
 
 ### Changed
