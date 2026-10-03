@@ -1,30 +1,58 @@
 import { HomebridgePluginUiServer } from '@homebridge/plugin-ui-utils';
 import { Bonjour } from 'bonjour-service';
 import arp from 'node-arp';
+import { isIPv4 } from 'net';
 import { promisify } from 'util';
 
 import {
-  TV_API_PORT,
   TV_API_VERSION,
   DISCOVERY_TIMEOUT,
   CONNECTION_TIMEOUT,
+  PAIRING_TIMEOUT,
 } from '../dist/api/constants.js';
 import {
+  buildUrl,
   hmacSignature,
+  macHexDigits,
   normalizeMacAddress,
-  postToTv,
-  getFromTv,
+  fetchWithTimeout,
+  createTvAgent,
   createDigestAuth,
   createDeviceInfo,
   handleErrorResponse,
   extractIpv4,
   createPairingSuccess,
-  fetchCertFingerprint,
+  sanitizeForLog,
   sendWakeOnLan,
 } from '../dist/api/utils.js';
 import { PhilipsTVClient, HOME_URI, WATCH_TV_URI } from '../dist/api/PhilipsTVClient.js';
+import { isSystemForegroundPackage } from '../dist/services/inputs/constants.js';
 
 const getMAC = promisify(arp.getMAC);
+
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+
+/** How long a pairing request stays valid waiting for its PIN. The TV shows
+ *  the PIN for well under this; anything older is abandoned. */
+export const PAIRING_SESSION_TTL_MS = 5 * 60_000;
+
+/** Upper bound on concurrent pairing sessions, so repeated requests for
+ *  arbitrary addresses cannot grow the map without limit. */
+export const MAX_PAIRING_SESSIONS = 16;
+
+/** node-arp shells out to ping/arp and never answers on some platforms. */
+const MAC_LOOKUP_DEADLINE_MS = 8000;
+
+/** Per-request timeout for the setup wizard, which is not bound by HomeKit's
+ *  callback deadline and so can give a slow TV a longer chance. */
+const WIZARD_REQUEST_TIMEOUT_MS = 6000;
+
+/** Hard ceiling on fetching sources + apps combined. */
+const WIZARD_TOTAL_DEADLINE_MS = 15000;
+
+const INVALID_IP_ERROR = 'A valid IPv4 address is required';
 
 // ============================================================================
 // HELPERS
@@ -36,7 +64,7 @@ const getMAC = promisify(arp.getMAC);
  * bounded response even if the underlying work never settles. The timer is
  * unref'd so it never keeps the process alive on its own.
  */
-function withDeadline(promise, ms) {
+export function withDeadline(promise, ms) {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       reject(new Error(`Timed out after ${ms}ms`));
@@ -58,6 +86,14 @@ function withDeadline(promise, ms) {
 }
 
 /**
+ * The IP must be a plain dotted quad before it is used anywhere: it is
+ * interpolated into `https://${ip}:1926/...` (a value like `host/x?#` would
+ * point the request at any host and path) and handed to ping/arp, where a
+ * value starting with `-` would be read as an option.
+ */
+const isValidIp = (ip) => typeof ip === 'string' && isIPv4(ip);
+
+/**
  * Verbose per-request logging. Config UI X streams the UI server's stdout to
  * the browser over socket.io, and each line is an event it relays to the plugin
  * iframe — so chatty handlers add load to the same channel that delivers request
@@ -76,19 +112,18 @@ function debugLog(...args) {
 // UI SERVER CLASS
 // ============================================================================
 
-class UiServer extends HomebridgePluginUiServer {
+export class UiServer extends HomebridgePluginUiServer {
   constructor() {
     super();
+    /** ip → { auth_key, timestamp, device, certFingerprint, agent, expiresAt } */
     this.pairingSessions = new Map();
 
     // Register request handlers
     this.onRequest('/discover', this.discoverDevices.bind(this));
-    this.onRequest('/test-connection', this.testConnection.bind(this));
     this.onRequest('/get-mac', this.getMacAddress.bind(this));
     this.onRequest('/wake-on-lan', this.wakeOnLan.bind(this));
     this.onRequest('/pair', this.pair.bind(this));
     this.onRequest('/pair-grant', this.pairGrant.bind(this));
-    this.onRequest('/system-info', this.getSystemInfo.bind(this));
     this.onRequest('/get-sources', this.getSources.bind(this));
     this.onRequest('/current-app', this.getCurrentApp.bind(this));
 
@@ -129,43 +164,23 @@ class UiServer extends HomebridgePluginUiServer {
   }
 
   // --------------------------------------------------------------------------
-  // Connection Testing
-  // --------------------------------------------------------------------------
-
-  async testConnection(ipAddress) {
-    try {
-      console.log(`[Test] Testing connection to ${ipAddress}`);
-
-      const response = await getFromTv(ipAddress, '/system', { timeout: CONNECTION_TIMEOUT });
-      console.log(`[Test] Response status: ${response.status}`);
-
-      if (response.ok || response.status === 401) {
-        return { success: true, message: 'TV is reachable and API is accessible' };
-      }
-
-      return { success: false, error: `TV responded with status ${response.status}` };
-    } catch (error) {
-      console.log('[Test] Connection test failed:', error.message);
-      return {
-        success: false,
-        error: `Cannot reach TV at ${ipAddress}:${TV_API_PORT}. Please check:\n1) TV is powered on\n2) TV is connected to the same network`,
-        details: error.message,
-      };
-    }
-  }
-
-  // --------------------------------------------------------------------------
   // MAC Address
   // --------------------------------------------------------------------------
 
   async getMacAddress(ipAddress) {
+    if (!isValidIp(ipAddress)) {
+      return { success: false, error: INVALID_IP_ERROR };
+    }
     try {
       // Canonicalize before it reaches the config: the ARP table prints
       // lowercase while an address typed off the TV is usually uppercase, and
       // writing back a differently-spelled version of the same address used to
       // republish the TV as a new, unpaired HomeKit accessory.
-      const mac = normalizeMacAddress(await getMAC(ipAddress));
-      return { success: true, mac };
+      const raw = await withDeadline(getMAC(ipAddress), MAC_LOOKUP_DEADLINE_MS);
+      if (typeof raw !== 'string' || !macHexDigits(raw)) {
+        return { success: false, error: 'No MAC address found for that IP. Make sure the TV is on.' };
+      }
+      return { success: true, mac: normalizeMacAddress(raw) };
     } catch (error) {
       return { success: false, error: error.message || 'Failed to get MAC address' };
     }
@@ -176,16 +191,17 @@ class UiServer extends HomebridgePluginUiServer {
   // --------------------------------------------------------------------------
 
   async wakeOnLan(data) {
-    const { mac } = data;
+    const mac = data?.mac;
+    // Optional: lets the packet also go to the TV's subnet broadcast.
+    const ip = isValidIp(data?.ip) ? data.ip : undefined;
 
-    if (!mac) {
-      return { success: false, error: 'MAC address is required' };
+    if (typeof mac !== 'string' || !macHexDigits(mac)) {
+      return { success: false, error: 'A valid MAC address is required' };
     }
 
     try {
-      console.log(`[WOL] Sending magic packet to ${mac}`);
-      await sendWakeOnLan(mac);
-      console.log('[WOL] Magic packet sent successfully');
+      debugLog(`[WOL] Sending magic packet to ${mac}`);
+      await sendWakeOnLan(mac, ip);
       return { success: true, message: 'Wake-on-LAN packet sent' };
     } catch (error) {
       console.log('[WOL] Failed:', error.message);
@@ -194,55 +210,104 @@ class UiServer extends HomebridgePluginUiServer {
   }
 
   // --------------------------------------------------------------------------
+  // Pairing sessions
+  // --------------------------------------------------------------------------
+
+  /** Forget a session and release its pooled connections. */
+  dropPairingSession(ip) {
+    const session = this.pairingSessions.get(ip);
+    if (session) {
+      this.pairingSessions.delete(ip);
+      void session.agent.close().catch(() => {});
+    }
+  }
+
+  purgeExpiredPairingSessions(now = Date.now()) {
+    for (const [ip, session] of this.pairingSessions) {
+      if (session.expiresAt <= now) {
+        this.dropPairingSession(ip);
+      }
+    }
+  }
+
+  /** Store a session, evicting the oldest when the cap is reached. */
+  storePairingSession(ip, session) {
+    this.purgeExpiredPairingSessions();
+    this.dropPairingSession(ip);
+    while (this.pairingSessions.size >= MAX_PAIRING_SESSIONS) {
+      this.dropPairingSession(this.pairingSessions.keys().next().value);
+    }
+    this.pairingSessions.set(ip, session);
+  }
+
+  // --------------------------------------------------------------------------
   // Pairing - Step 1: Request
   // --------------------------------------------------------------------------
 
   async pair(data) {
-    const { ip, deviceName = 'Homebridge' } = data;
+    const { ip, deviceName = 'Homebridge' } = data ?? {};
 
-    if (!ip) {
-      return { success: false, error: 'IP address is required' };
+    if (!isValidIp(ip)) {
+      return { success: false, error: INVALID_IP_ERROR };
     }
+
+    // The certificate is recorded on the very connection that carries the
+    // pairing request, so the grant (and every later connection) can be held
+    // to it — not read on a separate connection after the fact.
+    let observed = null;
+    const agent = createTvAgent({ onCertObserved: (fingerprint) => (observed = fingerprint) });
 
     try {
       console.log(`[Pairing] Starting pairing with TV at ${ip}`);
 
-      const testResult = await this.testConnection(ip);
-      if (!testResult.success) {
-        return testResult;
-      }
-
-      console.log('[Pairing] Connection test passed, proceeding with pairing...');
-
-      const device = createDeviceInfo(deviceName);
+      const device = createDeviceInfo(String(deviceName).slice(0, 64));
       const pairRequest = {
         access: { scope: ['read', 'write', 'control'] },
         device,
       };
 
-      console.log('[Pairing] Sending pairing request...');
-
-      const response = await postToTv(ip, '/pair/request', pairRequest);
+      let response;
+      try {
+        response = await fetchWithTimeout(
+          buildUrl(ip, '/pair/request'),
+          { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(pairRequest), dispatcher: agent },
+          PAIRING_TIMEOUT,
+        );
+      } catch (error) {
+        void agent.close().catch(() => {});
+        console.log('[Pairing] TV unreachable:', error.message);
+        return {
+          success: false,
+          error: `Cannot reach TV at ${ip}. Please check:\n1) TV is powered on\n2) TV is connected to the same network`,
+          details: error.message,
+        };
+      }
 
       if (!response.ok) {
+        void agent.close().catch(() => {});
         return handleErrorResponse(response, 'Pairing');
       }
 
       const result = await response.json();
+      void agent.close().catch(() => {});
 
-      this.pairingSessions.set(ip, {
+      // Every later connection in this pairing is pinned to what we saw here;
+      // with nothing observed the grant still runs, but the UI warns.
+      this.storePairingSession(ip, {
         auth_key: result.auth_key,
         timestamp: result.timestamp,
         device,
+        certFingerprint: observed,
+        agent: createTvAgent({ certFingerprint: observed ?? undefined }),
+        expiresAt: Date.now() + PAIRING_SESSION_TTL_MS,
       });
 
       return {
         success: true,
-        auth_key: result.auth_key,
-        timestamp: result.timestamp,
         message: 'Check your TV screen for the PIN code',
       };
     } catch (error) {
+      void agent.close().catch(() => {});
       console.log('[Pairing] Error:', error.message);
       return { success: false, error: error.message || 'Failed to initiate pairing' };
     }
@@ -253,125 +318,90 @@ class UiServer extends HomebridgePluginUiServer {
   // --------------------------------------------------------------------------
 
   async pairGrant(data) {
-    const { ip, pin } = data;
+    const { ip, pin } = data ?? {};
 
-    if (!ip || !pin) {
-      return { success: false, error: 'IP address and PIN are required' };
+    if (!isValidIp(ip)) {
+      return { success: false, error: INVALID_IP_ERROR };
+    }
+    if (typeof pin !== 'string' || !/^\d{4}$/.test(pin)) {
+      return { success: false, error: 'A 4-digit PIN is required' };
     }
 
+    this.purgeExpiredPairingSessions();
     const session = this.pairingSessions.get(ip);
     if (!session) {
-      return { success: false, error: 'No active pairing session found' };
+      return { success: false, error: 'No active pairing session found. Start pairing again.' };
     }
 
     try {
-      console.log('[PairGrant] Processing PIN...');
-
-      const signature = hmacSignature(session.timestamp.toString(), pin);
+      debugLog('[PairGrant] Processing PIN...');
 
       const grantRequest = {
         auth: {
           auth_appId: '1',
           auth_timestamp: session.timestamp,
-          auth_signature: signature,
+          auth_signature: hmacSignature(session.timestamp.toString(), pin),
           pin,
         },
         device: session.device,
       };
 
-      const initialResponse = await postToTv(ip, '/pair/grant', grantRequest, { timeout: CONNECTION_TIMEOUT });
+      const response = await this.postWithDigest(ip, '/pair/grant', grantRequest, {
+        username: session.device.id,
+        password: session.auth_key,
+        dispatcher: session.agent,
+      });
 
-      if (initialResponse.status === 401) {
-        const wwwAuth = initialResponse.headers.get('www-authenticate');
-
-        if (wwwAuth?.toLowerCase().startsWith('digest')) {
-          console.log('[PairGrant] Retrying with Digest auth...');
-
-          const digestAuth = createDigestAuth(
-            session.device.id,
-            session.auth_key,
-            wwwAuth,
-            'POST',
-            `/${TV_API_VERSION}/pair/grant`,
-          );
-
-          const response = await postToTv(ip, '/pair/grant', grantRequest, {
-            headers: { 'Authorization': digestAuth },
-            timeout: CONNECTION_TIMEOUT,
-          });
-
-          if (!response.ok) {
-            return handleErrorResponse(response, 'PairGrant');
-          }
-
-          const result = await response.json();
-
-          if (result.error_id && result.error_id !== 'SUCCESS') {
-            return { success: false, error: `Pairing failed: ${result.error_id} - ${result.error_text || ''}` };
-          }
-
-          this.pairingSessions.delete(ip);
-          return createPairingSuccess(session, await fetchCertFingerprint(ip));
-        }
+      if (!response.ok) {
+        return handleErrorResponse(response, 'PairGrant');
       }
 
-      if (!initialResponse.ok) {
-        return handleErrorResponse(initialResponse, 'PairGrant');
+      const result = await response.json().catch(() => ({}));
+      if (result?.error_id && result.error_id !== 'SUCCESS') {
+        return { success: false, error: `Pairing failed: ${sanitizeForLog(String(result.error_id))} - ${sanitizeForLog(String(result.error_text || ''))}` };
       }
 
-      this.pairingSessions.delete(ip);
-      return createPairingSuccess(session, await fetchCertFingerprint(ip));
+      this.dropPairingSession(ip);
+      const success = createPairingSuccess(session, session.certFingerprint ?? undefined);
+      return session.certFingerprint ? success : { ...success, certWarning: true };
     } catch (error) {
       console.log('[PairGrant] Error:', error.message);
+      // A certificate that changed mid-pairing is not a TV to trust.
+      // undici reports connect failures as "fetch failed" with the reason as the cause.
+      const reason = `${error.message || ''} ${error.cause?.message || ''}`;
+      if (/pinned fingerprint|unencrypted connection/.test(reason)) {
+        this.dropPairingSession(ip);
+        return {
+          success: false,
+          error: 'The TV presented a different certificate during pairing, so pairing was stopped. Try again; '
+            + 'if this keeps happening, something on your network may be intercepting the connection.',
+        };
+      }
       return { success: false, error: error.message || 'Failed to complete pairing' };
     }
   }
 
-  // --------------------------------------------------------------------------
-  // System Info
-  // --------------------------------------------------------------------------
+  /**
+   * POST JSON to the TV, answering a Digest challenge once if the TV issues
+   * one. Returns the final response.
+   */
+  async postWithDigest(ip, endpoint, body, { username, password, dispatcher, timeout = CONNECTION_TIMEOUT }) {
+    const url = buildUrl(ip, endpoint);
+    const post = (headers) => fetchWithTimeout(
+      url,
+      { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body), dispatcher },
+      timeout,
+    );
 
-  async getSystemInfo(data) {
-    const { ip, username, password } = data;
-
-    if (!ip) {
-      return { success: false, error: 'IP address is required' };
+    const initial = await post({});
+    const challenge = initial.status === 401 ? initial.headers.get('www-authenticate') : null;
+    if (!challenge?.toLowerCase().startsWith('digest')) {
+      return initial;
     }
 
-    try {
-      console.log(`[SystemInfo] Getting system info from ${ip}`);
-
-      const initialResponse = await getFromTv(ip, '/system');
-
-      if (initialResponse.status === 401 && username && password) {
-        const wwwAuth = initialResponse.headers.get('www-authenticate');
-
-        if (wwwAuth?.toLowerCase().startsWith('digest')) {
-          const digestAuth = createDigestAuth(username, password, wwwAuth, 'GET', `/${TV_API_VERSION}/system`);
-
-          const response = await getFromTv(ip, '/system', {
-            headers: { 'Authorization': digestAuth },
-          });
-
-          if (response.ok) {
-            const systemInfo = await response.json();
-            console.log('[SystemInfo] Retrieved successfully');
-            return { success: true, data: systemInfo };
-          }
-        }
-      }
-
-      if (initialResponse.ok) {
-        const systemInfo = await initialResponse.json();
-        console.log('[SystemInfo] Retrieved successfully');
-        return { success: true, data: systemInfo };
-      }
-
-      return { success: false, error: `Failed to get system info: ${initialResponse.status}` };
-    } catch (error) {
-      console.log('[SystemInfo] Error:', error.message);
-      return { success: false, error: error.message || 'Failed to get system information' };
-    }
+    debugLog(`[Digest] Retrying ${endpoint} with Digest auth...`);
+    const authorization = createDigestAuth(username, password, challenge, 'POST', `/${TV_API_VERSION}${endpoint}`);
+    return post({ Authorization: authorization });
   }
 
   // --------------------------------------------------------------------------
@@ -379,53 +409,39 @@ class UiServer extends HomebridgePluginUiServer {
   // --------------------------------------------------------------------------
 
   async getSources(data) {
-    const { ip, username, password, mac } = data;
+    const { ip, username, password, mac, certFingerprint } = data ?? {};
 
-    if (!ip) {
-      return { success: false, error: 'IP address is required' };
+    if (!isValidIp(ip)) {
+      return { success: false, error: INVALID_IP_ERROR };
     }
+
+    const client = new PhilipsTVClient({
+      ip,
+      mac: mac || '',
+      username: username || '',
+      password: password || '',
+      certFingerprint: certFingerprint || undefined,
+    });
 
     try {
       debugLog(`[Sources] Getting sources from ${ip}`);
 
-      // Create PhilipsTVClient instance
-      const client = new PhilipsTVClient({
-        ip,
-        mac: mac || '',
-        username: username || '',
-        password: password || '',
-      });
-
-      // The runtime client uses a short (2s) per-request timeout so it never
-      // exceeds HomeKit's characteristic callback deadline. The setup wizard
-      // has no such constraint and the user is actively waiting, so give a
-      // momentarily-slow TV a longer chance to return its real source/app
-      // list before falling back to the generic built-in list.
-      const WIZARD_REQUEST_TIMEOUT_MS = 6000;
-      // Hard ceiling on the whole fetch (sources + apps combined) so the
-      // "Fetching sources" spinner can never hang: whatever we have — or the
-      // built-in fallback — is returned once this budget is spent, even if the
-      // TV never answers. A TV freshly woken from standby can be slow to serve
-      // /applications (this reporter's TV returns 47 apps), so the budget is
-      // shared across both calls rather than applied to each.
-      const WIZARD_TOTAL_DEADLINE_MS = 15000;
+      // A TV freshly woken from standby can be slow to serve /applications, so
+      // the deadline is shared across both calls rather than applied to each:
+      // whatever we have — or the built-in fallback — is returned once it is
+      // spent, even if the TV never answers.
       const deadline = Date.now() + WIZARD_TOTAL_DEADLINE_MS;
       const remaining = () => Math.max(0, deadline - Date.now());
 
-      // Fetch sources from TV API (async call), bounded by the overall budget
       let tvSources = [];
       try {
-        tvSources = await withDeadline(
-          client.getSources(WIZARD_REQUEST_TIMEOUT_MS),
-          remaining(),
-        );
+        tvSources = await withDeadline(client.getSources(WIZARD_REQUEST_TIMEOUT_MS), remaining());
         debugLog(`[Sources] Fetched ${tvSources.length} sources from TV API`);
       } catch (sourceError) {
         console.log('[Sources] Could not fetch sources from TV, using built-in:', sourceError.message);
         tvSources = client.getBuiltInSources();
       }
 
-      // Convert TV sources to UI format
       const builtInSources = tvSources.map(source => ({
         id: source.id,
         name: source.name,
@@ -433,13 +449,9 @@ class UiServer extends HomebridgePluginUiServer {
         icon: source.id === WATCH_TV_URI ? 'tv' : source.id === HOME_URI ? 'home' : 'hdmi',
       }));
 
-      // Try to get apps from TV using the client
       let apps = [];
       try {
-        apps = await withDeadline(
-          client.getApplications(WIZARD_REQUEST_TIMEOUT_MS),
-          remaining(),
-        );
+        apps = await withDeadline(client.getApplications(WIZARD_REQUEST_TIMEOUT_MS), remaining());
       } catch (appError) {
         console.log('[Sources] Could not fetch apps:', appError.message);
       }
@@ -455,13 +467,18 @@ class UiServer extends HomebridgePluginUiServer {
         ];
       }
 
-      // Convert apps to source format
-      const appSources = apps.map(app => ({
-        id: app.intent?.component?.packageName || app.id || app.label,
-        name: app.label || app.name || 'Unknown App',
-        type: 'app',
-        icon: 'app',
-      }));
+      // One entry per package: apps with several launcher activities are
+      // reported more than once.
+      const seen = new Set(builtInSources.map(s => s.id));
+      const appSources = [];
+      for (const app of apps) {
+        const id = app.intent?.component?.packageName || app.id || app.label;
+        if (!id || seen.has(id)) {
+          continue;
+        }
+        seen.add(id);
+        appSources.push({ id, name: app.label || app.name || 'Unknown App', type: 'app', icon: 'app' });
+      }
 
       const sources = [...builtInSources, ...appSources];
 
@@ -471,6 +488,9 @@ class UiServer extends HomebridgePluginUiServer {
     } catch (error) {
       console.log('[Sources] Error:', error.message);
       return { success: false, error: error.message || 'Failed to get sources' };
+    } finally {
+      // Requests that lost the deadline race still hold pooled connections.
+      void client.close().catch(() => {});
     }
   }
 
@@ -479,21 +499,22 @@ class UiServer extends HomebridgePluginUiServer {
   // --------------------------------------------------------------------------
 
   async getCurrentApp(data) {
-    const { ip, username, password, mac } = data;
+    const { ip, username, password, mac, certFingerprint } = data ?? {};
 
-    if (!ip) {
-      return { success: false, error: 'IP address is required' };
+    if (!isValidIp(ip)) {
+      return { success: false, error: INVALID_IP_ERROR };
     }
 
-    try {
-      console.log(`[CurrentApp] Detecting current app on ${ip}`);
+    const client = new PhilipsTVClient({
+      ip,
+      mac: mac || '',
+      username: username || '',
+      password: password || '',
+      certFingerprint: certFingerprint || undefined,
+    });
 
-      const client = new PhilipsTVClient({
-        ip,
-        mac: mac || '',
-        username: username || '',
-        password: password || '',
-      });
+    try {
+      debugLog(`[CurrentApp] Detecting current app on ${ip}`);
 
       const app = await client.getCurrentActivityIntent();
 
@@ -504,32 +525,28 @@ class UiServer extends HomebridgePluginUiServer {
         };
       }
 
-      // These are the TV's own live-TV / home / launcher activities — not a
-      // user app. If detect lands on one, the wanted app isn't in the
-      // foreground, so guide the user to open it first.
-      const SYSTEM_FOREGROUND = new Set([
-        'org.droidtv.playtv',
-        'org.droidtv.contentexplorer',
-        'org.droidtv.channels',
-        'com.google.android.tvlauncher',
-        'com.google.android.leanbacklauncher',
-      ]);
-      if (SYSTEM_FOREGROUND.has(app.packageName)) {
-        console.log(`[CurrentApp] Foreground is system activity ${app.packageName}, not a user app`);
+      // The TV's own live-TV / home / launcher activities are not a user app.
+      // If detect lands on one, the wanted app isn't in the foreground, so
+      // guide the user to open it first.
+      if (isSystemForegroundPackage(app.packageName)) {
+        const detected = sanitizeForLog(app.packageName);
+        console.log(`[CurrentApp] Foreground is system activity ${detected}, not a user app`);
         return {
           success: false,
           notAnApp: true,
-          detected: app.packageName,
-          error: `The TV is currently on live TV or the home screen (${app.packageName}). `
+          detected,
+          error: `The TV is currently on live TV or the home screen (${detected}). `
             + 'Open the app you want to add on the TV, then click Detect again.',
         };
       }
 
-      console.log(`[CurrentApp] Detected ${app.packageName} (${app.className || 'no class'})`);
+      console.log(`[CurrentApp] Detected ${sanitizeForLog(app.packageName)} (${sanitizeForLog(app.className || 'no class')})`);
       return { success: true, app };
     } catch (error) {
       console.log('[CurrentApp] Error:', error.message);
       return { success: false, error: error.message || 'Failed to detect current app' };
+    } finally {
+      void client.close().catch(() => {});
     }
   }
 }
