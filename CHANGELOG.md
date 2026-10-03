@@ -2,6 +2,43 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.8.0] - 2026-10-03
+
+### Added
+
+- **Reorder sources from the keyboard** in the config UI: focus a visible source and press <kbd>Alt</kbd>+<kbd>↑</kbd>/<kbd>↓</kbd>. Previously the order could only be changed by dragging with a mouse.
+- **`inputs[].displayOrder` is now honoured.** It was documented in the config but never read; it now orders an explicit `inputs` list on the TV's input wheel (the order set in the config UI still takes precedence).
+- **Wake-on-LAN also reaches the TV's own subnet.** The magic packet is now sent to the subnet broadcast address of the network the TV is on, as well as to `255.255.255.255`. On a host with several networks, or in Docker, the general broadcast often left through the wrong interface and never reached the TV.
+
+### Changed
+
+- **The Ambilight brightness slider keeps your Ambilight mode.** While Ambilight follows video or audio, the slider now sets the TV's own Ambilight brightness instead of switching Ambilight to a fixed colour. Colour and brightness changes made while showing a colour work as before.
+- **Adaptive Lighting no longer overrides a video or audio mode.** Its periodic colour-temperature updates now only apply while Ambilight is showing a colour; a temperature you pick yourself still applies.
+- **A colour pick is sent to the TV as one command** instead of up to three (hue, saturation and brightness arrive separately from HomeKit).
+- **The TV's state is read less often.** Change notifications from the TV are applied directly instead of triggering a full re-read of every setting, and overlapping state reads now share one request. This leaves the TV's one-at-a-time request queue free for your commands.
+- **The Ambilight+hue switch answers the Home app at once** from its last known state, refreshing from the TV in the background, instead of querying the TV on every Home app refresh — which could earn Homebridge's "slow to respond" warning.
+- **Apps uninstalled from the TV are removed from the input list** once the TV has left them out of two app listings in a row, so they no longer use up input slots. Custom apps, sources you marked visible, and the current input are never removed.
+- **The config UI warns you when pairing could not record the TV's certificate**, instead of saving the TV silently without connection verification.
+
+### Fixed
+
+- **A single unanswered request no longer shows the TV as switched off.** One dropped or failed request was enough to turn the TV tile off, reset the source switches and, when the next read succeeded, replay everything that runs at power-on (such as starting Ambilight). A TV that was on is now reported off only after two reads in a row go unanswered, which still covers a TV dropping into deep standby.
+- **Muting from HomeKit sets the requested state** instead of toggling it, so a mute request can no longer unmute the TV. Failed volume and mute commands now show as an error in the Home app instead of looking successful.
+- **An app the TV lists more than once now appears once** on the input wheel. Apps with several launcher activities used to create two inputs that, after a restart, shared one HomeKit service.
+- **A launch that finished after you had already picked another source** no longer moves the input wheel and source switches back to the earlier choice.
+- **The input wheel starts on Watch TV** instead of an input number that did not exist until the first state update.
+- **Node.js 24 and 26 no longer log a false "not supported" warning** at startup.
+- **The same TV configured twice** (for example with the MAC written in two styles) is now skipped with an error instead of stopping Homebridge from publishing it.
+- **Saved plugin state is written safely.** Input identifiers, the accessory identity and source switch names are written to a temporary file and moved into place, so a crash or two saves at once can no longer leave a half-written file that resets your inputs.
+- **Config UI fixes:** switching between TVs while sources are loading can no longer save one TV's sources into another; a double-click no longer starts two pairings (which invalidated the PIN on screen); the MAC address is normalised and validated before saving; dragging sources no longer saves and shows "Order saved" several times; deleting a TV now asks for confirmation; PIN fields and icon buttons have labels for screen readers.
+
+### Security
+
+- **The config UI no longer renders TV or network names as HTML.** App names reported by the TV and TV names found by network discovery are now escaped, so a device on your network cannot inject script into the Homebridge UI.
+- **The config UI server validates every IP address it receives** before using it in a request URL or passing it to `ping`/`arp`.
+- **Pairing now records the TV's certificate on the pairing connection itself** and requires the PIN step to use the same certificate; pairing stops if it changes. The pairing key is no longer sent to the browser, and unfinished pairing sessions expire.
+- **Responses from the TV are limited to 2 MB**, and text from the TV is cleaned before it is written to the log.
+
 ## [1.7.0] - 2026-09-27
 
 ### Added
