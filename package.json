@@ -45,7 +45,7 @@
   },
   "dependencies": {
     "@homebridge/plugin-ui-utils": "^2.2.6",
-    "@mp-consulting/homebridge-ai-kit": "file:../homebridge-mcp-server",
+    "@mp-consulting/homebridge-ai-core": "file:../homebridge-mcp-server/packages/ai-core",
     "bonjour-service": "^1.4.4",
     "class-validator": "^0.15.1",
     "node-arp": "^1.0.6",

@@ -7,7 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - **Assistant in the config UI.** When an AI provider is set up in Homebridge AI Kit (the shared `HomebridgeAiKit` platform block), an **Explain** button appears next to a failed or empty TV discovery, a failed pairing request (wizard and Re-pair), a rejected PIN, sources that could not be loaded, a failed **Detect from TV**, and configured TVs that are not paired, have no MAC address or no pinned certificate. The explanation streams into an Assistant panel, with Philips context (JointSpace API v6 on port 1926, PIN pairing and its error codes, certificate pinning, Wake-on-LAN). Only the error (IP and MAC addresses replaced by placeholders) and non-sensitive TV facts are sent: never the IP or MAC address, the pairing username/password or the certificate fingerprint. Without the AI Kit nothing changes, apart from a small tip under the configured TVs.
-- `homebridge-ui/server.js` registers the `/ai/status`, `/ai/explain`, `/ai/ask` and `/ai/config` routes with `registerAiRoutes` from `@mp-consulting/homebridge-ai-kit/plugin` (new runtime dependency), via `homebridge-ui/assistant.js`.
+- `homebridge-ui/server.js` registers the `/ai/status`, `/ai/explain`, `/ai/ask` and `/ai/config` routes with `registerAiRoutes` from `@mp-consulting/homebridge-ai-core/plugin` (new runtime dependency), via `homebridge-ui/assistant.js`.
 
 ### Changed
 
@@ -15,7 +15,7 @@ All notable changes to this project will be documented in this file.
 
 ### Release blockers
 
-- `@mp-consulting/homebridge-ai-kit` (`file:../homebridge-mcp-server`) and `@mp-consulting/homebridge-ui-kit` (`file:../homebridge-ui-kit`) are local, unpublished checkouts. Change them to `^2.0.0` and `^1.2.0` once published, and regenerate `package-lock.json`.
+- `@mp-consulting/homebridge-ai-core` (`file:../homebridge-mcp-server/packages/ai-core`) and `@mp-consulting/homebridge-ui-kit` (`file:../homebridge-ui-kit`) are local, unpublished checkouts. Change them to `^2.0.0` and `^1.2.0` once published, and regenerate `package-lock.json`.
 
 ## [1.8.2] - 2026-10-03
 

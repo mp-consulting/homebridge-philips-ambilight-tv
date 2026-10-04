@@ -303,8 +303,8 @@ npm run test:tv
 
 The build vendors `@mp-consulting/homebridge-ui-kit` and Bootstrap into
 `homebridge-ui/public/lib/` with `mp-ui-kit-copy --vendor`. Until
-`@mp-consulting/homebridge-ai-kit` 2.0.0 and `@mp-consulting/homebridge-ui-kit` 1.2.0
-are published, both are installed from sibling checkouts (`file:../homebridge-mcp-server`
+`@mp-consulting/homebridge-ai-core` 2.0.0 and `@mp-consulting/homebridge-ui-kit` 1.2.0
+are published, both are installed from sibling checkouts (`file:../homebridge-mcp-server/packages/ai-core`
 and `file:../homebridge-ui-kit`); they must become `^2.0.0` and `^1.2.0` before release.
 
 ## License

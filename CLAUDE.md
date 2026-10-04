@@ -33,7 +33,7 @@ src/
 test/                     # Unit tests (mirrors src/ structure)
 homebridge-ui/            # Uses Homebridge custom UI framework for plugin configuration management (pairing wizard & source config)
 ├── server.js             # UI server; imports the compiled plugin from ../dist (tests alias it to src/)
-├── assistant.js          # Assistant routes (/ai/*, from @mp-consulting/homebridge-ai-kit/plugin) + Philips system context
+├── assistant.js          # Assistant routes (/ai/*, from @mp-consulting/homebridge-ai-core/plugin) + Philips system context
 └── public/helpers.js     # Pure UI logic (escaping, MAC/IP, source ordering, Assistant whitelist), unit-tested; app.js is DOM wiring
 ```
 
