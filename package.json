@@ -53,7 +53,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@mp-consulting/homebridge-ui-kit": "^1.2.0",
+    "@mp-consulting/homebridge-ui-kit": "^1.2.1",
     "@types/node": "^26.6.4",
     "@vitest/coverage-v8": "^5.0.3",
     "bootstrap": "^5.3.8",
