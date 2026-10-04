@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.9.2] - 2026-10-04
+
+### Fixed
+
+- **Assistant suggested-config header in narrow panels** (`@mp-consulting/homebridge-ui-kit` 1.2.2). The header of the suggested config diff now wraps like the answer panel header: the title stays next to the "Assistant" badge only when there is room for it, otherwise it moves onto its own line below the badge (with the +/− stats at its end), so in a narrow panel it is no longer squeezed and broken word by word. Normal widths are unchanged.
+
+### Changed
+
+- **The publish workflow skips a version that is already on npm**, so re-running it (or a release whose version was already published) no longer fails on `npm publish`.
+
 ## [1.9.1] - 2026-10-04
 
 ### Fixed
