@@ -173,6 +173,52 @@
   });
 
   // ============================================================================
+  // ASSISTANT
+  // ============================================================================
+
+  /** IPv4 addresses and MAC addresses (colon or dash separated) inside free text. */
+  const IPV4_IN_TEXT = /\b(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\b/g;
+  const MAC_IN_TEXT = /\b[0-9A-Fa-f]{2}(?:[:-][0-9A-Fa-f]{2}){5}\b/g;
+
+  /**
+   * Replace IP and MAC addresses in an error message before it goes to the
+   * Assistant: the TV's errors quote its address ("Cannot reach TV at …").
+   */
+  const scrubAddresses = (text) => String(text ?? '')
+    .replace(MAC_IN_TEXT, '[MAC address]')
+    .replace(IPV4_IN_TEXT, '[TV IP address]');
+
+  /**
+   * The TV facts the Assistant may see. A whitelist: never the IP, MAC,
+   * pairing username/password or certificate fingerprint itself.
+   */
+  const assistantTv = (tv) => ({
+    name: tv?.name,
+    paired: !!(tv?.username && tv?.password),
+    certificatePinned: !!tv?.certFingerprint,
+    macConfigured: !!tv?.mac,
+    wakeOnLanEnabled: tv?.wakeOnLanEnabled !== false,
+    pollingInterval: tv?.pollingInterval,
+    ambilightMode: tv?.ambilightMode,
+    configuredSources: Array.isArray(tv?.sources) ? tv.sources.length : 0,
+    customApps: Array.isArray(tv?.customApps) ? tv.customApps.length : 0,
+  });
+
+  /** Why a configured TV needs attention, or null when its entry looks fine. */
+  const tvProblem = (tv) => {
+    if (!tv?.username || !tv?.password) {
+      return 'This TV has no pairing credentials, so the plugin cannot control it. It needs to be paired (Edit → Re-pair).';
+    }
+    if (!tv.mac) {
+      return 'This TV has no MAC address configured, so Wake-on-LAN cannot turn it on from standby.';
+    }
+    if (!tv.certFingerprint) {
+      return 'No certificate fingerprint was recorded when this TV was paired, so connections to it are not verified.';
+    }
+    return null;
+  };
+
+  // ============================================================================
   // EXPORT
   // ============================================================================
 
@@ -187,5 +233,8 @@
     toSourceConfig,
     debounce,
     withTimeout,
+    scrubAddresses,
+    assistantTv,
+    tvProblem,
   });
 })();

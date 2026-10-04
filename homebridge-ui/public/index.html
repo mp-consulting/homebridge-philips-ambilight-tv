@@ -51,6 +51,8 @@
       <div id="deviceList" class="row g-2">
         <div id="deviceListContainer" class="col-12"></div>
       </div>
+      <!-- Discovery / pairing error + Assistant explanation (filled by app.js) -->
+      <div id="pairingProblem" class="mt-3" style="display: none;"></div>
     </div>
 
     <!-- Wizard Step 2: Pairing -->
@@ -78,6 +80,8 @@
             <button id="submitPinBtn" class="btn btn-success btn-lg">Confirm PIN</button>
             <button id="cancelPairingBtn" class="btn btn-secondary">Cancel</button>
           </div>
+          <!-- PIN error + Assistant explanation (filled by app.js) -->
+          <div id="pinProblem" class="col-12 mt-3" style="display: none;"></div>
         </div>
       </div>
     </div>
@@ -269,6 +273,10 @@
       <button id="addAnotherTvBtn" class="btn btn-primary">
         <i class="bi bi-plus"></i> Add Another TV
       </button>
+      <p id="assistantHint" class="small text-body-secondary mt-3" style="display: none;">
+        <i class="bi bi-info-circle me-1"></i>Tip: install and enable <strong>Homebridge AI Kit</strong> to get the Assistant,
+        which explains discovery, pairing and connection errors here.
+      </p>
     </div>
 
     <!-- Edit TV Screen -->
@@ -280,6 +288,8 @@
           <i class="bi bi-shield-lock"></i> Re-pair
         </button>
       </div>
+      <!-- Re-pair error + Assistant explanation (filled by app.js) -->
+      <div id="repairProblem" class="mb-3" style="display: none;"></div>
       <ul class="nav nav-tabs mb-3" id="editTabs" role="tablist">
         <li class="nav-item" role="presentation">
           <button class="nav-link active" id="editGeneralTab" data-bs-toggle="tab" data-bs-target="#editGeneralPane" type="button" role="tab"><i class="bi bi-sliders me-1"></i>General</button>
@@ -465,6 +475,8 @@
             </div>
             <input type="hidden" id="customAppAction">
             <div id="customAppDetectInfo" class="form-text mt-1"></div>
+            <!-- Detect error + Assistant explanation (filled by app.js) -->
+            <div id="detectProblem" class="mt-2" style="display: none;"></div>
           </div>
           <!-- Buttons tab -->
           <div class="tab-pane fade" id="editButtonsPane" role="tabpanel">
@@ -539,6 +551,8 @@
         <button id="retryLoadSourcesBtn" class="btn btn-warning btn-sm mt-2">
           <i class="bi bi-arrow-clockwise"></i> Retry
         </button>
+        <!-- Assistant explanation of the sources error (filled by app.js) -->
+        <div id="sourcesAssistant" class="mt-2"></div>
       </div>
     </div>
 

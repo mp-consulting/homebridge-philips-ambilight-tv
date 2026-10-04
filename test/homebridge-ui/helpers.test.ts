@@ -27,6 +27,9 @@ interface Helpers {
   toSourceConfig: (sources: Source[]) => Source[];
   debounce: (fn: () => void, ms: number) => (() => void) & { flush: () => void };
   withTimeout: <T>(promise: Promise<T>, ms: number, message: string) => Promise<T>;
+  scrubAddresses: (text: unknown) => string;
+  assistantTv: (tv: unknown) => Record<string, unknown>;
+  tvProblem: (tv: unknown) => string | null;
 }
 
 let h: Helpers;
@@ -168,6 +171,51 @@ describe('homebridge-ui helpers', () => {
       } finally {
         vi.useRealTimers();
       }
+    });
+  });
+  describe('Assistant helpers', () => {
+    const tv = {
+      name: 'Living Room TV',
+      ip: '192.168.1.42',
+      mac: 'AA:BB:CC:DD:EE:FF',
+      username: 'a1b2c3d4e5f60718',
+      password: 'secret-auth-key',
+      certFingerprint: 'ab:cd:ef',
+      pollingInterval: 10000,
+      sources: [{ id: 'hdmi1' }],
+      customApps: [],
+    };
+
+    it('scrubs IP and MAC addresses from error text', () => {
+      const scrubbed = h.scrubAddresses('Cannot reach TV at 192.168.1.42 (MAC aa-bb-cc-dd-ee-ff, AA:BB:CC:DD:EE:FF)');
+      expect(scrubbed).toBe('Cannot reach TV at [TV IP address] (MAC [MAC address], [MAC address])');
+      expect(h.scrubAddresses(undefined)).toBe('');
+    });
+
+    it('shares only whitelisted TV facts, never addresses or credentials', () => {
+      const shared = h.assistantTv(tv);
+      expect(shared).toEqual({
+        name: 'Living Room TV',
+        paired: true,
+        certificatePinned: true,
+        macConfigured: true,
+        wakeOnLanEnabled: true,
+        pollingInterval: 10000,
+        ambilightMode: undefined,
+        configuredSources: 1,
+        customApps: 0,
+      });
+      const json = JSON.stringify(shared);
+      for (const secret of ['192.168.1.42', 'AA:BB', 'a1b2c3d4e5f60718', 'secret-auth-key', 'ab:cd:ef']) {
+        expect(json).not.toContain(secret);
+      }
+    });
+
+    it('reports why a configured TV needs attention', () => {
+      expect(h.tvProblem(tv)).toBeNull();
+      expect(h.tvProblem({ ...tv, password: '' })).toContain('no pairing credentials');
+      expect(h.tvProblem({ ...tv, mac: '' })).toContain('Wake-on-LAN');
+      expect(h.tvProblem({ ...tv, certFingerprint: undefined })).toContain('not verified');
     });
   });
 });

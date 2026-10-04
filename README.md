@@ -22,6 +22,7 @@ A Homebridge plugin to control Philips Android TVs with Ambilight as HomeKit Tel
 - **State sensors** — optional MotionSensor services for power, ambilight, and mute (for HomeKit automations)
 - Multi-TV support
 - Custom UI for easy setup and configuration
+- **Assistant (optional)** — explains discovery, pairing, source-loading and app-detection errors in the config UI, using the AI provider you set up in Homebridge AI Kit
 
 ### Ambilight Control
 
@@ -192,6 +193,38 @@ The plugin supports customizing which sources appear in HomeKit:
 
 The plugin supports up to 30 input sources (5 static + 25 apps).
 
+## Assistant
+
+The config UI can explain problems with the **Assistant**. It is off until you set up an
+AI provider once for all MP Consulting plugins in
+[Homebridge AI Kit](https://github.com/mp-consulting/homebridge-ai-kit) (or the Homebridge
+Glass UI): the plugin reads the shared `HomebridgeAiKit` platform block from `config.json`
+and has no AI settings of its own. When it is not set up, the UI looks exactly as before,
+with a small tip under the list of configured TVs.
+
+When it is enabled, an **Explain** button appears next to:
+
+- a failed or empty TV discovery,
+- a pairing request the TV refused or never answered (wizard and **Re-pair**),
+- a PIN the TV did not accept,
+- sources and apps that could not be loaded from the TV,
+- a failed **Detect from TV** for custom apps,
+- configured TVs that need attention (not paired, no MAC address for Wake-on-LAN, or no
+  pinned certificate).
+
+The answer streams into an Assistant panel below, with Philips context (JointSpace API on
+port 1926, PIN pairing and its error codes, certificate pinning, Wake-on-LAN).
+
+What is sent to the provider: the error message with IP and MAC addresses replaced by
+placeholders, the number of configured TVs, and for a TV its name, whether it is paired,
+whether a MAC address and certificate are recorded, the Wake-on-LAN and polling settings,
+the Ambilight mode and how many sources and custom apps it has. The TV's IP and MAC
+addresses, the pairing username and password and the certificate fingerprint are never
+sent, and the provider's API key stays on the Homebridge server.
+
+There is no "Describe Your Setup" here: the configuration is the list of paired TVs, which
+the wizard manages.
+
 ## Troubleshooting
 
 ### TV not discovered
@@ -267,6 +300,12 @@ npm start
 # Test TV endpoints
 npm run test:tv
 ```
+
+The build vendors `@mp-consulting/homebridge-ui-kit` and Bootstrap into
+`homebridge-ui/public/lib/` with `mp-ui-kit-copy --vendor`. Until
+`@mp-consulting/homebridge-ai-kit` 2.0.0 and `@mp-consulting/homebridge-ui-kit` 1.2.0
+are published, both are installed from sibling checkouts (`file:../homebridge-mcp-server`
+and `file:../homebridge-ui-kit`); they must become `^2.0.0` and `^1.2.0` before release.
 
 ## License
 

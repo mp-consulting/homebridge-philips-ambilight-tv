@@ -47,6 +47,9 @@
     toSourceConfig,
     debounce,
     withTimeout,
+    scrubAddresses,
+    assistantTv,
+    tvProblem,
   } = window.AmbilightHelpers;
 
   /** Client-side ceiling on mDNS discovery (server scans for ~5s). */
@@ -90,6 +93,99 @@
     alert.className = `alert alert-${type}`;
     alert.textContent = message;
     container.replaceChildren(alert);
+  };
+
+  // ============================================================================
+  // ASSISTANT (Homebridge AI Kit)
+  // ============================================================================
+  // Shown only when the shared HomebridgeAiKit platform is set up and enabled
+  // (checked at initialization). Errors go out with IP and MAC addresses
+  // scrubbed; TVs only as the assistantTv() whitelist.
+
+  let assistantEnabled = false;
+
+  /** Plugin facts the Assistant may see, as one sentence (no addresses or credentials). */
+  const assistantContext = (extra) => [
+    extra,
+    `Configured TVs: ${state.configuredTvs.length}.`,
+  ].filter(Boolean).join(' ');
+
+  /** Streams an explanation of `error` into `answerEl`. */
+  const explainWithAssistant = async (button, answerEl, { error, context, device, title }) => {
+    button.disabled = true;
+    button.setAttribute('aria-busy', 'true');
+    answerEl.style.display = '';
+    const answer = MpKit.ai.renderAnswer(answerEl, { title });
+    try {
+      const res = await MpKit.ai.explain({ error: scrubAddresses(error), context, device }, { onChunk: answer.append });
+      answer.done(res);
+    } catch (e) {
+      answer.error(e);
+    } finally {
+      button.disabled = false;
+      button.removeAttribute('aria-busy');
+    }
+  };
+
+  /** Renders an "Explain" button plus an answer panel into `container` (nothing when the Assistant is off). */
+  const renderExplain = (container, { error, context, device, title }) => {
+    container.replaceChildren();
+    if (!assistantEnabled) {
+      return;
+    }
+    container.innerHTML = `
+      ${MpKit.ai.renderButton({ label: 'Explain', size: 'sm', className: 'js-explain' })}
+      <div class="assistant-answer mt-2" style="display: none;"></div>
+    `;
+    const button = container.querySelector('.js-explain');
+    const answerEl = container.querySelector('.assistant-answer');
+    button.addEventListener('click', () => explainWithAssistant(button, answerEl, {
+      error,
+      context: assistantContext(context),
+      device,
+      title,
+    }));
+  };
+
+  /**
+   * Shows an error in `containerId` with an "Explain" button when the Assistant
+   * is on. Callers keep their toast; without the Assistant this stays hidden so
+   * the wizard looks as before.
+   */
+  const showProblem = (containerId, { message, context, device, title }) => {
+    const container = $(containerId);
+    if (!assistantEnabled) {
+      return;
+    }
+    container.style.display = '';
+    container.innerHTML = `
+      <div class="alert alert-danger mb-0">
+        <div class="d-flex justify-content-between align-items-start gap-2">
+          <div class="problem-message"><i class="bi bi-exclamation-triangle me-1"></i></div>
+          <div class="problem-action flex-shrink-0"></div>
+        </div>
+      </div>
+    `;
+    // `message` may quote TV-supplied text: set as text, never HTML
+    container.querySelector('.problem-message').append(String(message));
+    const action = container.querySelector('.problem-action');
+    action.innerHTML = MpKit.ai.renderButton({ label: 'Explain', size: 'sm', className: 'js-explain' });
+    const answerEl = document.createElement('div');
+    answerEl.className = 'assistant-answer mt-2';
+    answerEl.style.display = 'none';
+    container.appendChild(answerEl);
+    const button = action.querySelector('.js-explain');
+    button.addEventListener('click', () => explainWithAssistant(button, answerEl, {
+      error: message,
+      context: assistantContext(context),
+      device,
+      title,
+    }));
+  };
+
+  const clearProblem = (containerId) => {
+    $(containerId).style.display = 'none';
+    $(containerId).replaceChildren();
   };
 
   // ============================================================================
@@ -219,6 +315,11 @@
   const createTvListItem = (tv, index) => {
     const li = document.createElement('li');
     li.className = 'list-group-item';
+    li.dataset.tvIndex = String(index);
+    const problem = assistantEnabled ? tvProblem(tv) : null;
+    const explainButton = problem
+      ? MpKit.ai.renderButton({ label: 'Explain', size: 'sm', className: 'js-explain-tv me-2', title: 'Explain this TV problem' })
+      : '';
     li.innerHTML = `
       <div class="d-flex w-100 justify-content-between align-items-center">
         <div>
@@ -226,11 +327,13 @@
           <small class="text-muted"><i class="bi bi-hdd-network me-1" aria-hidden="true"></i> ${escapeHtml(tv.ip)}</small>
         </div>
         <div>
+          ${explainButton}
           <button type="button" class="btn btn-sm btn-secondary edit-sources-btn me-2"><i class="bi bi-list" aria-hidden="true"></i> Sources</button>
           <button type="button" class="btn btn-sm btn-primary edit-tv-btn me-2"><i class="bi bi-pencil" aria-hidden="true"></i> Edit</button>
           <button type="button" class="btn btn-sm btn-danger delete-tv-btn"><i class="bi bi-trash" aria-hidden="true"></i> Delete</button>
         </div>
       </div>
+      <div class="assistant-answer mt-2" style="display: none;"></div>
     `;
 
     li.querySelector('.edit-sources-btn').addEventListener('click', () => openEditSourcesScreen(index));
@@ -336,7 +439,7 @@
   };
 
   /** Starts the PIN flow for `ip`. Resolves true once the TV shows a PIN. */
-  const startPairing = async (ip, listItem) => {
+  const startPairing = async (ip, listItem, problemId = 'pairingProblem') => {
     // Show loading state on the list item
     const badge = listItem?.querySelector('.select-badge');
     const originalBadgeText = badge?.textContent;
@@ -347,6 +450,8 @@
     }
 
     homebridge.toast.info('Initiating pairing with TV...');
+    clearProblem(problemId);
+    const pairingContext = 'Requesting a pairing PIN from the TV (POST /pair/request on HTTPS port 1926) failed in the plugin settings.';
 
     try {
       const result = await api.pair(ip, state.currentConfig.name);
@@ -369,6 +474,7 @@
       }
 
       homebridge.toast.error(result.error);
+      showProblem(problemId, { message: result.error, context: pairingContext, title: 'Why did pairing fail?' });
       // Restore badge
       if (badge) {
         badge.textContent = originalBadgeText;
@@ -381,6 +487,7 @@
       return false;
     } catch (e) {
       homebridge.toast.error(e.message);
+      showProblem(problemId, { message: e.message, context: pairingContext, title: 'Why did pairing fail?' });
       // Restore badge
       if (badge) {
         badge.textContent = originalBadgeText;
@@ -458,6 +565,8 @@
     const btn = $('submitPinBtn');
 
     setButtonLoading(btn, true, 'Verifying...');
+    clearProblem('pinProblem');
+    const pinContext = 'Confirming the 4-digit PIN shown on the TV (POST /pair/grant with Digest authentication) failed in the plugin settings.';
 
     try {
       const result = await api.pairGrant(state.currentConfig.ip, pin);
@@ -494,12 +603,14 @@
         warnIfUnpinned(result);
       } else {
         homebridge.toast.error(result.error);
+        showProblem('pinProblem', { message: result.error, context: pinContext, title: 'Why was the PIN not accepted?' });
         setButtonLoading(btn, false, null, 'Confirm PIN');
         clearPinInputs();
         focusFirstPinInput();
       }
     } catch (e) {
       homebridge.toast.error(e.message);
+      showProblem('pinProblem', { message: e.message, context: pinContext, title: 'Why was the PIN not accepted?' });
       setButtonLoading(btn, false, null, 'Confirm PIN');
       clearPinInputs();
       focusFirstPinInput();
@@ -615,7 +726,7 @@
 
     setButtonLoading(btn, true, 'Pairing...');
     try {
-      if (!await startPairing(tv.ip, null)) {
+      if (!await startPairing(tv.ip, null, 'repairProblem')) {
         // The TV never got as far as showing a PIN — nothing to apply.
         state.repairingTvIndex = null;
       }
@@ -781,6 +892,13 @@
     const original = btn.innerHTML;
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Detecting...';
+    clearProblem('detectProblem');
+    const detectProblem = (message) => showProblem('detectProblem', {
+      message,
+      context: 'Detecting the app open on the TV (GET /activities/current) to add it as a custom app failed in the plugin settings.',
+      device: assistantTv(tv),
+      title: 'Why was no app detected?',
+    });
     try {
       const res = await api.currentApp({ ...tv, ip, mac });
       if (res && res.success && res.app) {
@@ -801,9 +919,11 @@
       } else {
         homebridge.toast.error((res && res.error) || 'No app detected');
         $('customAppDetectInfo').textContent = '';
+        detectProblem((res && res.error) || 'No app detected');
       }
     } catch (e) {
       homebridge.toast.error('Detection failed: ' + e.message);
+      detectProblem('Detection failed: ' + e.message);
     } finally {
       btn.disabled = false;
       btn.innerHTML = original;
@@ -1034,6 +1154,13 @@
     $('sourcesListContainer').style.display = 'none';
     $('sourcesErrorContainer').style.display = 'block';
     $('sourcesErrorMessage').textContent = message;
+    const tv = state.configuredTvs[state.editingSourcesTvIndex];
+    renderExplain($('sourcesAssistant'), {
+      error: message,
+      context: 'Loading the TV\'s sources and apps (GET /sources and /applications, 15 second budget) failed in the plugin settings.',
+      device: tv ? assistantTv(tv) : undefined,
+      title: 'Why could the sources not be loaded?',
+    });
   };
 
   const renderSourcesList = () => {
@@ -1283,6 +1410,8 @@
     spinner.style.display = 'inline-block';
     container.innerHTML = '';
     listDiv.style.display = 'none';
+    clearProblem('pairingProblem');
+    const discoveryContext = 'Discovering TVs over mDNS (_androidtvremote2._tcp, 5 second scan) from the plugin settings.';
 
     try {
       const devices = await api.discover();
@@ -1294,6 +1423,13 @@
           ? 'All discovered TVs are already configured.'
           : 'No Android TVs found. Make sure your TV is on and connected to the same network.';
         showAlert(container, devices.length ? 'success' : 'warning', msg);
+        if (!devices.length) {
+          renderExplain(container.appendChild(document.createElement('div')), {
+            error: msg,
+            context: discoveryContext,
+            title: 'Why was no TV found?',
+          });
+        }
         listDiv.style.display = 'contents';
       } else {
         container.innerHTML = '<h6>Found Devices:</h6><ul class="list-group mb-3" id="deviceItems"></ul>';
@@ -1303,6 +1439,11 @@
       }
     } catch (e) {
       showAlert(container, 'danger', `Error: ${e.message}`);
+      renderExplain(container.appendChild(document.createElement('div')), {
+        error: e.message,
+        context: discoveryContext,
+        title: 'Why did discovery fail?',
+      });
       listDiv.style.display = 'contents';
     } finally {
       btn.disabled = false;
@@ -1420,6 +1561,31 @@
   // ============================================================================
 
   setupDragAndDrop();
+
+  $('configuredTvList').addEventListener('click', (e) => {
+    const button = e.target.closest('.js-explain-tv');
+    const row = button && button.closest('[data-tv-index]');
+    const tv = row && state.configuredTvs[Number(row.dataset.tvIndex)];
+    if (!tv) {
+      return;
+    }
+    explainWithAssistant(button, row.querySelector('.assistant-answer'), {
+      error: tvProblem(tv) || 'The TV does not respond as expected.',
+      context: assistantContext('The user is looking at the list of configured TVs in the plugin settings.'),
+      device: assistantTv(tv),
+      title: `Why does ${tv.name || 'this TV'} need attention?`,
+    });
+  });
+
+  try {
+    if (window.MpKit && MpKit.ai) {
+      const status = await MpKit.ai.status();
+      assistantEnabled = !!(status && status.enabled);
+      $('assistantHint').style.display = assistantEnabled ? 'none' : '';
+    }
+  } catch {
+    // Routes missing or older Homebridge UI: no Assistant
+  }
 
   const config = await homebridge.getPluginConfig();
   if (config.length && config[0].devices?.length) {

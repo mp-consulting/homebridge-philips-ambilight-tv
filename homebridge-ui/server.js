@@ -27,6 +27,7 @@ import {
 } from '../dist/api/utils.js';
 import { PhilipsTVClient, HOME_URI, WATCH_TV_URI } from '../dist/api/PhilipsTVClient.js';
 import { isSystemForegroundPackage } from '../dist/services/inputs/constants.js';
+import { registerAssistant } from './assistant.js';
 
 const getMAC = promisify(arp.getMAC);
 
@@ -126,6 +127,9 @@ export class UiServer extends HomebridgePluginUiServer {
     this.onRequest('/pair-grant', this.pairGrant.bind(this));
     this.onRequest('/get-sources', this.getSources.bind(this));
     this.onRequest('/current-app', this.getCurrentApp.bind(this));
+
+    // Assistant: /ai/status, /ai/explain, /ai/ask, /ai/config (configured in Homebridge AI Kit)
+    registerAssistant(this);
 
     this.ready();
   }

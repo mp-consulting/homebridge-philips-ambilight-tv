@@ -2,7 +2,7 @@
   "name": "@mp-consulting/homebridge-philips-ambilight-tv",
   "displayName": "Philips Ambilight TV",
   "type": "module",
-  "version": "1.8.2",
+  "version": "1.9.0",
   "description": "Homebridge plugin to control Philips Ambilight TV as a HomeKit Television accessory.",
   "author": "Mickael Palma",
   "license": "(Apache-2.0 AND MIT)",
@@ -32,7 +32,7 @@
     "homebridge": "^1.8.0 || ^2.0.0-beta.0"
   },
   "scripts": {
-    "copy:ui-assets": "mkdir -p homebridge-ui/public/lib/fonts && cp node_modules/@mp-consulting/homebridge-ui-kit/dist/kit.css node_modules/@mp-consulting/homebridge-ui-kit/dist/kit.js homebridge-ui/public/lib/ && cp node_modules/bootstrap/dist/css/bootstrap.min.css node_modules/bootstrap/dist/js/bootstrap.bundle.min.js homebridge-ui/public/lib/ && cp node_modules/bootstrap-icons/font/bootstrap-icons.min.css homebridge-ui/public/lib/ && cp node_modules/bootstrap-icons/font/fonts/bootstrap-icons.woff node_modules/bootstrap-icons/font/fonts/bootstrap-icons.woff2 homebridge-ui/public/lib/fonts/ && perl -pi -e 's{^\\s*/[*/]# sourceMappingURL=.*$}{}' homebridge-ui/public/lib/bootstrap.min.css homebridge-ui/public/lib/bootstrap.bundle.min.js",
+    "copy:ui-assets": "mp-ui-kit-copy --vendor",
     "build": "npm run copy:ui-assets && rimraf ./dist && tsc",
     "lint": "eslint . --max-warnings=0",
     "prepublishOnly": "npm test && npm run lint && npm run build",
@@ -45,6 +45,7 @@
   },
   "dependencies": {
     "@homebridge/plugin-ui-utils": "^2.2.6",
+    "@mp-consulting/homebridge-ai-kit": "file:../homebridge-mcp-server",
     "bonjour-service": "^1.4.4",
     "class-validator": "^0.15.1",
     "node-arp": "^1.0.6",
@@ -52,7 +53,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@mp-consulting/homebridge-ui-kit": "^1.1.0",
+    "@mp-consulting/homebridge-ui-kit": "file:../homebridge-ui-kit",
     "@types/node": "^26.6.4",
     "@vitest/coverage-v8": "^5.0.3",
     "bootstrap": "^5.3.8",
