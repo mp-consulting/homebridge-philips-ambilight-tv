@@ -45,7 +45,7 @@
   },
   "dependencies": {
     "@homebridge/plugin-ui-utils": "^2.2.6",
-    "@mp-consulting/homebridge-ai-core": "file:../homebridge-mcp-server/packages/ai-core",
+    "@mp-consulting/homebridge-ai-core": "^2.0.0",
     "bonjour-service": "^1.4.4",
     "class-validator": "^0.15.1",
     "node-arp": "^1.0.6",
@@ -53,7 +53,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@mp-consulting/homebridge-ui-kit": "file:../homebridge-ui-kit",
+    "@mp-consulting/homebridge-ui-kit": "^1.2.0",
     "@types/node": "^26.6.4",
     "@vitest/coverage-v8": "^5.0.3",
     "bootstrap": "^5.3.8",
