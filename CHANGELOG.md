@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased] - 1.9.0
+## [1.9.0] - 2026-10-04
 
 ### Added
 
@@ -12,10 +12,6 @@ All notable changes to this project will be documented in this file.
 ### Changed
 
 - **UI assets are vendored with `mp-ui-kit-copy --vendor`** from `@mp-consulting/homebridge-ui-kit` 1.2.0 instead of a hand-written copy script; `homebridge-ui/public/lib/` keeps the same layout and now also contains `ai.css`.
-
-### Release blockers
-
-- `@mp-consulting/homebridge-ai-core` (`file:../homebridge-mcp-server/packages/ai-core`) and `@mp-consulting/homebridge-ui-kit` (`file:../homebridge-ui-kit`) are local, unpublished checkouts. Change them to `^2.0.0` and `^1.2.0` once published, and regenerate `package-lock.json`.
 
 ## [1.8.2] - 2026-10-03
 
