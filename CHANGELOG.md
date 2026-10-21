@@ -12,6 +12,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- **Settings page** uses `@mp-consulting/homebridge-ui-kit` 1.4.0: long device names wrap to two lines, tabs scroll instead of wrapping, buttons press in, hover effects only apply with a mouse or trackpad, dialogs and toasts ease in and out, and the Assistant glow no longer repaints every frame.
 - **Settings page**: hiding, showing and reordering sources animates, screens and panels fade in, and a rejected PIN shakes (red border only with reduced motion).
 
 ## [1.9.2] - 2026-10-04
