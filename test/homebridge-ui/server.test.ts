@@ -30,6 +30,8 @@ const mocks = vi.hoisted(() => ({
     close: vi.fn(),
   },
   clientConfigs: [] as unknown[],
+  /** The 'up' listener of the current mDNS browse, to announce services by hand. */
+  onServiceUp: null as ((service: Record<string, unknown>) => void) | null,
 }));
 
 vi.mock('@homebridge/plugin-ui-utils', () => ({
@@ -44,7 +46,19 @@ vi.mock('@homebridge/plugin-ui-utils', () => ({
   },
 }));
 
-vi.mock('bonjour-service', () => ({ Bonjour: class {} }));
+vi.mock('bonjour-service', () => ({
+  Bonjour: class {
+    find() {
+      return {
+        on: (_event: string, listener: (service: Record<string, unknown>) => void) => {
+          mocks.onServiceUp = listener;
+        },
+        stop: () => {},
+      };
+    }
+    destroy() {}
+  },
+}));
 
 vi.mock('node-arp', () => ({ default: { getMAC: mocks.getMAC } }));
 
@@ -154,6 +168,34 @@ describe('homebridge-ui server', () => {
       const result = await call('/wake-on-lan', { mac: 'not-a-mac' });
       expect(result.success).toBe(false);
       expect(mocks.wol).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('/discover', () => {
+    const discover = async (services: Record<string, unknown>[]) => {
+      vi.useFakeTimers();
+      const pending = call('/discover');
+      services.forEach(service => mocks.onServiceUp!(service));
+      await vi.advanceTimersByTimeAsync(10_000);
+      return (await pending) as unknown as Array<Record<string, unknown>>;
+    };
+
+    it('keeps two TVs that share a fallback address apart', async () => {
+      const devices = await discover([
+        { name: 'Living Room', fqdn: 'Living Room._androidtvremote2._tcp.local', addresses: ['fe80::1'] },
+        { name: 'Bedroom', fqdn: 'Bedroom._androidtvremote2._tcp.local', addresses: ['fe80::1'] },
+      ]);
+      expect(devices.map(d => d.name)).toEqual(['Living Room', 'Bedroom']);
+      expect(devices[0]).not.toHaveProperty('key');
+    });
+
+    it('merges a repeat announcement and picks up its IPv4 address', async () => {
+      const devices = await discover([
+        { name: 'Living Room', fqdn: 'Living Room._androidtvremote2._tcp.local', addresses: ['fe80::1'] },
+        { name: 'Living Room', fqdn: 'Living Room._androidtvremote2._tcp.local', addresses: ['192.168.1.20'] },
+      ]);
+      expect(devices).toHaveLength(1);
+      expect(devices[0]).toMatchObject({ host: '192.168.1.20', addresses: ['fe80::1', '192.168.1.20'] });
     });
   });
 

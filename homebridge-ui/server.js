@@ -154,15 +154,25 @@ export class UiServer extends HomebridgePluginUiServer {
           type: service.type,
         };
 
-        if (!devices.some(d => d.host === device.host)) {
-          devices.push(device);
+        // One entry per announced service. The fqdn (instance name + type) is
+        // unique per TV on the network; keying on the address instead merged
+        // distinct TVs whose IPv4 was missing and fell back to the same IPv6 or
+        // hostname. A repeat announcement (e.g. another interface) adds its
+        // addresses, so an IPv4 seen only on the second one is not lost.
+        const key = service.fqdn || `${service.name}|${device.host}`;
+        const existing = devices.find(d => d.key === key);
+        if (existing) {
+          existing.addresses = [...new Set([...existing.addresses, ...device.addresses])];
+          existing.host = extractIpv4({ addresses: existing.addresses, host: existing.host });
+          return;
         }
+        devices.push({ key, ...device });
       });
 
       setTimeout(() => {
         browser.stop();
         bonjour.destroy();
-        resolve(devices);
+        resolve(devices.map(({ key: _key, ...device }) => device));
       }, DISCOVERY_TIMEOUT);
     });
   }

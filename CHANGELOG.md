@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+
+- **Settings page**: button spinners show again (a global rule hid them all), long app package names and errors wrap instead of pushing buttons off the card, and the TV list, sources and edit tabs fit on a phone.
+- **Discovery**: TVs are matched by their mDNS name, so two TVs without an IPv4 address are no longer merged into one, and a TV with no IPv4 address cannot be selected.
+- **Settings page**: names are limited to HomeKit's 64 characters, and the remote key picker disables itself once every key is used.
+
+### Changed
+
+- **Settings page** uses `@mp-consulting/homebridge-ui-kit` 1.4.0: long device names wrap to two lines, tabs scroll instead of wrapping, buttons press in, hover effects only apply with a mouse or trackpad, dialogs and toasts ease in and out, and the Assistant glow no longer repaints every frame.
+- **Settings page**: hiding, showing and reordering sources animates, screens and panels fade in, and a rejected PIN shakes (red border only with reduced motion).
+
 ## [1.9.2] - 2026-10-04
 
 ### Fixed
