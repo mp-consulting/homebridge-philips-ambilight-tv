@@ -40,11 +40,13 @@
     escapeHtml,
     normalizeMac,
     isValidIpv4,
+    deviceIpv4,
     injectCustomApps,
     mergeSourcesWithConfig,
     reorderVisible,
     moveVisibleSource,
     toSourceConfig,
+    viewTransitionName,
     debounce,
     withTimeout,
     scrubAddresses,
@@ -86,6 +88,8 @@
       btn.innerHTML = originalContent || btn.dataset.originalContent;
     }
   };
+
+  const prefersReducedMotion = () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true;
 
   /** Render an alert. `message` is untrusted, so it is set as text, never HTML. */
   const showAlert = (container, type, message) => {
@@ -161,7 +165,7 @@
     container.innerHTML = `
       <div class="alert alert-danger mb-0">
         <div class="d-flex justify-content-between align-items-start gap-2">
-          <div class="problem-message"><i class="bi bi-exclamation-triangle me-1"></i></div>
+          <div class="problem-message flex-grow-1 text-break min-w-0"><i class="bi bi-exclamation-triangle me-1"></i></div>
           <div class="problem-action flex-shrink-0"></div>
         </div>
       </div>
@@ -211,8 +215,6 @@
   // UTILITIES
   // ============================================================================
 
-  const getDeviceIp = (device) => device.host || device.addresses[0];
-
   const resetCurrentConfig = () => {
     state.currentConfig = { name: '', ip: '', mac: '', username: '', password: '' };
     state.repairingTvIndex = null;
@@ -226,6 +228,28 @@
   const clearPinInputs = () => {
     const digits = document.querySelectorAll('.pin-digit');
     digits.forEach(d => d.value = '');
+  };
+
+  const clearPinInvalid = () => {
+    document.querySelectorAll('.pin-digit').forEach((d) => {
+      d.classList.remove('is-invalid');
+      d.removeAttribute('aria-invalid');
+    });
+  };
+
+  /** The TV rejected the PIN: flag the digits, shake the group (CSS skips the
+   *  shake under reduced motion) and start over from the first digit. */
+  const rejectPin = () => {
+    clearPinInputs();
+    document.querySelectorAll('.pin-digit').forEach((d) => {
+      d.classList.add('is-invalid');
+      d.setAttribute('aria-invalid', 'true');
+    });
+    const group = $('pinInputGroup');
+    group.classList.remove('pin-shake');
+    void group.offsetWidth; // restart the animation on a repeat rejection
+    group.classList.add('pin-shake');
+    focusFirstPinInput();
   };
 
   const focusFirstPinInput = () => {
@@ -318,19 +342,26 @@
     li.dataset.tvIndex = String(index);
     const problem = assistantEnabled ? tvProblem(tv) : null;
     const explainButton = problem
-      ? MpKit.ai.renderButton({ label: 'Explain', size: 'sm', className: 'js-explain-tv me-2', title: 'Explain this TV problem' })
+      ? MpKit.ai.renderButton({ label: 'Explain', size: 'sm', className: 'js-explain-tv', title: 'Explain this TV problem' })
       : '';
+    const label = escapeHtml(tv.name || tv.ip);
     li.innerHTML = `
-      <div class="d-flex w-100 justify-content-between align-items-center">
-        <div>
+      <div class="d-flex flex-wrap gap-2 align-items-center">
+        <div class="flex-grow-1 min-w-0 text-break">
           <h6 class="mb-1"><i class="bi bi-tv me-2" aria-hidden="true"></i> ${escapeHtml(tv.name)}</h6>
           <small class="text-muted"><i class="bi bi-hdd-network me-1" aria-hidden="true"></i> ${escapeHtml(tv.ip)}</small>
         </div>
-        <div>
+        <div class="d-flex flex-wrap gap-2">
           ${explainButton}
-          <button type="button" class="btn btn-sm btn-secondary edit-sources-btn me-2"><i class="bi bi-list" aria-hidden="true"></i> Sources</button>
-          <button type="button" class="btn btn-sm btn-primary edit-tv-btn me-2"><i class="bi bi-pencil" aria-hidden="true"></i> Edit</button>
-          <button type="button" class="btn btn-sm btn-danger delete-tv-btn"><i class="bi bi-trash" aria-hidden="true"></i> Delete</button>
+          <button type="button" class="btn btn-sm btn-secondary edit-sources-btn" aria-label="Sources for ${label}">
+            <i class="bi bi-list" aria-hidden="true"></i><span class="d-none d-sm-inline ms-1">Sources</span>
+          </button>
+          <button type="button" class="btn btn-sm btn-primary edit-tv-btn" aria-label="Edit ${label}">
+            <i class="bi bi-pencil" aria-hidden="true"></i><span class="d-none d-sm-inline ms-1">Edit</span>
+          </button>
+          <button type="button" class="btn btn-sm btn-danger delete-tv-btn" aria-label="Delete ${label}">
+            <i class="bi bi-trash" aria-hidden="true"></i><span class="d-none d-sm-inline ms-1">Delete</span>
+          </button>
         </div>
       </div>
       <div class="assistant-answer mt-2" style="display: none;"></div>
@@ -346,7 +377,7 @@
       try {
         await deleteTv(index);
       } catch (e) {
-        setButtonLoading(this, false, null, '<i class="bi bi-trash"></i> Delete');
+        setButtonLoading(this, false);
         homebridge.toast.error('Failed to delete TV: ' + e.message);
       }
     });
@@ -421,7 +452,10 @@
   };
 
   const selectDevice = async (device, listItem) => {
-    const ip = getDeviceIp(device);
+    const ip = deviceIpv4(device);
+    if (!ip) {
+      return;
+    }
     state.currentConfig.ip = ip;
     state.currentConfig.name = device.name || 'Philips TV';
     // Never carry a previously-selected TV's MAC over to this one.
@@ -464,6 +498,7 @@
         const submitBtn = $('submitPinBtn');
 
         clearPinInputs();
+        clearPinInvalid();
         submitBtn.disabled = false;
         submitBtn.textContent = 'Confirm PIN';
 
@@ -502,18 +537,24 @@
   };
 
   const createDeviceListItem = (device) => {
-    const ip = getDeviceIp(device);
+    // Only IPv4 is usable; a TV that announced just an IPv6 (often link-local)
+    // address or a hostname is listed but cannot be selected.
+    const ip = deviceIpv4(device);
     const li = document.createElement('li');
-    li.className = 'list-group-item list-group-item-action';
-    li.dataset.ip = ip;
+    li.className = ip ? 'list-group-item list-group-item-action' : 'list-group-item';
+    li.dataset.ip = ip || '';
+    const address = ip ? escapeHtml(ip) : 'No IPv4 address';
+    const badge = ip
+      ? '<span class="badge bg-primary rounded-pill select-badge">Select</span>'
+      : '<span class="badge bg-secondary rounded-pill opacity-50" aria-disabled="true">Select</span>';
     li.innerHTML = `
-      <div class="device-row" style="cursor: pointer;">
+      <div class="device-row"${ip ? ' style="cursor: pointer;"' : ''}>
         <div class="d-flex w-100 justify-content-between align-items-center">
           <div>
             <h6 class="mb-1"><i class="bi bi-tv me-2" aria-hidden="true"></i> ${escapeHtml(device.name || 'Unknown Device')}</h6>
-            <small class="text-muted"><i class="bi bi-hdd-network me-1" aria-hidden="true"></i> ${escapeHtml(ip)}</small>
+            <small class="text-muted"><i class="bi bi-hdd-network me-1" aria-hidden="true"></i> ${address}</small>
           </div>
-          <span class="badge bg-primary rounded-pill select-badge">Select</span>
+          ${badge}
         </div>
       </div>
       <div class="wol-collapse mt-2" style="display: none;">
@@ -532,6 +573,9 @@
 
     li.querySelector('.device-row').addEventListener('click', async (e) => {
       e.preventDefault();
+      if (!ip) {
+        return;
+      }
       // A double-click must not start two pairing requests (the second would
       // replace the TV's PIN and the first session's auth key).
       if (state.pairingInFlight) {
@@ -605,15 +649,13 @@
         homebridge.toast.error(result.error);
         showProblem('pinProblem', { message: result.error, context: pinContext, title: 'Why was the PIN not accepted?' });
         setButtonLoading(btn, false, null, 'Confirm PIN');
-        clearPinInputs();
-        focusFirstPinInput();
+        rejectPin();
       }
     } catch (e) {
       homebridge.toast.error(e.message);
       showProblem('pinProblem', { message: e.message, context: pinContext, title: 'Why was the PIN not accepted?' });
       setButtonLoading(btn, false, null, 'Confirm PIN');
-      clearPinInputs();
-      focusFirstPinInput();
+      rejectPin();
     }
   };
 
@@ -760,8 +802,9 @@
     }
     apps.forEach((app, i) => {
       const li = document.createElement('li');
-      li.className = 'list-group-item d-flex justify-content-between align-items-center';
+      li.className = 'list-group-item d-flex justify-content-between align-items-center gap-2';
       const info = document.createElement('div');
+      info.className = 'flex-grow-1 custom-app-info';
       const title = document.createElement('div');
       title.textContent = app.name;
       const sub = document.createElement('small');
@@ -771,7 +814,7 @@
       info.appendChild(sub);
       const remove = document.createElement('button');
       remove.type = 'button';
-      remove.className = 'btn btn-sm btn-outline-danger';
+      remove.className = 'btn btn-sm btn-outline-danger flex-shrink-0';
       remove.innerHTML = '<i class="bi bi-trash" aria-hidden="true"></i>';
       remove.setAttribute('aria-label', `Remove ${app.name}`);
       remove.addEventListener('click', () => {
@@ -829,8 +872,9 @@
     }
     buttons.forEach((button, i) => {
       const li = document.createElement('li');
-      li.className = 'list-group-item d-flex justify-content-between align-items-center';
+      li.className = 'list-group-item d-flex justify-content-between align-items-center gap-2';
       const info = document.createElement('div');
+      info.className = 'flex-grow-1 min-w-0 text-break';
       const title = document.createElement('div');
       title.textContent = button.name;
       const sub = document.createElement('small');
@@ -840,7 +884,7 @@
       info.appendChild(sub);
       const remove = document.createElement('button');
       remove.type = 'button';
-      remove.className = 'btn btn-sm btn-outline-danger';
+      remove.className = 'btn btn-sm btn-outline-danger flex-shrink-0';
       remove.innerHTML = '<i class="bi bi-trash" aria-hidden="true"></i>';
       remove.setAttribute('aria-label', `Remove ${button.name}`);
       remove.addEventListener('click', () => {
@@ -856,13 +900,24 @@
     const used = new Set(buttons.map(b => b.key));
     const select = $('customButtonKey');
     select.innerHTML = '';
-    REMOTE_KEYS.filter(k => !used.has(k)).forEach(k => {
+    const free = REMOTE_KEYS.filter(k => !used.has(k));
+    free.forEach(k => {
       const option = document.createElement('option');
       option.value = k;
       option.textContent = k;
       select.appendChild(option);
     });
-    select.value = used.has('Stop') ? select.options[0]?.value : 'Stop';
+    // Every key is taken: nothing left to add, so say so and lock the controls.
+    const exhausted = free.length === 0;
+    if (exhausted) {
+      const option = document.createElement('option');
+      option.value = '';
+      option.textContent = 'All keys are in use';
+      select.appendChild(option);
+    }
+    select.disabled = exhausted;
+    $('addCustomButtonBtn').disabled = exhausted;
+    select.value = exhausted ? '' : (used.has('Stop') ? free[0] : 'Stop');
   };
 
   const addCustomButton = () => {
@@ -1197,14 +1252,29 @@
    *  so they are always escaped before they reach the page. */
   const sourceLabel = (source) => escapeHtml(source.customName || source.name);
 
+  /**
+   * Re-render after a hide/show inside a view transition, so the item morphs
+   * across columns (each li carries a unique view-transition-name). Falls back
+   * to a plain render without the API or under reduced motion.
+   */
+  const renderSourcesListAnimated = () => {
+    if (typeof document.startViewTransition !== 'function' || prefersReducedMotion()) {
+      renderSourcesList();
+      return;
+    }
+    // `ready` rejects when the transition is skipped; the DOM update still runs.
+    document.startViewTransition(renderSourcesList).ready.catch(() => {});
+  };
+
   const createHiddenSourceItem = (source, index) => {
     const li = document.createElement('li');
     li.className = 'list-group-item source-item source-hidden';
     li.dataset.index = index;
     li.dataset.id = source.id;
+    li.style.viewTransitionName = viewTransitionName(source.id);
 
     li.innerHTML = `
-      <span class="source-name">${sourceLabel(source)}</span>
+      <span class="source-name" title="${sourceLabel(source)}">${sourceLabel(source)}</span>
       ${getSourceTypeBadge(source)}
       <div class="source-actions ms-auto">
         <button type="button" class="show-btn" title="Add to visible" aria-label="Show ${sourceLabel(source)}">
@@ -1216,7 +1286,7 @@
     li.querySelector('.show-btn').addEventListener('click', async (e) => {
       e.stopPropagation();
       source.visible = true;
-      renderSourcesList();
+      renderSourcesListAnimated();
       await saveSourcesConfig();
     });
 
@@ -1232,10 +1302,11 @@
     // Focusable so the list can be reordered from the keyboard (Alt+↑/↓).
     li.tabIndex = 0;
     li.setAttribute('aria-label', `${source.customName || source.name}. Press Alt and an arrow key to move.`);
+    li.style.viewTransitionName = viewTransitionName(source.id);
 
     li.innerHTML = `
       <span class="drag-handle" aria-hidden="true"><i class="bi bi-grip-vertical"></i></span>
-      <span class="source-name">${sourceLabel(source)}</span>
+      <span class="source-name" title="${sourceLabel(source)}">${sourceLabel(source)}</span>
       ${getSourceTypeBadge(source)}
       <div class="source-actions ms-auto">
         <button type="button" class="hide-btn" title="Hide source" aria-label="Hide ${sourceLabel(source)}">
@@ -1247,7 +1318,7 @@
     li.querySelector('.hide-btn').addEventListener('click', async (e) => {
       e.stopPropagation();
       source.visible = false;
-      renderSourcesList();
+      renderSourcesListAnimated();
       await saveSourcesConfig();
     });
 
@@ -1330,6 +1401,41 @@
     homebridge.toast.success('Order saved');
   };
 
+  /**
+   * Run `move` (a DOM reorder) and slide the siblings it displaced from their
+   * old spot to the new one (FLIP). Each sibling is measured without any
+   * in-flight transform, so an interrupted slide restarts from where it is.
+   */
+  const flipSiblings = (list, move) => {
+    if (prefersReducedMotion()) {
+      move();
+      return;
+    }
+    const siblings = Array.from(list.querySelectorAll('.source-item')).filter(el => el !== state.draggedItem);
+    const before = new Map(siblings.map(el => [el, el.getBoundingClientRect().top]));
+    move();
+    // Drop any in-flight slide so the reads below see the new layout position.
+    siblings.forEach((el) => {
+      el.style.transition = 'none';
+      el.style.transform = '';
+    });
+    const moved = siblings.filter((el) => {
+      const dy = before.get(el) - el.getBoundingClientRect().top;
+      if (Math.abs(dy) < 0.5) {
+        return false;
+      }
+      el.style.transform = `translateY(${dy}px)`;
+      return true;
+    });
+    void list.offsetHeight; // commit the start positions
+    siblings.forEach((el) => {
+      el.style.transition = ''; // back to the stylesheet's transform transition
+    });
+    moved.forEach((el) => {
+      el.style.transform = '';
+    });
+  };
+
   const handleDragOver = (e) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
@@ -1348,12 +1454,13 @@
     const midY = rect.top + rect.height / 2;
 
     // Determine if we should insert before or after the target
+    const dragged = state.draggedItem;
     if (e.clientY < midY) {
-      if (target.previousElementSibling !== state.draggedItem) {
-        list.insertBefore(state.draggedItem, target);
+      if (target.previousElementSibling !== dragged) {
+        flipSiblings(list, () => list.insertBefore(dragged, target));
       }
-    } else if (target.nextElementSibling !== state.draggedItem) {
-      list.insertBefore(state.draggedItem, target.nextElementSibling);
+    } else if (target.nextElementSibling !== dragged) {
+      flipSiblings(list, () => list.insertBefore(dragged, target.nextElementSibling));
     }
   };
 
@@ -1416,7 +1523,7 @@
     try {
       const devices = await api.discover();
       const configuredIps = state.configuredTvs.map(tv => tv.ip);
-      const available = devices.filter(d => !configuredIps.includes(getDeviceIp(d)));
+      const available = devices.filter(d => !configuredIps.includes(deviceIpv4(d)));
 
       if (!available.length) {
         const msg = devices.length
@@ -1464,6 +1571,7 @@
     // Only allow numbers
     input.addEventListener('input', (e) => {
       e.target.value = e.target.value.replace(/[^0-9]/g, '');
+      clearPinInvalid();
       // Auto-advance to next input
       if (e.target.value && index < inputs.length - 1) {
         inputs[index + 1].focus();
@@ -1484,6 +1592,7 @@
     // Select all on focus for easy replacement
     input.addEventListener('focus', (e) => e.target.select());
   });
+  $('pinInputGroup').addEventListener('animationend', (e) => e.currentTarget.classList.remove('pin-shake'));
 
   $('cancelPairingBtn').addEventListener('click', () => {
     // Abandoning a re-pair leaves the existing credentials in place and goes

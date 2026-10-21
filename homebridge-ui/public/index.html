@@ -94,7 +94,7 @@
           <div class="alert alert-success mb-3">
             <i class="bi bi-check-circle"></i> Pairing successful! Please review and customize the TV details below.
           </div>
-          <ul class="nav nav-tabs mb-3" id="confirmTabs" role="tablist">
+          <ul class="nav nav-tabs app-tabs mb-3" id="confirmTabs" role="tablist">
             <li class="nav-item" role="presentation">
               <button class="nav-link active" id="confirmGeneralTab" data-bs-toggle="tab" data-bs-target="#confirmGeneralPane" type="button" role="tab"><i class="bi bi-sliders me-1"></i>General</button>
             </li>
@@ -120,7 +120,7 @@
                     <h6 class="text-muted mb-3">Connection</h6>
                     <div class="mb-3">
                       <label for="confirmTvName" class="form-label">TV Name</label>
-                      <input type="text" class="form-control" id="confirmTvName" placeholder="Living Room TV" required>
+                      <input type="text" class="form-control" id="confirmTvName" placeholder="Living Room TV" maxlength="64" required>
                       <div class="invalid-feedback">Please provide a TV name.</div>
                     </div>
                     <div class="mb-3">
@@ -290,7 +290,7 @@
       </div>
       <!-- Re-pair error + Assistant explanation (filled by app.js) -->
       <div id="repairProblem" class="mb-3" style="display: none;"></div>
-      <ul class="nav nav-tabs mb-3" id="editTabs" role="tablist">
+      <ul class="nav nav-tabs app-tabs mb-3" id="editTabs" role="tablist">
         <li class="nav-item" role="presentation">
           <button class="nav-link active" id="editGeneralTab" data-bs-toggle="tab" data-bs-target="#editGeneralPane" type="button" role="tab"><i class="bi bi-sliders me-1"></i>General</button>
         </li>
@@ -317,7 +317,7 @@
                 <h6 class="text-muted mb-3">Connection</h6>
                 <div class="mb-3">
                   <label for="editTvName" class="form-label">TV Name</label>
-                  <input type="text" class="form-control" id="editTvName" placeholder="Living Room TV" required>
+                  <input type="text" class="form-control" id="editTvName" placeholder="Living Room TV" maxlength="64" required>
                   <div class="invalid-feedback">Please provide a TV name.</div>
                 </div>
                 <div class="mb-3">
@@ -458,7 +458,7 @@
             <div class="row g-2">
               <div class="col-md-3">
                 <label for="customAppName" class="form-label small mb-1">Name</label>
-                <input type="text" class="form-control form-control-sm" id="customAppName" placeholder="EON">
+                <input type="text" class="form-control form-control-sm" id="customAppName" placeholder="EON" maxlength="64">
               </div>
               <div class="col-md-4">
                 <label for="customAppPackage" class="form-label small mb-1">Package name</label>
@@ -486,7 +486,7 @@
             <div class="row g-2 align-items-end">
               <div class="col-md-5">
                 <label for="customButtonName" class="form-label small mb-1">Name</label>
-                <input type="text" class="form-control form-control-sm" id="customButtonName" placeholder="Power Menu">
+                <input type="text" class="form-control form-control-sm" id="customButtonName" placeholder="Power Menu" maxlength="64">
               </div>
               <div class="col-md-5">
                 <label for="customButtonKey" class="form-label small mb-1">Remote key</label>
@@ -517,14 +517,14 @@
       </div>
       <div id="sourcesListContainer" style="display: none;">
         <div class="row g-2 mb-2">
-          <div class="col-6">
+          <div class="col-12 col-sm-6">
             <div class="sources-col-header">
               <span class="badge rounded-pill bg-secondary"><i class="bi bi-eye-slash me-1"></i>Hidden</span>
               <small class="text-muted sources-col-hint">click + to show</small>
             </div>
             <ul id="hiddenSourcesList" class="list-group sources-pool"></ul>
           </div>
-          <div class="col-6">
+          <div class="col-12 col-sm-6">
             <div class="sources-col-header">
               <span class="badge rounded-pill bg-primary"><i class="bi bi-eye me-1"></i>Visible</span>
               <small class="text-muted sources-col-hint">drag to reorder</small>

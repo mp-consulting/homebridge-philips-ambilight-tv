@@ -4,7 +4,9 @@
   text-align: left;
 }
 
-.spinner-border-sm {
+/* Only the Discover button's spinner starts hidden (app.js toggles it); the
+   spinners setButtonLoading() injects into other buttons must stay visible. */
+#discoverSpinner {
   display: none;
 }
 
@@ -19,10 +21,134 @@
   display: none;
 }
 
-/* Add borders to list groups */
-.list-group {
-  border: 1px solid rgba(0, 0, 0, 0.125);
-  border-radius: 0.25rem;
+/* ============================================================================
+   ENTER TRANSITIONS
+   Screens, the Wake-on-LAN panel and the problem panels fade in when they go
+   from display:none to shown. Reduced motion keeps the fade, drops the slide.
+   ============================================================================ */
+
+#wizardStep1,
+#wizardStep2,
+#wizardStep3,
+#successScreen,
+#editScreen,
+#editSourcesScreen,
+.wol-collapse,
+#pairingProblem,
+#pinProblem,
+#repairProblem,
+#detectProblem {
+  transition: opacity 200ms var(--mp-ease-out, cubic-bezier(0.23, 1, 0.32, 1));
+}
+
+@starting-style {
+  #wizardStep1,
+  #wizardStep2,
+  #wizardStep3,
+  #successScreen,
+  #editScreen,
+  #editSourcesScreen,
+  .wol-collapse,
+  #pairingProblem,
+  #pinProblem,
+  #repairProblem,
+  #detectProblem {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  #wizardStep1,
+  #wizardStep2,
+  #wizardStep3,
+  #successScreen,
+  #editScreen,
+  #editSourcesScreen,
+  .wol-collapse,
+  #pairingProblem,
+  #pinProblem,
+  #repairProblem,
+  #detectProblem {
+    transition:
+      opacity 200ms var(--mp-ease-out, cubic-bezier(0.23, 1, 0.32, 1)),
+      transform 200ms var(--mp-ease-out, cubic-bezier(0.23, 1, 0.32, 1));
+  }
+
+  @starting-style {
+    #wizardStep1,
+    #wizardStep2,
+    #wizardStep3,
+    #successScreen,
+    #editScreen,
+    #editSourcesScreen,
+    .wol-collapse,
+    #pairingProblem,
+    #pinProblem,
+    #repairProblem,
+    #detectProblem {
+      transform: translateY(6px);
+    }
+  }
+}
+
+/* ============================================================================
+   TABS
+   Keep the tab strip on one line on narrow screens and let it scroll sideways
+   instead of wrapping (same rules as the Daikin plugin's .app-tabs).
+   ============================================================================ */
+
+.app-tabs {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.app-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.app-tabs .nav-link {
+  white-space: nowrap;
+}
+
+/* ============================================================================
+   PIN ENTRY
+   ============================================================================ */
+
+/* The validation icon would crowd a single centred digit. */
+.pin-digit.is-invalid {
+  background-image: none;
+  padding-right: 1rem;
+}
+
+@keyframes pin-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(6px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(4px); }
+}
+
+/* Reduced motion: no shake, the is-invalid border carries the rejection. */
+@media (prefers-reduced-motion: no-preference) {
+  #pinInputGroup.pin-shake {
+    animation: pin-shake 300ms var(--mp-ease-out, cubic-bezier(0.23, 1, 0.32, 1));
+  }
+}
+
+/* ============================================================================
+   CUSTOM APPS
+   ============================================================================ */
+
+/* Package and activity names have no break points; let them wrap anywhere. */
+#customAppDetectInfo,
+.custom-app-info {
+  overflow-wrap: anywhere;
+}
+
+/* Lets a flex child shrink below its content width so its text can wrap. */
+.min-w-0 {
+  min-width: 0;
 }
 
 /* ============================================================================
@@ -58,7 +184,19 @@
 
 .sources-sortable .source-item {
   cursor: grab;
-  transition: opacity 0.2s ease, background-color 0.15s ease;
+  transition:
+    opacity 0.2s ease,
+    background-color 0.15s ease,
+    transform 150ms var(--mp-ease-out, cubic-bezier(0.23, 1, 0.32, 1));
+}
+
+/* Empty Visible column: say how to fill it instead of showing a blank box. */
+.sources-sortable:empty::after {
+  content: "No visible sources: click + on a hidden one";
+  display: block;
+  padding: 0.75rem;
+  font-size: 0.8rem;
+  color: var(--bs-secondary-color);
 }
 
 .sources-sortable .source-item:active {
@@ -130,4 +268,23 @@
 
 .source-item.source-hidden .source-name {
   color: var(--bs-secondary-color);
+}
+
+/* Hide/show morphs each source between the columns (app.js wraps the re-render
+   in a view transition and skips it under reduced motion). */
+::view-transition-group(*) {
+  animation-duration: 200ms;
+  animation-timing-function: var(--mp-ease-out, cubic-bezier(0.23, 1, 0.32, 1));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sources-sortable .source-item {
+    transition: opacity 0.2s ease, background-color 0.15s ease;
+  }
+
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none;
+  }
 }

@@ -49,6 +49,17 @@
     return /^[0-9a-f]{12}$/.test(hex) ? hex.match(/.{2}/g).join(':') : null;
   };
 
+  /**
+   * The IPv4 address of a discovered device, or null. mDNS can report only an
+   * IPv6 (often link-local) address or a hostname, and the plugin talks to TVs
+   * over IPv4 only, so anything else is not offered as selectable.
+   */
+  const deviceIpv4 = (device) => {
+    const candidates = [device?.host, ...(Array.isArray(device?.addresses) ? device.addresses : [])];
+    const ip = candidates.find(isValidIpv4);
+    return ip ? ip.trim() : null;
+  };
+
   // ============================================================================
   // SOURCES
   // ============================================================================
@@ -127,6 +138,15 @@
     visible: s.visible,
     customName: s.customName,
   }));
+
+  /**
+   * A view-transition-name for a source id. Ids are package names, URIs or
+   * free text, so every character outside [A-Za-z0-9-] is escaped as _<hex>_
+   * (underscore included): the result is a valid CSS ident and two distinct ids
+   * can never map to the same name.
+   */
+  const viewTransitionName = (id) => 'source-' + String(id ?? '')
+    .replace(/[^A-Za-z0-9-]/g, (ch) => `_${ch.codePointAt(0).toString(16)}_`);
 
   // ============================================================================
   // ASYNC UTILITIES
@@ -226,11 +246,13 @@
     escapeHtml,
     isValidIpv4,
     normalizeMac,
+    deviceIpv4,
     injectCustomApps,
     mergeSourcesWithConfig,
     reorderVisible,
     moveVisibleSource,
     toSourceConfig,
+    viewTransitionName,
     debounce,
     withTimeout,
     scrubAddresses,

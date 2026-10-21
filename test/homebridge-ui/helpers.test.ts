@@ -20,6 +20,8 @@ interface Helpers {
   escapeHtml: (value: unknown) => string;
   isValidIpv4: (ip: unknown) => boolean;
   normalizeMac: (mac: unknown) => string | null;
+  deviceIpv4: (device: unknown) => string | null;
+  viewTransitionName: (id: unknown) => string;
   injectCustomApps: (sources: Source[], customApps: unknown) => Source[];
   mergeSourcesWithConfig: (fetched: Source[], config: unknown) => Source[];
   reorderVisible: (sources: Source[], visibleIds: string[]) => Source[];
@@ -82,6 +84,35 @@ describe('homebridge-ui helpers', () => {
       expect(h.normalizeMac('aa:bb:cc')).toBeNull();
       expect(h.normalizeMac('zz:bb:cc:dd:ee:ff')).toBeNull();
       expect(h.normalizeMac(undefined)).toBeNull();
+    });
+  });
+
+  describe('deviceIpv4', () => {
+    it('prefers the IPv4 host, then the first IPv4 address', () => {
+      expect(h.deviceIpv4({ host: '192.168.1.20', addresses: ['fe80::1'] })).toBe('192.168.1.20');
+      expect(h.deviceIpv4({ host: 'fe80::1', addresses: ['fe80::1', '10.0.0.7'] })).toBe('10.0.0.7');
+      expect(h.deviceIpv4({ host: 'Philips-TV.local', addresses: ['10.0.0.8'] })).toBe('10.0.0.8');
+    });
+
+    it('returns null when only IPv6 addresses or hostnames are known', () => {
+      expect(h.deviceIpv4({ host: 'fe80::1', addresses: ['fe80::1'] })).toBeNull();
+      expect(h.deviceIpv4({ host: 'Philips-TV.local' })).toBeNull();
+      expect(h.deviceIpv4({ addresses: [] })).toBeNull();
+      expect(h.deviceIpv4(undefined)).toBeNull();
+    });
+  });
+
+  describe('viewTransitionName', () => {
+    it('builds a valid CSS ident from any source id', () => {
+      expect(h.viewTransitionName('com.netflix.ninja')).toBe('source-com_2e_netflix_2e_ninja');
+      expect(h.viewTransitionName('hdmi 1')).toMatch(/^[A-Za-z][A-Za-z0-9_-]*$/);
+      expect(h.viewTransitionName('<"x">')).toMatch(/^[A-Za-z][A-Za-z0-9_-]*$/);
+    });
+
+    it('never maps two distinct ids to the same name', () => {
+      const ids = ['a.b', 'a_b', 'a_2e_b', 'a-b', 'a b', 'A.b', ''];
+      const names = new Set(ids.map(h.viewTransitionName));
+      expect(names.size).toBe(ids.length);
     });
   });
 
