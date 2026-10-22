@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.9.5] - 2026-10-22
+
+### Notes
+
+- Development dependencies only: vitest 5.0.5, ESLint 10.13, typescript-eslint 8.71.2, `@types/node` 26.6.5, vite 8.3.4 and `bootstrap-icons` 1.13.2. The settings page bundles `bootstrap-icons`, but 1.13.2 changes no icons, so nothing changes for users.
+
 ## [1.9.4] - 2026-10-22
 
 ### Changed
