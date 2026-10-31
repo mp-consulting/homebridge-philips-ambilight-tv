@@ -5,7 +5,7 @@
   "version": "1.9.5",
   "description": "Homebridge plugin to control Philips Ambilight TV as a HomeKit Television accessory.",
   "author": "Mickael Palma",
-  "license": "(Apache-2.0 AND MIT)",
+  "license": "MIT",
   "funding": {
     "type": "paypal",
     "url": "https://paypal.me/mickaelpalma"
