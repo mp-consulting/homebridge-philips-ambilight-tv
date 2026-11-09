@@ -491,6 +491,55 @@ describe('PhilipsTVClient', () => {
       );
     });
 
+    it('switches off through the style menu once the menu has answered', async () => {
+      mockFetch
+        .mockReturnValueOnce(mockResponse(STRUCTURE))
+        .mockReturnValueOnce(currentResponse(2130968784))
+        .mockReturnValueOnce(mockResponse({}));
+
+      await run(client.getAmbilightMenuState());
+      expect(await run(client.setAmbilightOff())).toBe(true);
+
+      expect(mockFetch).toHaveBeenCalledTimes(3);
+      expect(mockFetch).toHaveBeenLastCalledWith(
+        expect.stringContaining('/menuitems/settings/update'),
+        expect.objectContaining({
+          body: JSON.stringify({ values: [{ value: { Nodeid: 2130968783, data: { activenode_id: 2130968789 } } }] }),
+        }),
+        expect.any(Number),
+      );
+    });
+
+    it('falls back to styleName OFF when the menu write fails', async () => {
+      mockFetch
+        .mockReturnValueOnce(mockResponse(STRUCTURE))
+        .mockReturnValueOnce(currentResponse(2130968784))
+        .mockReturnValueOnce(mockResponse(null, 500))
+        .mockReturnValueOnce(mockResponse({}));
+
+      await run(client.getAmbilightMenuState());
+      expect(await run(client.setAmbilightOff())).toBe(true);
+
+      expect(mockFetch).toHaveBeenLastCalledWith(
+        expect.stringContaining('/ambilight/currentconfiguration'),
+        expect.objectContaining({ body: JSON.stringify({ styleName: 'OFF', isExpert: false }) }),
+        expect.any(Number),
+      );
+    });
+
+    it('switches off through the style endpoint while the menu has not answered', async () => {
+      mockFetch.mockReturnValueOnce(mockResponse({}));
+
+      expect(await run(client.setAmbilightOff())).toBe(true);
+
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      expect(mockFetch).toHaveBeenLastCalledWith(
+        expect.stringContaining('/ambilight/currentconfiguration'),
+        expect.anything(),
+        expect.any(Number),
+      );
+    });
+
     it('falls back to the default brightness node when the structure is unavailable', async () => {
       mockFetch
         .mockReturnValueOnce(mockResponse(null, 404))

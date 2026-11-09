@@ -235,6 +235,18 @@ the `ambilight_off` child node.
 { "values": [{ "value": { "Nodeid": 2130968783, "data": { "activenode_id": 2130968789 } } }] }
 ```
 
+Switch off the same way, or the menu goes out of step: on these models
+`POST /ambilight/currentconfiguration {"styleName":"OFF"}` darkens the LEDs but
+leaves `activenode_id` on the last style, so a later read says "on". Selecting
+the `ambilight_off` child, as the Ambilight button on the remote does, keeps the
+two in step. Switching on through `/ambilight/power` and
+`/ambilight/currentconfiguration` does move the menu off its Off entry.
+
+```json
+// POST /menuitems/settings/update
+{ "values": [{ "value": { "Nodeid": 2130968783, "data": { "activenode_id": 2130968789 } } }] }
+```
+
 ### Ambilight + Hue
 
 Toggles the **Ambilight + Hue** integration (Philips Hue lamps following Ambilight).

@@ -170,6 +170,9 @@ export class PhilipsTVClient {
    *  structure could not be read, so the next caller tries again. */
   private ambilightMenuNodes: Promise<AmbilightMenuNodes | null> | null = null;
 
+  /** The nodes once resolved, for callers that must not wait on the structure. */
+  private resolvedMenuNodes: AmbilightMenuNodes | null = null;
+
   /** True once this TV is known to report Ambilight on/off through its menu. */
   private menuStateSupported = false;
 
@@ -731,10 +734,14 @@ export class PhilipsTVClient {
 
   /**
    * Turn Ambilight off.
-   * Tries styleName OFF first, falls back to /ambilight/power.
+   * On a TV whose menu reports on/off, selects the style menu's "Off" entry;
+   * otherwise (or if that fails) tries styleName OFF, then /ambilight/power.
    */
   setAmbilightOff(): Promise<boolean> {
     return this.interactive(async () => {
+      if (await this.setAmbilightMenuOff()) {
+        return true;
+      }
       const styleOff = await this.setAmbilightStyle('OFF');
       if (styleOff) {
         return true;
@@ -788,6 +795,25 @@ export class PhilipsTVClient {
     return active !== nodes.off;
   }
 
+  /**
+   * Select the Ambilight style menu's "Off" entry, as the TV's own Ambilight
+   * button does. Where on/off is read from the menu it must be written there
+   * too: a styleName OFF darkens the LEDs on some models (e.g. the
+   * 77OLED848/12) but leaves the menu on its last style, which the next poll
+   * would read back as on. Uses only nodes already resolved, so switching
+   * off never waits on the menu structure.
+   */
+  private async setAmbilightMenuOff(): Promise<boolean> {
+    const nodes = this.resolvedMenuNodes;
+    if (!this.menuStateSupported || nodes?.style === undefined || nodes.off === undefined) {
+      return false;
+    }
+    const result = await this.post('/menuitems/settings/update', {
+      values: [{ value: { Nodeid: nodes.style, data: { activenode_id: nodes.off } } }],
+    });
+    return result !== null;
+  }
+
   /** True once getAmbilightMenuState() has answered for this TV. */
   get hasAmbilightMenuState(): boolean {
     return this.menuStateSupported;
@@ -813,6 +839,7 @@ export class PhilipsTVClient {
           brightness: menuNodeId(findMenuNode(structure, MENU_CONTEXT_AMBILIGHT_BRIGHTNESS)),
         };
         this.debug(`Ambilight menu nodes: style=${nodes.style ?? '-'}, off=${nodes.off ?? '-'}, brightness=${nodes.brightness ?? '-'}`);
+        this.resolvedMenuNodes = nodes;
         return nodes;
       })();
     }
