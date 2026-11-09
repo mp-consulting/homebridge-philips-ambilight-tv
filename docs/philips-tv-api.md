@@ -217,7 +217,23 @@ The app sends **burst** magic packets:
 > `ambilight_saturation`, `ambilight_style`, `ambilight_lounge_light`,
 > `ambilight_lounge_light_hue`) to the node ID reported by that TV. The hardcoded
 > values above happen to work on the models tested but should ideally be resolved
-> dynamically.
+> dynamically. The plugin now does so (falling back to these IDs when the
+> structure cannot be read).
+
+**Reading Ambilight on/off from the menu.** Some models — e.g. the 77OLED848/12
+(2024 Google TV platform, API 6.1) — answer `OFF` / `{"power":"Off"}` from
+`/ambilight/currentconfiguration` and `/ambilight/power` (and zeros from
+`/ambilight/processed` / `/ambilight/cached`) however Ambilight is lit. The menu
+still knows: read the `ambilight_style` node and compare its active child with
+the `ambilight_off` child node.
+
+```json
+// POST /menuitems/settings/current
+{ "nodes": [{ "nodeid": 2130968783 }] }        // the ambilight_style node
+
+// Response — activenode_id is the ambilight_off node exactly when Ambilight is off
+{ "values": [{ "value": { "Nodeid": 2130968783, "data": { "activenode_id": 2130968789 } } }] }
+```
 
 ### Ambilight + Hue
 

@@ -367,6 +367,145 @@ describe('PhilipsTVClient', () => {
   });
 
   // ==========================================================================
+  // AMBILIGHT MENU NODES
+  // ==========================================================================
+
+  describe('Ambilight menu nodes', () => {
+    // Shape of GET /menuitems/settings/structure, trimmed to what matters
+    // (IDs from a 77OLED848/12, which differ from the long-known defaults).
+    const STRUCTURE = {
+      version: 1,
+      node: {
+        node_id: 2131230720,
+        context: 'settings',
+        data: {
+          nodes: [
+            {
+              node_id: 2130968778,
+              context: 'ambilight',
+              data: {
+                nodes: [
+                  {
+                    node_id: 2130968783,
+                    context: 'ambilight_style',
+                    data: {
+                      nodes: [
+                        { node_id: 2130968784, context: 'ambilight_follow_video', data: {} },
+                        { node_id: 2130968789, context: 'ambilight_off', data: {} },
+                      ],
+                    },
+                  },
+                  { node_id: 2130968780, context: 'ambilight_brightness', data: {} },
+                ],
+              },
+            },
+          ],
+        },
+      },
+    };
+
+    const currentResponse = (activeNode: number) => mockResponse({
+      version: 1,
+      values: [{ value: { Nodeid: 2130968783, Controllable: true, Available: true, data: { activenode_id: activeNode } } }],
+    });
+
+    const run = async <T>(promise: Promise<T>): Promise<T> => {
+      await vi.runAllTimersAsync();
+      return promise;
+    };
+
+    it('reports on when the style node points at a style other than Off', async () => {
+      mockFetch
+        .mockReturnValueOnce(mockResponse(STRUCTURE))
+        .mockReturnValueOnce(currentResponse(2130968784));
+
+      expect(await run(client.getAmbilightMenuState())).toBe(true);
+      expect(client.hasAmbilightMenuState).toBe(true);
+      expect(mockFetch).toHaveBeenLastCalledWith(
+        expect.stringContaining('/menuitems/settings/current'),
+        expect.objectContaining({ body: JSON.stringify({ nodes: [{ nodeid: 2130968783 }] }) }),
+        expect.any(Number),
+      );
+    });
+
+    it('reports off when the style node points at its Off entry', async () => {
+      mockFetch
+        .mockReturnValueOnce(mockResponse(STRUCTURE))
+        .mockReturnValueOnce(currentResponse(2130968789));
+
+      expect(await run(client.getAmbilightMenuState())).toBe(false);
+    });
+
+    it('reads the structure only once', async () => {
+      mockFetch
+        .mockReturnValueOnce(mockResponse(STRUCTURE))
+        .mockReturnValue(currentResponse(2130968789));
+
+      await run(client.getAmbilightMenuState());
+      await run(client.getAmbilightMenuState());
+
+      const structureReads = mockFetch.mock.calls.filter(([url]) => String(url).includes('/menuitems/settings/structure'));
+      expect(structureReads).toHaveLength(1);
+    });
+
+    it('retries the structure after a failed read', async () => {
+      mockFetch
+        .mockReturnValueOnce(mockResponse(null, 500))
+        .mockReturnValueOnce(mockResponse(STRUCTURE))
+        .mockReturnValueOnce(currentResponse(2130968784));
+
+      expect(await run(client.getAmbilightMenuState())).toBeNull();
+      expect(await run(client.getAmbilightMenuState())).toBe(true);
+    });
+
+    it('returns null without asking for the value on a TV without those nodes', async () => {
+      mockFetch.mockReturnValueOnce(mockResponse({ node: { node_id: 1, context: 'settings', data: { nodes: [] } } }));
+
+      expect(await run(client.getAmbilightMenuState())).toBeNull();
+      expect(await run(client.getAmbilightMenuState())).toBeNull();
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      expect(client.hasAmbilightMenuState).toBe(false);
+    });
+
+    it('returns null when the value carries no active node', async () => {
+      mockFetch
+        .mockReturnValueOnce(mockResponse(STRUCTURE))
+        .mockReturnValueOnce(mockResponse({ values: [{ value: { data: {} } }] }));
+
+      expect(await run(client.getAmbilightMenuState())).toBeNull();
+      expect(client.hasAmbilightMenuState).toBe(false);
+    });
+
+    it('sets brightness on the node this TV reports', async () => {
+      mockFetch
+        .mockReturnValueOnce(mockResponse(STRUCTURE))
+        .mockReturnValueOnce(mockResponse({}));
+
+      expect(await run(client.setAmbilightBrightness(7))).toBe(true);
+      expect(mockFetch).toHaveBeenLastCalledWith(
+        expect.stringContaining('/menuitems/settings/update'),
+        expect.objectContaining({
+          body: JSON.stringify({ values: [{ value: { Nodeid: 2130968780, data: { value: 7 } } }] }),
+        }),
+        expect.any(Number),
+      );
+    });
+
+    it('falls back to the default brightness node when the structure is unavailable', async () => {
+      mockFetch
+        .mockReturnValueOnce(mockResponse(null, 404))
+        .mockReturnValueOnce(mockResponse({}));
+
+      expect(await run(client.setAmbilightBrightness(3))).toBe(true);
+      expect(mockFetch).toHaveBeenLastCalledWith(
+        expect.stringContaining('/menuitems/settings/update'),
+        expect.objectContaining({ body: expect.stringContaining('"Nodeid":2131230769') }),
+        expect.any(Number),
+      );
+    });
+  });
+
+  // ==========================================================================
   // DIGEST AUTH
   // ==========================================================================
 

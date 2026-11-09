@@ -55,8 +55,22 @@ const REQUEST_BUDGET_MS = 7000;
 /** Remaining budget below which a request is not worth starting. */
 const MIN_EXECUTION_MS = 500;
 
-/** Ambilight menu brightness node ID (from iOS app analysis) */
+/** Ambilight menu brightness node ID (from iOS app analysis). Only a fallback:
+ *  node IDs differ between models and firmware, so the TV's own menu structure
+ *  is consulted first. */
 const AMBILIGHT_BRIGHTNESS_NODE_ID = 2131230769;
+
+/** Menu node contexts — stable across models, unlike the node IDs they map to. */
+const MENU_CONTEXT_AMBILIGHT_STYLE = 'ambilight_style';
+const MENU_CONTEXT_AMBILIGHT_OFF = 'ambilight_off';
+const MENU_CONTEXT_AMBILIGHT_BRIGHTNESS = 'ambilight_brightness';
+
+/** The menu structure is a large document; give it more than a plain GET. */
+const MENU_STRUCTURE_TIMEOUT_MS = 5000;
+
+/** POSTs that only read state. They run on every poll, so they are not logged
+ *  the way user-initiated POSTs are. */
+const READ_ONLY_POST_ENDPOINTS: ReadonlySet<string> = new Set(['/menuitems/settings/current']);
 
 /** Ambilight menu settings range */
 const AMBILIGHT_SETTING_MIN = 0;
@@ -110,6 +124,25 @@ interface ApplicationIntent {
   extras?: Record<string, unknown>;
 }
 
+/** Ambilight node IDs resolved from this TV's menu structure. */
+interface AmbilightMenuNodes {
+  /** The Ambilight style list, whose active child tells on from off. */
+  style?: number;
+  /** The style list's "Off" entry. */
+  off?: number;
+  brightness?: number;
+}
+
+interface MenuNode {
+  node_id?: unknown;
+  context?: unknown;
+  data?: { nodes?: unknown };
+}
+
+interface MenuCurrentResponse {
+  values?: Array<{ value?: { data?: { activenode_id?: unknown } } }>;
+}
+
 // ============================================================================
 // CLIENT CLASS
 // ============================================================================
@@ -132,6 +165,13 @@ export class PhilipsTVClient {
 
   /** Deadline shared by every request made inside one interactive operation */
   private readonly operationDeadline = new AsyncLocalStorage<number>();
+
+  /** Ambilight menu node IDs, resolved once per session. Cleared when the
+   *  structure could not be read, so the next caller tries again. */
+  private ambilightMenuNodes: Promise<AmbilightMenuNodes | null> | null = null;
+
+  /** True once this TV is known to report Ambilight on/off through its menu. */
+  private menuStateSupported = false;
 
   constructor(config: PhilipsTVClientConfig, debug?: (message: string) => void) {
     this.config = config;
@@ -180,12 +220,13 @@ export class PhilipsTVClient {
 
         const start = Date.now();
         // Only log POST requests (user actions) — GET polling is silent unless it fails
-        if (method === 'POST') {
+        const logged = method === 'POST' && !READ_ONLY_POST_ENDPOINTS.has(endpoint);
+        if (logged) {
           this.debug(`API POST ${endpoint} ← ${JSON.stringify(body)}`);
         }
         try {
           const result = await this.executeRequest<T>(method, endpoint, body, timeout, deadline);
-          if (method === 'POST') {
+          if (logged) {
             const elapsed = Date.now() - start;
             const ok = result !== null;
             this.debug(`API POST ${endpoint} → ${ok ? 'OK' : 'FAIL'} (${elapsed}ms)`);
@@ -706,17 +747,76 @@ export class PhilipsTVClient {
    * Set Ambilight brightness
    * @param brightness - Brightness level (0-10)
    */
-  async setAmbilightBrightness(brightness: number): Promise<boolean> {
+  setAmbilightBrightness(brightness: number): Promise<boolean> {
     const clamped = Math.round(Math.max(AMBILIGHT_SETTING_MIN, Math.min(AMBILIGHT_SETTING_MAX, brightness)));
-    const result = await this.post('/menuitems/settings/update', {
-      values: [{
-        value: {
-          Nodeid: AMBILIGHT_BRIGHTNESS_NODE_ID,
-          data: { value: clamped },
-        },
-      }],
+    return this.interactive(async () => {
+      const nodes = await this.resolveAmbilightMenuNodes();
+      const result = await this.post('/menuitems/settings/update', {
+        values: [{
+          value: {
+            Nodeid: nodes?.brightness ?? AMBILIGHT_BRIGHTNESS_NODE_ID,
+            data: { value: clamped },
+          },
+        }],
+      });
+      return result !== null;
     });
-    return result !== null;
+  }
+
+  /**
+   * Whether Ambilight is on according to the TV's settings menu, or null when
+   * the TV does not expose that (or did not answer).
+   *
+   * Some models — e.g. the 2024 Google TV OLEDs — report OFF from
+   * /ambilight/currentconfiguration and /ambilight/power however Ambilight is
+   * lit. Their menu still knows: the Ambilight style node's active child is
+   * its "Off" entry exactly when Ambilight is off.
+   */
+  async getAmbilightMenuState(): Promise<boolean | null> {
+    const nodes = await this.resolveAmbilightMenuNodes();
+    if (nodes?.style === undefined || nodes.off === undefined) {
+      return null;
+    }
+    const result = await this.post<MenuCurrentResponse>('/menuitems/settings/current', {
+      nodes: [{ nodeid: nodes.style }],
+    });
+    const active = toNodeId(result?.values?.[0]?.value?.data?.activenode_id);
+    if (active === undefined) {
+      return null;
+    }
+    this.menuStateSupported = true;
+    return active !== nodes.off;
+  }
+
+  /** True once getAmbilightMenuState() has answered for this TV. */
+  get hasAmbilightMenuState(): boolean {
+    return this.menuStateSupported;
+  }
+
+  /**
+   * Map the Ambilight menu nodes this code needs to this TV's node IDs, by
+   * their context. Resolves to null — and is retried later — only when the
+   * structure could not be read; a TV that lacks a node simply leaves it out.
+   */
+  private resolveAmbilightMenuNodes(): Promise<AmbilightMenuNodes | null> {
+    if (!this.ambilightMenuNodes) {
+      this.ambilightMenuNodes = (async () => {
+        const structure = await this.get<unknown>('/menuitems/settings/structure', MENU_STRUCTURE_TIMEOUT_MS);
+        if (!structure || typeof structure !== 'object') {
+          this.ambilightMenuNodes = null;
+          return null;
+        }
+        const styleNode = findMenuNode(structure, MENU_CONTEXT_AMBILIGHT_STYLE);
+        const nodes: AmbilightMenuNodes = {
+          style: menuNodeId(styleNode),
+          off: menuNodeId(styleNode && findMenuNode(styleNode, MENU_CONTEXT_AMBILIGHT_OFF)),
+          brightness: menuNodeId(findMenuNode(structure, MENU_CONTEXT_AMBILIGHT_BRIGHTNESS)),
+        };
+        this.debug(`Ambilight menu nodes: style=${nodes.style ?? '-'}, off=${nodes.off ?? '-'}, brightness=${nodes.brightness ?? '-'}`);
+        return nodes;
+      })();
+    }
+    return this.ambilightMenuNodes;
   }
 
   /**
@@ -748,4 +848,41 @@ export class PhilipsTVClient {
   private sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
+}
+
+// ============================================================================
+// MENU STRUCTURE HELPERS
+// ============================================================================
+
+/** Depth-first search of a menu (sub)tree for the node with the given context. */
+function findMenuNode(root: unknown, context: string): MenuNode | undefined {
+  const stack: unknown[] = [root];
+  while (stack.length > 0) {
+    const value = stack.pop();
+    if (Array.isArray(value)) {
+      stack.push(...[...value].reverse());
+    } else if (value && typeof value === 'object') {
+      const node = value as MenuNode;
+      if (node.context === context) {
+        return node;
+      }
+      stack.push(...Object.values(value).reverse());
+    }
+  }
+  return undefined;
+}
+
+function menuNodeId(node: MenuNode | undefined): number | undefined {
+  return toNodeId(node?.node_id);
+}
+
+/** Node IDs arrive as numbers, though some firmware sends numeric strings. */
+function toNodeId(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isInteger(value)) {
+    return value;
+  }
+  if (typeof value === 'string' && /^\d+$/.test(value)) {
+    return Number(value);
+  }
+  return undefined;
 }
