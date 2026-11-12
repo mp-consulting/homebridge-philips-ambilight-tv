@@ -394,7 +394,7 @@ export class UiServer extends HomebridgePluginUiServer {
       const success = createPairingSuccess(session, session.certFingerprint ?? undefined);
       return session.certFingerprint ? success : { ...success, certWarning: true };
     } catch (error) {
-      console.log('[PairGrant] Error:', error.message, error.cause?.message ? `(${error.cause.message})` : '');
+      console.log('[PairGrant] Error:', error.message, error.cause?.message ? `(${sanitizeForLog(String(error.cause.message))})` : '');
       // A certificate that changed mid-pairing is not a TV to trust.
       // undici reports connect failures as "fetch failed" with the reason as the cause.
       const reason = `${error.message || ''} ${error.cause?.message || ''}`;
