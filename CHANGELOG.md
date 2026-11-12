@@ -2,12 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [1.9.6] - 2026-11-12
 
 ### Fixed
 
 - **Pairing** no longer stops with "The TV presented a different certificate during pairing" on TVs that close the connection after each response (seen on a 55POS9002, [#34](https://github.com/mp-consulting/homebridge-philips-ambilight-tv/issues/34)). The certificate check reused TLS sessions, and a resumed session reports no certificate. The certificate is now checked on a full handshake for every connection, at pairing and at runtime.
 - **Pairing**: when the TV refuses the pairing request or sends a response without an auth key or timestamp, the wizard says so right away. Before, the error only showed up after the PIN was entered, as `Cannot read properties of undefined (reading 'toString')`.
+
+### Changed
+
+- `@homebridge/plugin-ui-utils` 2.2.7 for the settings page.
+
+### Notes
+
+- Development dependencies updated, and the `node-forge` override raised to 1.4.3 for its security fixes. `node-forge` only comes in through the dev-only `homebridge-config-ui-x`, so the published plugin was not affected.
 
 ## [1.9.5] - 2026-10-22
 
