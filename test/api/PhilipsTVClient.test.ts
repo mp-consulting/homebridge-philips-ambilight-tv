@@ -167,6 +167,111 @@ describe('PhilipsTVClient', () => {
   });
 
   // ==========================================================================
+  // WAKE FROM DEEP STANDBY (issue #49)
+  // ==========================================================================
+
+  describe('powerOn', () => {
+    it('reports on when the TV accepts the command', async () => {
+      mockFetch.mockReturnValue(mockResponse({}));
+
+      const promise = client.powerOn();
+      await vi.runAllTimersAsync();
+
+      expect(await promise).toBe('on');
+    });
+
+    it('reports waking when the wake packets went out but the TV does not answer yet', async () => {
+      mockFetch.mockRejectedValue(new Error('EHOSTUNREACH'));
+
+      const promise = client.powerOn();
+      await vi.runAllTimersAsync();
+
+      expect(mockWol).toHaveBeenCalled();
+      expect(await promise).toBe('waking');
+    });
+
+    it('reports failed when neither the wake packets nor the command went out', async () => {
+      mockWol.mockRejectedValue(new Error('Invalid MAC address format'));
+      mockFetch.mockRejectedValue(new Error('EHOSTUNREACH'));
+
+      const promise = client.powerOn();
+      await vi.runAllTimersAsync();
+
+      expect(await promise).toBe('failed');
+    });
+  });
+
+  describe('completeWake', () => {
+    /** A TV that stays unreachable for `silentReads` power reads, then answers
+     *  Standby until it is asked for On. */
+    function bootingTv(silentReads: number) {
+      let reads = 0;
+      let on = false;
+      mockFetch.mockImplementation((url: string, options?: { method?: string; body?: unknown }) => {
+        if (!url.endsWith('/powerstate')) {
+          return mockResponse({});
+        }
+        if (options?.method === 'POST') {
+          on = true;
+          return mockResponse({});
+        }
+        reads++;
+        if (reads <= silentReads) {
+          return Promise.reject(new Error('EHOSTUNREACH'));
+        }
+        return mockResponse({ powerstate: on ? 'On' : 'Standby' });
+      });
+    }
+
+    function powerOnPosts(): number {
+      return mockFetch.mock.calls.filter(([url, options]) =>
+        String(url).endsWith('/powerstate') && (options as { method?: string })?.method === 'POST').length;
+    }
+
+    it('asks a TV that came up in standby for On and resolves once it is on', async () => {
+      bootingTv(3);
+
+      const promise = client.completeWake(60_000);
+      await vi.runAllTimersAsync();
+
+      expect(await promise).toBe(true);
+      expect(powerOnPosts()).toBe(1);
+    });
+
+    it('resends the wake packets while the TV stays silent', async () => {
+      bootingTv(8);
+
+      const promise = client.completeWake(60_000);
+      await vi.runAllTimersAsync();
+
+      expect(await promise).toBe(true);
+      expect(mockWol).toHaveBeenCalled();
+    });
+
+    it('gives up at the timeout when the TV never answers', async () => {
+      mockFetch.mockRejectedValue(new Error('EHOSTUNREACH'));
+
+      const promise = client.completeWake(30_000);
+      await vi.runAllTimersAsync();
+
+      expect(await promise).toBe(false);
+      expect(mockWol.mock.calls.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('stops when aborted', async () => {
+      mockFetch.mockRejectedValue(new Error('EHOSTUNREACH'));
+      const abort = new AbortController();
+
+      const promise = client.completeWake(60_000, abort.signal);
+      abort.abort();
+      await vi.runAllTimersAsync();
+
+      expect(await promise).toBe(false);
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+  });
+
+  // ==========================================================================
   // VOLUME
   // ==========================================================================
 
