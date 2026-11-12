@@ -304,6 +304,12 @@ export class StatePollManager {
       }
       const payload = value as Record<string, unknown>;
 
+      // On a TV whose settings menu reports Ambilight on/off, these payloads
+      // can be wrong; a full poll reads the menu instead.
+      if ((key === 'ambilight/currentconfiguration' || key === 'ambilight/power') && this.tvClient.hasAmbilightMenuState) {
+        return false;
+      }
+
       switch (key) {
         case 'powerstate': {
           if (typeof payload.powerstate !== 'string') {
@@ -469,12 +475,7 @@ export class StatePollManager {
         return;
       }
 
-      const ambilightStyle = await this.tvClient.getAmbilightStyle();
-      if (ambilightStyle) {
-        this.applyAmbilightStyle(ambilightStyle);
-      } else {
-        this.applyAmbilightPower(await this.tvClient.getAmbilightPower());
-      }
+      await this.readAmbilight();
 
       const volume = await this.tvClient.getVolume();
       if (volume) {
@@ -486,6 +487,16 @@ export class StatePollManager {
       // The client reports failures as null rather than throwing, so reaching
       // here means a bug in a callback — say so rather than staying silent.
       this.log('debug', `State poll failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /** Apply Ambilight's state; nothing when the client has no reliable reading this time. */
+  private async readAmbilight(): Promise<void> {
+    const state = await this.tvClient.getAmbilightState();
+    if (state?.style) {
+      this.applyAmbilightStyle(state.style);
+    } else if (state) {
+      this.applyAmbilightPower(state.on);
     }
   }
 

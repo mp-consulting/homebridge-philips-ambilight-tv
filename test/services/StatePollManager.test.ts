@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'events';
 import { StatePollManager } from '../../src/services/StatePollManager.js';
 import type { PollCallbacks } from '../../src/services/StatePollManager.js';
-import type { PhilipsTVClient } from '../../src/api/PhilipsTVClient.js';
+import { PhilipsTVClient } from '../../src/api/PhilipsTVClient.js';
 
 // ============================================================================
 // MOCKS
@@ -26,6 +26,12 @@ function createMockTVClient(): PhilipsTVClient {
     getPowerState: vi.fn().mockResolvedValue(false),
     getAmbilightStyle: vi.fn().mockResolvedValue(null),
     getAmbilightPower: vi.fn().mockResolvedValue(false),
+    getAmbilightMenuState: vi.fn().mockResolvedValue(null),
+    hasAmbilightMenuState: false,
+    // The real reconciliation, over the mocked reads above.
+    getAmbilightState: vi.fn(function (this: PhilipsTVClient) {
+      return PhilipsTVClient.prototype.getAmbilightState.call(this);
+    }),
     getVolume: vi.fn().mockResolvedValue(null),
     getCurrentActivity: vi.fn().mockResolvedValue(null),
   } as unknown as PhilipsTVClient;
@@ -203,6 +209,76 @@ describe('StatePollManager', () => {
       await vi.advanceTimersByTimeAsync(5100);
 
       expect(callbacks.onAmbilightUpdate).toHaveBeenCalledWith(null, true);
+    });
+
+    describe('when the TV reports on/off through its settings menu', () => {
+      const pollOnce = async () => {
+        (tvClient.getPowerState as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+        manager = new StatePollManager(tvClient, TEST_CONFIG, callbacks, debugLog);
+        manager.start();
+        await vi.advanceTimersByTimeAsync(5100);
+      };
+
+      it('reports Ambilight on although the style endpoint says OFF', async () => {
+        (tvClient.getAmbilightStyle as ReturnType<typeof vi.fn>).mockResolvedValue({ styleName: 'OFF' });
+        (tvClient.getAmbilightMenuState as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+
+        await pollOnce();
+
+        expect(callbacks.onAmbilightUpdate).toHaveBeenLastCalledWith(null, true);
+        expect(callbacks.onAmbilightUpdate).not.toHaveBeenCalledWith(expect.objectContaining({ styleName: 'OFF' }), false);
+        expect(tvClient.getAmbilightPower).not.toHaveBeenCalled();
+      });
+
+      it('reports Ambilight off when the menu says so, whatever the style claims', async () => {
+        (tvClient.getAmbilightStyle as ReturnType<typeof vi.fn>).mockResolvedValue({ styleName: 'FOLLOW_VIDEO' });
+        (tvClient.getAmbilightMenuState as ReturnType<typeof vi.fn>).mockResolvedValue(false);
+
+        await pollOnce();
+
+        expect(callbacks.onAmbilightUpdate).toHaveBeenLastCalledWith(null, false);
+      });
+
+      it('keeps the style detail when the style agrees Ambilight is on', async () => {
+        const style = { styleName: 'FOLLOW_COLOR', colorSettings: { color: { hue: 1, saturation: 2, brightness: 3 } } };
+        (tvClient.getAmbilightStyle as ReturnType<typeof vi.fn>).mockResolvedValue(style);
+        (tvClient.getAmbilightMenuState as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+
+        await pollOnce();
+
+        expect(callbacks.onAmbilightUpdate).toHaveBeenLastCalledWith(style, false);
+      });
+
+      it('skips the update rather than trusting the style when a known menu misses one read', async () => {
+        (tvClient.getAmbilightStyle as ReturnType<typeof vi.fn>).mockResolvedValue({ styleName: 'OFF' });
+        (tvClient.getAmbilightMenuState as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+        (tvClient as { hasAmbilightMenuState: boolean }).hasAmbilightMenuState = true;
+
+        await pollOnce();
+
+        expect(callbacks.onAmbilightUpdate).not.toHaveBeenCalled();
+        expect(callbacks.onInputUpdate).toHaveBeenCalled();
+      });
+
+      it('re-reads the TV instead of applying an ambilight notification payload', async () => {
+        (tvClient.getAmbilightStyle as ReturnType<typeof vi.fn>).mockResolvedValue({ styleName: 'OFF' });
+        (tvClient.getAmbilightMenuState as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+        (tvClient as { hasAmbilightMenuState: boolean }).hasAmbilightMenuState = true;
+        await pollOnce();
+        (callbacks.onAmbilightUpdate as ReturnType<typeof vi.fn>).mockClear();
+        (tvClient.getAmbilightMenuState as ReturnType<typeof vi.fn>).mockClear();
+
+        notifyInstances[notifyInstances.length - 1].emit('notification', {
+          'ambilight/currentconfiguration': { styleName: 'OFF' },
+          'ambilight/power': { power: 'Off' },
+        });
+        await vi.advanceTimersByTimeAsync(100);
+
+        expect(tvClient.getAmbilightMenuState).toHaveBeenCalled();
+        expect(callbacks.onAmbilightUpdate).not.toHaveBeenCalledWith(expect.objectContaining({ styleName: 'OFF' }), false);
+        expect(callbacks.onAmbilightUpdate).not.toHaveBeenCalledWith(null, false);
+        expect(callbacks.onAmbilightUpdate).toHaveBeenCalledWith(null, true);
+      });
     });
   });
 

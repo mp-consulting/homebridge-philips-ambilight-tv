@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+
+- **Ambilight state** is read from the TV's settings menu where the TV offers it. Some models (e.g. 2024 Google TV OLEDs such as the 77OLED848/12) report Ambilight as off from `/ambilight/currentconfiguration` and `/ambilight/power` however it is lit, so a poll switched the HomeKit tile back off about 10 seconds after turning it on. The `ambilight_style` menu node's active entry is now the source of truth for on/off; the style endpoint still supplies the mode and colour, and TVs without that menu node behave as before.
+- **Switching Ambilight off from HomeKit** selects the `ambilight_style` menu's Off entry, as the TV's Ambilight button does, on TVs whose menu reports on/off. A `styleName: OFF` darkens the LEDs on those models but leaves the menu on its last style, so the tile came back on with the next poll. Other TVs are switched off as before.
+- **Ambilight brightness** (while following video or audio) is written to the brightness menu node this TV reports instead of a fixed node ID that does not exist on every model.
+
 ## [1.9.6] - 2026-11-12
 
 ### Fixed

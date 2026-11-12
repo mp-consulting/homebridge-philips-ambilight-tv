@@ -55,8 +55,30 @@ const REQUEST_BUDGET_MS = 7000;
 /** Remaining budget below which a request is not worth starting. */
 const MIN_EXECUTION_MS = 500;
 
-/** Ambilight menu brightness node ID (from iOS app analysis) */
+/** Ambilight menu brightness node ID (from iOS app analysis). Only a fallback:
+ *  node IDs differ between models and firmware, so the TV's own menu structure
+ *  is consulted first. */
 const AMBILIGHT_BRIGHTNESS_NODE_ID = 2131230769;
+
+/** Menu node contexts — stable across models, unlike the node IDs they map to. */
+const MENU_CONTEXT_AMBILIGHT_STYLE = 'ambilight_style';
+const MENU_CONTEXT_AMBILIGHT_OFF = 'ambilight_off';
+const MENU_CONTEXT_AMBILIGHT_BRIGHTNESS = 'ambilight_brightness';
+
+/** The menu structure is a large document; give it more than a plain GET. */
+const MENU_STRUCTURE_TIMEOUT_MS = 5000;
+
+/** After a failed structure read, wait this long before the next one rather
+ *  than putting a large request in front of every poll. */
+const MENU_STRUCTURE_RETRY_MS = 5 * 60_000;
+
+/** Missed menu reads in a row after which the menu stops being trusted and the
+ *  Ambilight endpoints are used again. */
+const MENU_STATE_MAX_MISSES = 3;
+
+/** Read-only POST that runs on every poll, so it is logged only when it fails. */
+const MENU_CURRENT_ENDPOINT = '/menuitems/settings/current';
+const MENU_UPDATE_ENDPOINT = '/menuitems/settings/update';
 
 /** Ambilight menu settings range */
 const AMBILIGHT_SETTING_MIN = 0;
@@ -110,6 +132,25 @@ interface ApplicationIntent {
   extras?: Record<string, unknown>;
 }
 
+/** Ambilight node IDs resolved from this TV's menu structure. */
+interface AmbilightMenuNodes {
+  /** The Ambilight style list, whose active child tells on from off. */
+  style?: number;
+  /** The style list's "Off" entry. */
+  off?: number;
+  brightness?: number;
+}
+
+interface MenuNode {
+  node_id?: unknown;
+  context?: unknown;
+  data?: { nodes?: unknown };
+}
+
+interface MenuCurrentResponse {
+  values?: Array<{ value?: { data?: { activenode_id?: unknown } } }>;
+}
+
 // ============================================================================
 // CLIENT CLASS
 // ============================================================================
@@ -132,6 +173,21 @@ export class PhilipsTVClient {
 
   /** Deadline shared by every request made inside one interactive operation */
   private readonly operationDeadline = new AsyncLocalStorage<number>();
+
+  /** Ambilight menu node IDs, once read from the menu structure. */
+  private menuNodes: AmbilightMenuNodes | undefined;
+
+  /** The structure read in flight, shared by concurrent callers. */
+  private menuNodesRequest: Promise<AmbilightMenuNodes | undefined> | null = null;
+
+  /** No structure read before this time, after a failed one. */
+  private menuStructureRetryAt = 0;
+
+  /** The style and Off node IDs, set while this TV's menu reports Ambilight on/off. */
+  private menuState: { style: number; off: number } | null = null;
+
+  /** Missed menu reads in a row while `menuState` is set. */
+  private menuStateMisses = 0;
 
   constructor(config: PhilipsTVClientConfig, debug?: (message: string) => void) {
     this.config = config;
@@ -179,13 +235,15 @@ export class PhilipsTVClient {
         }
 
         const start = Date.now();
-        // Only log POST requests (user actions) — GET polling is silent unless it fails
-        if (method === 'POST') {
+        // Only log POST requests (user actions) — GET polling is silent unless it fails.
+        // The menu read is a POST that runs on every poll, so it is logged only when it fails.
+        const logged = method === 'POST' && endpoint !== MENU_CURRENT_ENDPOINT;
+        if (logged) {
           this.debug(`API POST ${endpoint} ← ${JSON.stringify(body)}`);
         }
         try {
           const result = await this.executeRequest<T>(method, endpoint, body, timeout, deadline);
-          if (method === 'POST') {
+          if (method === 'POST' && (logged || result === null)) {
             const elapsed = Date.now() - start;
             const ok = result !== null;
             this.debug(`API POST ${endpoint} → ${ok ? 'OK' : 'FAIL'} (${elapsed}ms)`);
@@ -690,10 +748,14 @@ export class PhilipsTVClient {
 
   /**
    * Turn Ambilight off.
-   * Tries styleName OFF first, falls back to /ambilight/power.
+   * On a TV whose menu reports on/off, selects the style menu's "Off" entry;
+   * otherwise (or if that fails) tries styleName OFF, then /ambilight/power.
    */
   setAmbilightOff(): Promise<boolean> {
     return this.interactive(async () => {
+      if (await this.setAmbilightMenuOff()) {
+        return true;
+      }
       const styleOff = await this.setAmbilightStyle('OFF');
       if (styleOff) {
         return true;
@@ -706,17 +768,120 @@ export class PhilipsTVClient {
    * Set Ambilight brightness
    * @param brightness - Brightness level (0-10)
    */
-  async setAmbilightBrightness(brightness: number): Promise<boolean> {
+  setAmbilightBrightness(brightness: number): Promise<boolean> {
     const clamped = Math.round(Math.max(AMBILIGHT_SETTING_MIN, Math.min(AMBILIGHT_SETTING_MAX, brightness)));
-    const result = await this.post('/menuitems/settings/update', {
-      values: [{
-        value: {
-          Nodeid: AMBILIGHT_BRIGHTNESS_NODE_ID,
-          data: { value: clamped },
-        },
-      }],
+    return this.interactive(async () => {
+      const nodes = await this.resolveAmbilightMenuNodes();
+      return this.updateMenuSetting(nodes?.brightness ?? AMBILIGHT_BRIGHTNESS_NODE_ID, { value: clamped });
     });
+  }
+
+  /**
+   * Ambilight's state for polling: whether it is on, plus the style when it
+   * adds detail (mode, colour). Null when nothing should be applied this time.
+   *
+   * Some models (e.g. the 2024 Google TV OLEDs) report OFF from
+   * /ambilight/currentconfiguration and /ambilight/power however Ambilight is
+   * lit. Where the settings menu answers, it decides on/off. When such a TV's
+   * menu misses a read, nothing is applied: falling back to the endpoints it
+   * is known to get wrong would flip the tile.
+   */
+  async getAmbilightState(): Promise<{ on: boolean; style: AmbilightCached | null } | null> {
+    const menuOn = await this.getAmbilightMenuState();
+    if (menuOn === false) {
+      return { on: false, style: null };
+    }
+    if (menuOn === null && this.hasAmbilightMenuState) {
+      return null;
+    }
+
+    const style = await this.getAmbilightStyle();
+    const styleOn = style !== null && style.styleName?.toUpperCase() !== 'OFF';
+    if (menuOn) {
+      return { on: true, style: styleOn ? style : null };
+    }
+    if (style) {
+      return { on: styleOn, style };
+    }
+    return { on: await this.getAmbilightPower(), style: null };
+  }
+
+  /**
+   * Whether Ambilight is on according to the TV's settings menu, or null when
+   * the TV does not expose that (or did not answer): the Ambilight style
+   * node's active child is its "Off" entry exactly when Ambilight is off.
+   */
+  async getAmbilightMenuState(): Promise<boolean | null> {
+    const nodes = await this.resolveAmbilightMenuNodes();
+    if (nodes?.style === undefined || nodes.off === undefined) {
+      return null;
+    }
+    const { style, off } = nodes;
+    const result = await this.post<MenuCurrentResponse>(MENU_CURRENT_ENDPOINT, { nodes: [{ nodeid: style }] });
+    const active = toNodeId(result?.values?.[0]?.value?.data?.activenode_id);
+    if (active === undefined) {
+      if (this.menuState && ++this.menuStateMisses >= MENU_STATE_MAX_MISSES) {
+        this.debug(`Ambilight menu missed ${MENU_STATE_MAX_MISSES} reads in a row; using the Ambilight endpoints again`);
+        this.menuState = null;
+        this.menuStateMisses = 0;
+      }
+      return null;
+    }
+    this.menuState = { style, off };
+    this.menuStateMisses = 0;
+    return active !== off;
+  }
+
+  /** True while this TV's settings menu reports Ambilight on/off. */
+  get hasAmbilightMenuState(): boolean {
+    return this.menuState !== null;
+  }
+
+  /**
+   * Select the Ambilight style menu's "Off" entry, as the TV's own Ambilight
+   * button does. Where on/off is read from the menu it must be written there
+   * too: a styleName OFF darkens the LEDs on some models (e.g. the
+   * 77OLED848/12) but leaves the menu on its last style, which the next poll
+   * would read back as on. Uses only nodes already known, so switching off
+   * never waits on the menu structure.
+   */
+  private setAmbilightMenuOff(): Promise<boolean> {
+    const state = this.menuState;
+    return state ? this.updateMenuSetting(state.style, { activenode_id: state.off }) : Promise.resolve(false);
+  }
+
+  private async updateMenuSetting(nodeId: number, data: Record<string, unknown>): Promise<boolean> {
+    const result = await this.post(MENU_UPDATE_ENDPOINT, { values: [{ value: { Nodeid: nodeId, data } }] });
     return result !== null;
+  }
+
+  /**
+   * Map the Ambilight menu nodes this code needs to this TV's node IDs, by
+   * their context. A TV that lacks a node simply leaves it out. A failed read
+   * is retried, but not before MENU_STRUCTURE_RETRY_MS has passed.
+   */
+  private resolveAmbilightMenuNodes(): Promise<AmbilightMenuNodes | undefined> {
+    if (this.menuNodes || Date.now() < this.menuStructureRetryAt) {
+      return Promise.resolve(this.menuNodes);
+    }
+    this.menuNodesRequest ??= (async () => {
+      const structure = await this.get<unknown>('/menuitems/settings/structure', MENU_STRUCTURE_TIMEOUT_MS);
+      this.menuNodesRequest = null;
+      if (!structure || typeof structure !== 'object') {
+        this.menuStructureRetryAt = Date.now() + MENU_STRUCTURE_RETRY_MS;
+        return undefined;
+      }
+      const styleNode = findMenuNode(structure, MENU_CONTEXT_AMBILIGHT_STYLE);
+      const nodes: AmbilightMenuNodes = {
+        style: menuNodeId(styleNode),
+        off: menuNodeId(styleNode && findMenuNode(styleNode, MENU_CONTEXT_AMBILIGHT_OFF)),
+        brightness: menuNodeId(findMenuNode(structure, MENU_CONTEXT_AMBILIGHT_BRIGHTNESS)),
+      };
+      this.debug(`Ambilight menu nodes: style=${nodes.style ?? '-'}, off=${nodes.off ?? '-'}, brightness=${nodes.brightness ?? '-'}`);
+      this.menuNodes = nodes;
+      return nodes;
+    })();
+    return this.menuNodesRequest;
   }
 
   /**
@@ -748,4 +913,40 @@ export class PhilipsTVClient {
   private sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
+}
+
+// ============================================================================
+// MENU STRUCTURE HELPERS
+// ============================================================================
+
+/** Depth-first search of a menu (sub)tree for the first node, in document order, with the given context. */
+function findMenuNode(root: unknown, context: string): MenuNode | undefined {
+  if (!root || typeof root !== 'object') {
+    return undefined;
+  }
+  if ((root as MenuNode).context === context) {
+    return root as MenuNode;
+  }
+  for (const child of Array.isArray(root) ? root : Object.values(root)) {
+    const hit = findMenuNode(child, context);
+    if (hit) {
+      return hit;
+    }
+  }
+  return undefined;
+}
+
+function menuNodeId(node: MenuNode | undefined): number | undefined {
+  return toNodeId(node?.node_id);
+}
+
+/** Node IDs arrive as numbers, though some firmware sends numeric strings. */
+function toNodeId(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isInteger(value)) {
+    return value;
+  }
+  if (typeof value === 'string' && /^\d+$/.test(value)) {
+    return Number(value);
+  }
+  return undefined;
 }

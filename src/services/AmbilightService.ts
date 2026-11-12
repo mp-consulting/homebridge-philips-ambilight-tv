@@ -393,8 +393,11 @@ export class AmbilightService {
         }
         try {
           const current = await this.deps.tvClient.getAmbilightStyle();
-          if (current?.styleName) {
-            this.currentStyle = current.styleName.toUpperCase();
+          // A TV whose menu reports on/off can answer OFF here while Ambilight
+          // is lit; that is not a style to record.
+          const reported = current?.styleName?.toUpperCase();
+          if (reported && !(reported === 'OFF' && this.deps.tvClient.hasAmbilightMenuState)) {
+            this.currentStyle = reported;
           }
           if (current?.styleName?.toUpperCase() !== style.toUpperCase()) {
             this.deps.log('debug', `Ambilight style drift detected (${current?.styleName}), re-applying ${style}`);
