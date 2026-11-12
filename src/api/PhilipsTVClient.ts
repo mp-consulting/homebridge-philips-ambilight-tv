@@ -55,6 +55,12 @@ const REQUEST_BUDGET_MS = 7000;
 /** Remaining budget below which a request is not worth starting. */
 const MIN_EXECUTION_MS = 500;
 
+/** While a TV wakes from deep standby: how often it is asked for its power
+ *  state, and how often the wake packets go out again while it does not answer
+ *  at all (a packet sent while the network chip was still powering up is lost). */
+const WAKE_POLL_INTERVAL_MS = 2000;
+const WAKE_RESEND_INTERVAL_MS = 10_000;
+
 /** Ambilight menu brightness node ID (from iOS app analysis). Only a fallback:
  *  node IDs differ between models and firmware, so the TV's own menu structure
  *  is consulted first. */
@@ -131,6 +137,9 @@ interface ApplicationIntent {
   action: string;
   extras?: Record<string, unknown>;
 }
+
+/** Outcome of PhilipsTVClient.powerOn(). */
+export type PowerOnResult = 'on' | 'waking' | 'failed';
 
 /** Ambilight node IDs resolved from this TV's menu structure. */
 interface AmbilightMenuNodes {
@@ -436,22 +445,64 @@ export class PhilipsTVClient {
   }
 
   setPowerState(on: boolean): Promise<boolean> {
+    if (on) {
+      return this.powerOn().then(result => result === 'on');
+    }
     return this.interactive(async () => {
-      if (on) {
-        // Send WoL first — if the TV is in deep standby its network stack may
-        // be down and the API POST will fail. WoL gives the TV the chance to
-        // wake, but we only return true when the API confirms the state change.
-        // Returning false here lets the caller keep isPoweredOn = false so the
-        // next attempt is not silently skipped — the poll will reconcile once
-        // the TV responds.
-        await this.tryWakeOnLan();
-        const result = await this.post('/powerstate', { powerstate: 'On' });
-        return result !== null;
-      }
-
       const result = await this.post('/powerstate', { powerstate: 'Standby' });
       return result !== null;
     });
+  }
+
+  /**
+   * Switch the TV on: 'on' once the TV accepted it, 'waking' when the wake
+   * packets went out but the TV did not answer yet (deep standby: its network
+   * and then JointSpace take seconds to come up — finish with completeWake),
+   * 'failed' when neither worked.
+   */
+  powerOn(): Promise<PowerOnResult> {
+    return this.interactive(async () => {
+      // WoL first: in deep standby the TV's network stack is down and the POST
+      // can only fail.
+      const woke = await this.tryWakeOnLan();
+      const result = await this.post('/powerstate', { powerstate: 'On' });
+      if (result !== null) {
+        return 'on';
+      }
+      return woke ? 'waking' : 'failed';
+    });
+  }
+
+  /**
+   * See a wake from deep standby through (issue #49): keep sending the wake
+   * packets while the TV does not answer, ask it for On once JointSpace
+   * answers in standby, and resolve true as soon as it reports On. Resolves
+   * false when `timeoutMs` runs out or `signal` aborts first.
+   */
+  async completeWake(timeoutMs: number, signal?: AbortSignal): Promise<boolean> {
+    const deadline = Date.now() + timeoutMs;
+    let lastWake = Date.now();
+    while (Date.now() < deadline) {
+      await abortableDelay(Math.min(WAKE_POLL_INTERVAL_MS, Math.max(0, deadline - Date.now())), signal);
+      if (signal?.aborted) {
+        return false;
+      }
+      const state = await this.getPowerState();
+      if (signal?.aborted) {
+        return false;
+      }
+      if (state === true) {
+        return true;
+      }
+      if (state === false) {
+        // JointSpace is up but the TV is still in standby.
+        await this.post('/powerstate', { powerstate: 'On' });
+      } else if (Date.now() - lastWake >= WAKE_RESEND_INTERVAL_MS) {
+        lastWake = Date.now();
+        await this.tryWakeOnLan();
+      }
+    }
+    return false;
   }
 
   private async tryWakeOnLan(): Promise<boolean> {
@@ -949,4 +1000,22 @@ function toNodeId(value: unknown): number | undefined {
     return Number(value);
   }
   return undefined;
+}
+
+/** Wait `ms`, or less when `signal` aborts first. */
+function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise(resolve => {
+    if (signal?.aborted) {
+      resolve();
+      return;
+    }
+    const pending: { timer?: ReturnType<typeof setTimeout> } = {};
+    const done = (): void => {
+      clearTimeout(pending.timer);
+      signal?.removeEventListener('abort', done);
+      resolve();
+    };
+    pending.timer = setTimeout(done, ms);
+    signal?.addEventListener('abort', done, { once: true });
+  });
 }

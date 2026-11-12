@@ -130,6 +130,12 @@ export class StatePollManager {
     this.log('debug', `State updates will start in ${INITIAL_POLL_DELAY_MS}ms`);
   }
 
+  /** Read the TV's state now — e.g. once a TV woken from deep standby
+   *  answers, rather than up to a polling interval later. */
+  pollNow(): Promise<void> {
+    return this.pollState();
+  }
+
   cleanup(): void {
     if (this.startupTimer) {
       clearTimeout(this.startupTimer);

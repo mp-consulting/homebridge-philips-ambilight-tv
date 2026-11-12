@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+
+- **Power on from deep standby** works with a single HomeKit command ([#49](https://github.com/mp-consulting/homebridge-philips-ambilight-tv/issues/49)). The plugin sent the Wake-on-LAN packets and then asked the TV to switch on at once, but a TV in deep standby needs several seconds before its API answers, so the command failed and nothing tried again. HomeKit now shows the TV on straight away while the plugin keeps waking it: it resends the packets while the TV is silent, asks it to switch on once the API answers, and reads the TV's state (power, source, Ambilight) as soon as it is on. If the TV is still not on after 60 seconds, the tile goes back off and the log says so.
+
 ## [1.9.7] - 2026-11-12
 
 ### Fixed

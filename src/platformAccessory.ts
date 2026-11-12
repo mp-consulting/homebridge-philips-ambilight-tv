@@ -23,6 +23,11 @@ import { CustomButtonService } from './services/CustomButtonService.js';
  *  genuinely refuses later still surfaces as an error. */
 const WAKE_WINDOW_MS = 20_000;
 
+/** How long a power-on from HomeKit keeps waking a TV in deep standby before
+ *  giving up. The logs in issue #49 show a 55POS9002 answering 8-10 s after
+ *  the wake packets; a cold boot can take several times that. */
+const DEEP_STANDBY_WAKE_TIMEOUT_MS = 60_000;
+
 /** Pause before re-reading an ambiguous (NA/playtv) current-app report after
  *  power-on, so a TV that wakes onto its home screen still aligns quickly. */
 const POWER_ON_RESYNC_DELAY_MS = 2500;
@@ -52,6 +57,9 @@ export class PhilipsAmbilightTVAccessory {
   /** When the TV was last commanded on, used to tell a launch rejected by a
    *  still-booting TV from one the TV genuinely refuses. */
   private powerOnAt: number | null = null;
+
+  /** Cancels the wake from deep standby in progress, if any. */
+  private wakeAbort: AbortController | null = null;
 
   /** Pending second read of the current app after a power-on. */
   private powerOnResyncTimer?: ReturnType<typeof setTimeout>;
@@ -269,7 +277,7 @@ export class PhilipsAmbilightTVAccessory {
   // ==========================================================================
 
   private handleGetPower(): CharacteristicValue {
-    return this.isPoweredOn
+    return this.isPoweredOn || this.wakeAbort
       ? this.Characteristic.Active.ACTIVE
       : this.Characteristic.Active.INACTIVE;
   }
@@ -278,13 +286,35 @@ export class PhilipsAmbilightTVAccessory {
     const shouldBeOn = value === this.Characteristic.Active.ACTIVE;
     this.log('info', `Setting power to ${shouldBeOn ? 'ON' : 'OFF'}`);
 
-    if (shouldBeOn === this.isPoweredOn) {
+    if (this.wakeAbort) {
+      if (shouldBeOn) {
+        this.log('debug', 'Already waking the TV');
+        return;
+      }
+      // Turned off again before the TV came up: stop waking it, and still
+      // send Standby below in case it is already part-way through booting.
+      this.cancelWake();
+    } else if (shouldBeOn === this.isPoweredOn) {
       this.log('debug', 'Already in desired power state');
       return;
     }
 
     try {
-      const success = await this.tvClient.setPowerState(shouldBeOn);
+      let success: boolean;
+      if (shouldBeOn) {
+        const outcome = await this.tvClient.powerOn();
+        if (outcome === 'waking') {
+          // Deep standby: the wake packets are out and the TV needs seconds
+          // more before it answers. Accept the command now and see the wake
+          // through in the background (issue #49) — failing it here left the
+          // TV half-woken and the user retrying by hand.
+          this.startWake();
+          return;
+        }
+        success = outcome === 'on';
+      } else {
+        success = await this.tvClient.setPowerState(false);
+      }
       if (success) {
         this.isPoweredOn = shouldBeOn;
         this.powerOnAt = shouldBeOn ? Date.now() : null;
@@ -314,6 +344,42 @@ export class PhilipsAmbilightTVAccessory {
       this.log('warn', 'Failed to change power state');
       throw error instanceof this.platform.api.hap.HapStatusError ? error : this.communicationError();
     }
+  }
+
+  /**
+   * Finish a wake from deep standby in the background. HomeKit shows the TV
+   * on meanwhile; once the TV reports On a poll applies it (the power-on edge
+   * then syncs the source and replays a parked selection), and if it never
+   * does the tile goes back off.
+   */
+  private startWake(): void {
+    const abort = new AbortController();
+    this.wakeAbort = abort;
+    this.powerOnAt = Date.now();
+    this.log('info', 'Waking the TV from deep standby — waiting for it to answer');
+    void this.tvClient.completeWake(DEEP_STANDBY_WAKE_TIMEOUT_MS, abort.signal).then(async (on) => {
+      if (abort.signal.aborted) {
+        return;
+      }
+      this.wakeAbort = null;
+      if (on) {
+        this.log('debug', 'TV answered after waking from deep standby');
+        await this.statePollManager.pollNow();
+        return;
+      }
+      this.log('warn', `The TV did not come on within ${DEEP_STANDBY_WAKE_TIMEOUT_MS / 1000}s of the wake packets. `
+        + 'Check its MAC address and that Wake on WiFi/LAN is on in its network settings.');
+      this.powerOnAt = null;
+      if (!this.isPoweredOn) {
+        this.tvService.updateCharacteristic(this.Characteristic.Active, this.Characteristic.Active.INACTIVE);
+      }
+    });
+  }
+
+  private cancelWake(): void {
+    this.wakeAbort?.abort();
+    this.wakeAbort = null;
+    this.powerOnAt = null;
   }
 
   // ==========================================================================
@@ -377,6 +443,9 @@ export class PhilipsAmbilightTVAccessory {
       this.sourceSwitchService.resetAll();
       this.ambilightHueSwitchService.reset();
     } else if (!isInitialSync) {
+      // A wake from deep standby has done its job, however the TV came on.
+      this.wakeAbort?.abort();
+      this.wakeAbort = null;
       // The TV has just come up, so launches are provisional for a while —
       // including when it was switched on from the remote rather than from
       // HomeKit, which is the only way powerOnAt would otherwise be unset.
@@ -481,6 +550,7 @@ export class PhilipsAmbilightTVAccessory {
   }
 
   public cleanup(): void {
+    this.cancelWake();
     this.statePollManager.cleanup();
     this.customButtonService.cleanup();
     this.ambilightService.cleanup();

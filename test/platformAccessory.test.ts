@@ -16,6 +16,9 @@ const mocks = vi.hoisted(() => ({
   hueReset: vi.fn(),
   getVisibleSources: vi.fn().mockReturnValue([]),
   setPowerState: vi.fn().mockResolvedValue(true),
+  powerOn: vi.fn().mockResolvedValue('on'),
+  completeWake: vi.fn().mockResolvedValue(true),
+  pollNow: vi.fn().mockResolvedValue(undefined),
   getCurrentActivity: vi.fn().mockResolvedValue(null),
   fetchAppsFromTV: vi.fn().mockResolvedValue(undefined),
   inputUpdateFromPoll: vi.fn(),
@@ -38,6 +41,8 @@ const capture = vi.hoisted(() => ({ pollCallbacks: null as unknown, inputManager
 vi.mock('../src/api/PhilipsTVClient.js', () => ({
   PhilipsTVClient: class {
     setPowerState = mocks.setPowerState;
+    powerOn = mocks.powerOn;
+    completeWake = mocks.completeWake;
     getCurrentActivity = mocks.getCurrentActivity;
     sendKey = mocks.sendKey;
     setMuted = mocks.setMuted;
@@ -115,6 +120,7 @@ vi.mock('../src/services/StatePollManager.js', () => ({
     start = vi.fn();
     stop = vi.fn();
     cleanup = mocks.pollCleanup;
+    pollNow = mocks.pollNow;
     constructor(_client: unknown, _config: unknown, callbacks: unknown) {
       capture.pollCallbacks = callbacks;
     }
@@ -129,6 +135,7 @@ import { PhilipsAmbilightTVAccessory } from '../src/platformAccessory.js';
 
 interface MockCharacteristic {
   onGet: (fn: () => unknown) => MockCharacteristic;
+  _onGet?: () => unknown;
   onSet: (fn: (v: unknown) => void | Promise<void>) => MockCharacteristic;
   _onSet?: (v: unknown) => void | Promise<void>;
 }
@@ -142,7 +149,10 @@ function createMockService() {
     getCharacteristic: vi.fn().mockImplementation((key: unknown) => {
       if (!chars.has(key)) {
         const char: MockCharacteristic = {
-          onGet: () => char,
+          onGet: (fn) => {
+            char._onGet = fn;
+            return char;
+          },
           onSet: (fn) => {
             char._onSet = fn;
             return char;
@@ -234,6 +244,8 @@ describe('PhilipsAmbilightTVAccessory power handling', () => {
   beforeEach(() => {
     Object.values(mocks).forEach(m => m.mockClear());
     mocks.setPowerState.mockResolvedValue(true);
+    mocks.powerOn.mockResolvedValue('on');
+    mocks.completeWake.mockResolvedValue(true);
     mocks.getVisibleSources.mockReturnValue([]);
     mocks.hasPendingWakeSelection.mockReturnValue(false);
     mocks.replayWakeSelection.mockResolvedValue(undefined);
@@ -280,7 +292,7 @@ describe('PhilipsAmbilightTVAccessory power handling', () => {
 
     await setPower(services, true);
 
-    expect(mocks.setPowerState).toHaveBeenLastCalledWith(true);
+    expect(mocks.powerOn).toHaveBeenCalledTimes(1);
     expect(mocks.resetAll).not.toHaveBeenCalled();
   });
 
@@ -434,6 +446,107 @@ describe('PhilipsAmbilightTVAccessory power handling', () => {
       cb.onPowerChange(true);
 
       expect(isWaking()).toBe(false);
+    });
+  });
+
+  describe('waking from deep standby (issue #49)', () => {
+    /** A completeWake the test settles by hand, recording the abort signal. */
+    function pendingWake() {
+      const wake: { resolve: (on: boolean) => void; signal?: AbortSignal } = { resolve: () => {} };
+      mocks.completeWake.mockImplementation((_timeout: number, signal?: AbortSignal) => {
+        wake.signal = signal;
+        return new Promise<boolean>(resolve => {
+          wake.resolve = resolve;
+        });
+      });
+      return wake;
+    }
+
+    function build() {
+      const { platform, accessory, services } = createMocks();
+      new PhilipsAmbilightTVAccessory(platform as never, accessory as never);
+      const tvService = services.get(Service.Television)!;
+      const active = tvService.getCharacteristic(Characteristic.Active) as unknown as MockCharacteristic;
+      return { platform, services, tvService, getActive: () => active._onGet!() };
+    }
+
+    it('accepts the power-on and polls once the TV answers', async () => {
+      mocks.powerOn.mockResolvedValue('waking');
+      const wake = pendingWake();
+      const { services, getActive } = build();
+
+      await setPower(services, true); // does not throw
+      expect(getActive()).toBe(Characteristic.Active.ACTIVE);
+      expect(mocks.pollNow).not.toHaveBeenCalled();
+
+      wake.resolve(true);
+      await flush();
+
+      expect(mocks.pollNow).toHaveBeenCalledTimes(1);
+    });
+
+    it('switches the tile back off when the TV never comes on', async () => {
+      mocks.powerOn.mockResolvedValue('waking');
+      const wake = pendingWake();
+      const { platform, services, tvService, getActive } = build();
+
+      await setPower(services, true);
+      wake.resolve(false);
+      await flush();
+
+      expect(getActive()).toBe(Characteristic.Active.INACTIVE);
+      expect(tvService.updateCharacteristic).toHaveBeenCalledWith(Characteristic.Active, Characteristic.Active.INACTIVE);
+      expect(platform.log.warn).toHaveBeenCalledWith(expect.stringContaining('did not come on'));
+      expect(mocks.pollNow).not.toHaveBeenCalled();
+    });
+
+    it('does not start a second wake while one is running', async () => {
+      mocks.powerOn.mockResolvedValue('waking');
+      pendingWake();
+      const { services } = build();
+
+      await setPower(services, true);
+      await setPower(services, true);
+
+      expect(mocks.powerOn).toHaveBeenCalledTimes(1);
+      expect(mocks.completeWake).toHaveBeenCalledTimes(1);
+    });
+
+    it('stops waking and sends standby when turned off mid-wake', async () => {
+      mocks.powerOn.mockResolvedValue('waking');
+      const wake = pendingWake();
+      const { services } = build();
+
+      await setPower(services, true);
+      await setPower(services, false);
+
+      expect(wake.signal?.aborted).toBe(true);
+      expect(mocks.setPowerState).toHaveBeenLastCalledWith(false);
+
+      wake.resolve(false);
+      await flush();
+      expect(mocks.pollNow).not.toHaveBeenCalled();
+    });
+
+    it('stops waking once the poll sees the TV on', async () => {
+      mocks.powerOn.mockResolvedValue('waking');
+      const wake = pendingWake();
+      const { services } = build();
+      const cb = capture.pollCallbacks as { onPowerChange: (on: boolean) => void };
+
+      cb.onPowerChange(false); // initial sync
+      await setPower(services, true);
+      cb.onPowerChange(true);
+
+      expect(wake.signal?.aborted).toBe(true);
+    });
+
+    it('still reports a failure when no wake packet could be sent', async () => {
+      mocks.powerOn.mockResolvedValue('failed');
+      const { services } = build();
+
+      await expect(setPower(services, true)).rejects.toThrow();
+      expect(mocks.completeWake).not.toHaveBeenCalled();
     });
   });
 
