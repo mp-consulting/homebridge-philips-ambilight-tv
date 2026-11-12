@@ -65,7 +65,11 @@ export interface TvAgentOptions {
  */
 export const createTvAgent = (options: TvAgentOptions = {}): Dispatcher => {
   const expected = options.certFingerprint ? normalizeFingerprint(options.certFingerprint) : null;
-  const baseConnector = buildConnector({ rejectUnauthorized: false });
+  // No TLS session cache: a resumed session can report no peer certificate,
+  // which the pin check below would read as a plaintext downgrade. TVs that
+  // close the socket after each response (e.g. after the Digest 401) would
+  // then fail every second request.
+  const baseConnector = buildConnector({ rejectUnauthorized: false, maxCachedSessions: 0 });
   let warnedUnpinned = false;
 
   return new Agent({

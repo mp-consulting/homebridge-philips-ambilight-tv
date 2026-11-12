@@ -302,8 +302,23 @@ export class UiServer extends HomebridgePluginUiServer {
         return handleErrorResponse(response, 'Pairing');
       }
 
-      const result = await response.json();
+      const result = await response.json().catch(() => null);
       void agent.close().catch(() => {});
+
+      // Some TVs answer a refused request (another pairing already showing a
+      // PIN, for instance) with HTTP 200 and an error_id but no auth_key or
+      // timestamp. Storing that would only fail later at the grant.
+      if (result?.error_id && result.error_id !== 'SUCCESS') {
+        return {
+          success: false,
+          error: `The TV refused to start pairing: ${sanitizeForLog(String(result.error_id))} - ${sanitizeForLog(String(result.error_text || ''))}. `
+            + 'Close any pairing PIN shown on the TV and try again.',
+        };
+      }
+      if (typeof result?.auth_key !== 'string' || !result.auth_key || result.timestamp == null) {
+        console.log('[Pairing] Unexpected pairing response, fields:', Object.keys(result ?? {}).map((key) => sanitizeForLog(key)).join(', ') || 'none');
+        return { success: false, error: 'The TV sent an unexpected pairing response. Try again; if it keeps happening, please report it.' };
+      }
 
       // Every later connection in this pairing is pinned to what we saw here;
       // with nothing observed the grant still runs, but the UI warns.
@@ -379,7 +394,7 @@ export class UiServer extends HomebridgePluginUiServer {
       const success = createPairingSuccess(session, session.certFingerprint ?? undefined);
       return session.certFingerprint ? success : { ...success, certWarning: true };
     } catch (error) {
-      console.log('[PairGrant] Error:', error.message);
+      console.log('[PairGrant] Error:', error.message, error.cause?.message ? `(${error.cause.message})` : '');
       // A certificate that changed mid-pairing is not a TV to trust.
       // undici reports connect failures as "fetch failed" with the reason as the cause.
       const reason = `${error.message || ''} ${error.cause?.message || ''}`;
