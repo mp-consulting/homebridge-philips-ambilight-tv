@@ -40,8 +40,14 @@ beforeAll(async () => {
 
   server = https.createServer(
     { key: fs.readFileSync(keyPath), cert },
-    (_req, res) => {
-      res.writeHead(200, { 'content-type': 'application/json' });
+    (req, res) => {
+      // /close mimics TVs that drop the connection after every response, so
+      // each request needs a fresh TLS connection.
+      const headers: Record<string, string> = { 'content-type': 'application/json' };
+      if (req.url === '/close') {
+        headers.connection = 'close';
+      }
+      res.writeHead(200, headers);
       res.end('{"ok":true}');
     },
   );
@@ -110,6 +116,20 @@ describe('createTvAgent', () => {
     const response = await fetch(url(), { dispatcher: agent });
 
     expect(response.status).toBe(200);
+    await agent.close();
+  });
+
+  it('should keep checking the pin on each new connection to a TV that closes them', async () => {
+    // A resumed TLS session can report no peer certificate, which once failed
+    // the second request as an "unencrypted connection" (issue #34).
+    const observed: string[] = [];
+    const agent = createTvAgent({ certFingerprint: fingerprint, onCertObserved: (fp) => observed.push(fp) });
+    for (let i = 0; i < 3; i++) {
+      const res = await fetch(`https://127.0.0.1:${port}/close`, { dispatcher: agent });
+      expect(res.status).toBe(200);
+      await res.text();
+    }
+    expect(observed).toEqual([fingerprint, fingerprint, fingerprint]);
     await agent.close();
   });
 

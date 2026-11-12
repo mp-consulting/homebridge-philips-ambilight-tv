@@ -277,6 +277,31 @@ describe('homebridge-ui server', () => {
       expect(result).toMatchObject({ success: false, error: 'Pairing failed: INVALID_PIN - bad pin' });
     });
 
+    it('reports a pairing request the TV refused instead of storing a session', async () => {
+      mocks.fetch.mockResolvedValueOnce(response(200, { error_id: 'CONCURRENT_PAIRING', error_text: 'busy' }));
+
+      const result = await call('/pair', { ip: '192.168.1.5' });
+      expect(result).toMatchObject({ success: false, error: expect.stringContaining('CONCURRENT_PAIRING - busy') });
+      expect(mocks.server.pairingSessions.size).toBe(0);
+    });
+
+    it.each([
+      ['no timestamp', { auth_key: 'secret-key' }],
+      ['no auth key', { timestamp: 12345 }],
+      ['no JSON body', 'not json'],
+    ])('rejects a pairing response with %s', async (_label, body) => {
+      const res = response(200, body);
+      if (typeof body === 'string') {
+        res.json = () => Promise.reject(new SyntaxError('Unexpected token'));
+      }
+      mocks.fetch.mockResolvedValueOnce(res);
+
+      const result = await call('/pair', { ip: '192.168.1.5' });
+      expect(result).toMatchObject({ success: false, error: expect.stringContaining('unexpected pairing response') });
+      expect(mocks.server.pairingSessions.size).toBe(0);
+      expect(JSON.stringify(result)).not.toContain('secret-key');
+    });
+
     it('expires an abandoned pairing session', async () => {
       vi.useFakeTimers();
       answerPairRequest('fp');
