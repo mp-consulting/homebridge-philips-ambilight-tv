@@ -304,6 +304,12 @@ export class StatePollManager {
       }
       const payload = value as Record<string, unknown>;
 
+      // On a TV whose settings menu reports Ambilight on/off, these payloads
+      // can be wrong; a full poll reads the menu instead.
+      if ((key === 'ambilight/currentconfiguration' || key === 'ambilight/power') && this.tvClient.hasAmbilightMenuState) {
+        return false;
+      }
+
       switch (key) {
         case 'powerstate': {
           if (typeof payload.powerstate !== 'string') {
@@ -313,16 +319,14 @@ export class StatePollManager {
           break;
         }
         case 'ambilight/currentconfiguration': {
-          // On a TV whose menu is the reliable source the payload may be
-          // wrong; a full poll reads the menu instead.
-          if (typeof payload.styleName !== 'string' || this.tvClient.hasAmbilightMenuState) {
+          if (typeof payload.styleName !== 'string') {
             return false;
           }
           updates.push(() => this.applyAmbilightStyle(payload as unknown as AmbilightCached));
           break;
         }
         case 'ambilight/power': {
-          if (typeof payload.power !== 'string' || this.tvClient.hasAmbilightMenuState) {
+          if (typeof payload.power !== 'string') {
             return false;
           }
           // The configuration, when it came too, is the richer of the two.
@@ -486,34 +490,13 @@ export class StatePollManager {
     }
   }
 
-  /**
-   * Read Ambilight's state. Some models (e.g. 2024 Google TV OLEDs) report
-   * OFF from /ambilight/currentconfiguration and /ambilight/power however
-   * Ambilight is lit; where the TV's settings menu answers, it decides on/off
-   * and the style only adds the detail (mode, colour) it is still right about.
-   */
+  /** Apply Ambilight's state; nothing when the client has no reliable reading this time. */
   private async readAmbilight(): Promise<void> {
-    const ambilightStyle = await this.tvClient.getAmbilightStyle();
-    const menuOn = await this.tvClient.getAmbilightMenuState();
-
-    if (menuOn === null) {
-      // A TV whose menu has answered before only missed this read — falling
-      // back to the endpoints it is known to get wrong would flip the tile.
-      if (this.tvClient.hasAmbilightMenuState) {
-        return;
-      }
-      if (ambilightStyle) {
-        this.applyAmbilightStyle(ambilightStyle);
-      } else {
-        this.applyAmbilightPower(await this.tvClient.getAmbilightPower());
-      }
-      return;
-    }
-
-    if (menuOn && ambilightStyle && ambilightStyle.styleName !== 'OFF') {
-      this.applyAmbilightStyle(ambilightStyle);
-    } else {
-      this.applyAmbilightPower(menuOn);
+    const state = await this.tvClient.getAmbilightState();
+    if (state?.style) {
+      this.applyAmbilightStyle(state.style);
+    } else if (state) {
+      this.applyAmbilightPower(state.on);
     }
   }
 

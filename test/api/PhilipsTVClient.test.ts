@@ -448,14 +448,44 @@ describe('PhilipsTVClient', () => {
       expect(structureReads).toHaveLength(1);
     });
 
-    it('retries the structure after a failed read', async () => {
+    it('retries the structure after a failed read, but not on every call', async () => {
       mockFetch
         .mockReturnValueOnce(mockResponse(null, 500))
         .mockReturnValueOnce(mockResponse(STRUCTURE))
         .mockReturnValueOnce(currentResponse(2130968784));
 
       expect(await run(client.getAmbilightMenuState())).toBeNull();
+      // Within the back-off nothing is requested.
+      expect(await run(client.getAmbilightMenuState())).toBeNull();
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+
+      vi.setSystemTime(Date.now() + 5 * 60_000);
       expect(await run(client.getAmbilightMenuState())).toBe(true);
+    });
+
+    it('stops trusting the menu after three missed reads in a row', async () => {
+      mockFetch
+        .mockReturnValueOnce(mockResponse(STRUCTURE))
+        .mockReturnValueOnce(currentResponse(2130968784))
+        .mockReturnValue(mockResponse({ values: [] }));
+
+      await run(client.getAmbilightMenuState());
+      expect(client.hasAmbilightMenuState).toBe(true);
+
+      await run(client.getAmbilightMenuState());
+      await run(client.getAmbilightMenuState());
+      expect(client.hasAmbilightMenuState).toBe(true);
+      await run(client.getAmbilightMenuState());
+      expect(client.hasAmbilightMenuState).toBe(false);
+    });
+
+    it('reports state from the menu and reads the style only when Ambilight is on', async () => {
+      mockFetch
+        .mockReturnValueOnce(mockResponse(STRUCTURE))
+        .mockReturnValueOnce(currentResponse(2130968789));
+
+      expect(await run(client.getAmbilightState())).toEqual({ on: false, style: null });
+      expect(mockFetch.mock.calls.some(([url]) => String(url).includes('/ambilight/currentconfiguration'))).toBe(false);
     });
 
     it('returns null without asking for the value on a TV without those nodes', async () => {

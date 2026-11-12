@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'events';
 import { StatePollManager } from '../../src/services/StatePollManager.js';
 import type { PollCallbacks } from '../../src/services/StatePollManager.js';
-import type { PhilipsTVClient } from '../../src/api/PhilipsTVClient.js';
+import { PhilipsTVClient } from '../../src/api/PhilipsTVClient.js';
 
 // ============================================================================
 // MOCKS
@@ -28,6 +28,10 @@ function createMockTVClient(): PhilipsTVClient {
     getAmbilightPower: vi.fn().mockResolvedValue(false),
     getAmbilightMenuState: vi.fn().mockResolvedValue(null),
     hasAmbilightMenuState: false,
+    // The real reconciliation, over the mocked reads above.
+    getAmbilightState: vi.fn(function (this: PhilipsTVClient) {
+      return PhilipsTVClient.prototype.getAmbilightState.call(this);
+    }),
     getVolume: vi.fn().mockResolvedValue(null),
     getCurrentActivity: vi.fn().mockResolvedValue(null),
   } as unknown as PhilipsTVClient;
