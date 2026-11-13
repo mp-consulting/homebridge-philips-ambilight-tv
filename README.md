@@ -68,6 +68,16 @@ When no launch activity is given, the plugin launches `<packageName>.MainActivit
 
 > **Detect from TV** reads the app currently open on the TV and fills in its package name and exact launch activity. Make sure the app is in the foreground first — if the TV is on live TV or the home screen, it reports that system activity instead.
 
+### Launching All Apps via ADB
+
+Some firmwares only report a few system apps and refuse to launch anything else (HTTP 400), even with the exact launch activity — so YouTube, Netflix, etc. can't be selected, and custom apps don't help. If your TV does this, enable **Launch all apps via ADB** (`"adb": true`):
+
+1. On the TV, enable Developer options, then **Network debugging** (ADB on port 5555).
+2. Install `adb` on the Homebridge host (Docker: add `apt-get install -y adb` to `/homebridge/startup.sh`).
+3. On the first connection, accept the "Allow USB debugging" prompt on the TV (tick *Always allow*). ADB keeps its key in `~/.android` — persist it (e.g. symlink it to `/homebridge/.android` in Docker) or the TV will ask again.
+
+Every installed app then shows up as an input and launches over ADB; the app on screen is also detected over ADB when the TV reports none.
+
 ### Custom Buttons
 
 A custom button is a HomeKit switch that sends one remote key when you turn it on, then turns itself back off. Set them up in the config UI (edit a TV → **Buttons** tab) or directly:

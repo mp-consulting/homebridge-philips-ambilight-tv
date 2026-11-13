@@ -186,6 +186,12 @@
                 }
               }
             },
+            "adb": {
+              "title": "Launch All Apps via ADB",
+              "type": "boolean",
+              "default": false,
+              "description": "Some Philips firmwares hide third-party apps (YouTube, Netflix...) from their API and refuse to launch them. Enable Network debugging on the TV and install adb on the Homebridge host to list and launch every installed app."
+            },
             "sourceSwitches": {
               "title": "Source Switches",
               "type": "boolean",
@@ -337,6 +343,7 @@
             "devices[].infoButtonKey",
             "devices[].backButtonKey",
             "devices[].playPauseButtonKey",
+            "devices[].adb",
             "devices[].sourceSwitches",
             "devices[].ambilightHueSwitch",
             {

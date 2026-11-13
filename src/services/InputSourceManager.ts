@@ -275,7 +275,7 @@ export class InputSourceManager {
     }
 
     try {
-      const tvApps = await this.deps.tvClient.getApplications();
+      const { apps: tvApps, complete } = await this.deps.tvClient.getApplicationList();
       if (tvApps.length === 0) {
         this.deps.log('debug', 'No apps returned from TV');
         return;
@@ -291,7 +291,8 @@ export class InputSourceManager {
       // have labels, replace those placeholders (and persist) so inputs and their
       // switches show a friendly name.
       const renamed = this.upgradePlaceholderNames(tvAppInputs);
-      const pruned = this.pruneUninstalledApps(reportedPackages(tvApps));
+      // A partial list (a source did not answer) says nothing about what is uninstalled
+      const pruned = complete ? this.pruneUninstalledApps(reportedPackages(tvApps)) : 0;
 
       const newApps = tvAppInputs.filter(app => !this.inputsById.has(app.id));
       const available = Math.max(0, MAX_INPUT_SOURCES - this.inputSources.length);

@@ -113,6 +113,18 @@ function debugLog(...args) {
 // UI SERVER CLASS
 // ============================================================================
 
+/** A client for the TV a UI request describes (its IP already validated). */
+function tvClientFor({ ip, username, password, mac, certFingerprint, adb }) {
+  return new PhilipsTVClient({
+    ip,
+    mac: mac || '',
+    username: username || '',
+    password: password || '',
+    certFingerprint: certFingerprint || undefined,
+    adb: adb === true,
+  });
+}
+
 export class UiServer extends HomebridgePluginUiServer {
   constructor() {
     super();
@@ -438,19 +450,13 @@ export class UiServer extends HomebridgePluginUiServer {
   // --------------------------------------------------------------------------
 
   async getSources(data) {
-    const { ip, username, password, mac, certFingerprint } = data ?? {};
+    const { ip } = data ?? {};
 
     if (!isValidIp(ip)) {
       return { success: false, error: INVALID_IP_ERROR };
     }
 
-    const client = new PhilipsTVClient({
-      ip,
-      mac: mac || '',
-      username: username || '',
-      password: password || '',
-      certFingerprint: certFingerprint || undefined,
-    });
+    const client = tvClientFor(data);
 
     try {
       debugLog(`[Sources] Getting sources from ${ip}`);
@@ -528,19 +534,13 @@ export class UiServer extends HomebridgePluginUiServer {
   // --------------------------------------------------------------------------
 
   async getCurrentApp(data) {
-    const { ip, username, password, mac, certFingerprint } = data ?? {};
+    const { ip } = data ?? {};
 
     if (!isValidIp(ip)) {
       return { success: false, error: INVALID_IP_ERROR };
     }
 
-    const client = new PhilipsTVClient({
-      ip,
-      mac: mac || '',
-      username: username || '',
-      password: password || '',
-      certFingerprint: certFingerprint || undefined,
-    });
+    const client = tvClientFor(data);
 
     try {
       debugLog(`[CurrentApp] Detecting current app on ${ip}`);

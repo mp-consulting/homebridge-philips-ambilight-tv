@@ -7,6 +7,10 @@ export const TV_API_HTTP_PORT = 1925;
 export const TV_API_VERSION = 6;
 
 // Timeouts (in milliseconds)
+
+/** Remaining budget below which a request (HTTP or adb) is not worth starting. */
+export const MIN_EXECUTION_MS = 500;
+
 export const DISCOVERY_TIMEOUT = 5000;
 export const CONNECTION_TIMEOUT = 15000;
 export const PAIRING_TIMEOUT = 15000;
