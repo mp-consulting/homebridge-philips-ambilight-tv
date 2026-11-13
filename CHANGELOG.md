@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.10.0] - 2026-11-13
+
+### Added
+
+- **Launch all apps via ADB** (`"adb": true`, off by default) for TVs whose firmware only reports a few system apps and refuses to launch anything else with HTTP 400, so YouTube, Netflix and other apps could not be selected ([#51](https://github.com/mp-consulting/homebridge-philips-ambilight-tv/pull/51), thanks @FabienBounoir). With Network debugging on the TV and `adb` installed on the Homebridge host, the plugin:
+  - lists every installed TV app over ADB and adds the ones the TV hides as inputs;
+  - launches those apps over ADB, and uses ADB as a fallback when the TV rejects a launch (an explicit launch activity is honoured, so sideloaded apps work too);
+  - detects the app on screen over ADB when the TV reports none, so the active input follows the app, and **Detect from TV** can capture it.
+
+  If ADB stops answering (TV still waking, debugging turned off), its apps are kept rather than removed, the plugin falls back to the TV's own API, and it waits 60 seconds before trying ADB again. See the README for setup.
+
 ## [1.9.8] - 2026-11-12
 
 ### Fixed
