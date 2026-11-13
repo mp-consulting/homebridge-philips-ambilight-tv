@@ -322,6 +322,7 @@ export interface TVDeviceConfig {
   backButtonKey?: RemoteKey;
   playPauseButtonKey?: RemoteKey;
   sourceSwitches?: boolean;
+  adb?: boolean;
   ambilightHueSwitch?: boolean;
   customApps?: CustomAppConfig[];
   customButtons?: CustomButtonConfig[];

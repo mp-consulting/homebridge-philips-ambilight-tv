@@ -276,7 +276,7 @@
     // The TV's pinned certificate travels with its credentials so these
     // connections are verified like the plugin's own.
     getSources: (tv) => homebridge.request('/get-sources', {
-      ip: tv.ip, username: tv.username, password: tv.password, mac: tv.mac, certFingerprint: tv.certFingerprint,
+      ip: tv.ip, username: tv.username, password: tv.password, mac: tv.mac, certFingerprint: tv.certFingerprint, adb: tv.adb,
     }),
     currentApp: (tv) => homebridge.request('/current-app', {
       ip: tv.ip, username: tv.username, password: tv.password, mac: tv.mac, certFingerprint: tv.certFingerprint,
@@ -680,6 +680,7 @@
     f('BackButtonKey').value = tv.backButtonKey || 'Back';
     f('PlayPauseButtonKey').value = tv.playPauseButtonKey || 'PlayPause';
     f('SourceSwitches').checked = tv.sourceSwitches || false;
+    f('Adb').checked = tv.adb || false;
     f('AmbilightHueSwitch').checked = tv.ambilightHueSwitch || false;
     const sensors = tv.stateSensors || [];
     STATE_SENSORS.forEach(([key, suffix]) => {
@@ -713,6 +714,7 @@
       backButtonKey: f('BackButtonKey').value,
       playPauseButtonKey: f('PlayPauseButtonKey').value,
       sourceSwitches: f('SourceSwitches').checked,
+      adb: f('Adb').checked,
       ambilightHueSwitch: f('AmbilightHueSwitch').checked,
       stateSensors: STATE_SENSORS.filter(([, suffix]) => f(suffix).checked).map(([key]) => key),
     };

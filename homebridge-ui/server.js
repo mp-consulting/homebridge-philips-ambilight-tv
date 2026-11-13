@@ -438,7 +438,7 @@ export class UiServer extends HomebridgePluginUiServer {
   // --------------------------------------------------------------------------
 
   async getSources(data) {
-    const { ip, username, password, mac, certFingerprint } = data ?? {};
+    const { ip, username, password, mac, certFingerprint, adb } = data ?? {};
 
     if (!isValidIp(ip)) {
       return { success: false, error: INVALID_IP_ERROR };
@@ -450,6 +450,7 @@ export class UiServer extends HomebridgePluginUiServer {
       username: username || '',
       password: password || '',
       certFingerprint: certFingerprint || undefined,
+      adb: adb === true,
     });
 
     try {

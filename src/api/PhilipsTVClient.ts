@@ -13,6 +13,7 @@ import {
   sendWakeOnLan,
 } from './utils.js';
 import { DigestAuthSession } from './DigestAuthSession.js';
+import { AdbClient } from './AdbClient.js';
 import type {
   PowerState,
   VolumeState,
@@ -130,6 +131,8 @@ export interface PhilipsTVClientConfig {
   password: string;
   /** SHA-256 certificate fingerprint captured at pairing time, if available. */
   certFingerprint?: string;
+  /** List and launch apps over ADB (network debugging) — for apps the TV hides from JointSpace */
+  adb?: boolean;
 }
 
 interface ApplicationIntent {
@@ -177,6 +180,9 @@ export class PhilipsTVClient {
   /** Shared digest auth session — avoids a 401 round-trip on every request */
   private readonly authSession: DigestAuthSession;
 
+  /** ADB fallback for apps JointSpace hides or refuses to launch (null when disabled) */
+  private readonly adb: AdbClient | null;
+
   /** Dispatcher pinned to this TV's certificate (unpinned on legacy configs) */
   private readonly agent: Dispatcher;
 
@@ -202,6 +208,7 @@ export class PhilipsTVClient {
     this.config = config;
     this.debug = debug ?? (() => {});
     this.authSession = new DigestAuthSession(config.username, config.password);
+    this.adb = config.adb ? new AdbClient(config.ip) : null;
     this.agent = createTvAgent({
       certFingerprint: config.certFingerprint,
       onUnpinned: () => this.debug(
@@ -613,7 +620,33 @@ export class PhilipsTVClient {
       }
     }
 
-    return apps;
+    if (!this.adb) {
+      return apps;
+    }
+
+    // ADB-only apps are deliberately not cached above, so launchApplication routes them to ADB
+    try {
+      const known = new Set(apps.map(app => app.intent?.component?.packageName));
+      const adbApps = (await this.adb.getApplications()).filter(app => !known.has(app.intent?.component?.packageName));
+      this.debug(`ADB found ${adbApps.length} additional app(s)`);
+      return [...apps, ...adbApps];
+    } catch (error) {
+      this.debug(`ADB app listing failed: ${(error as Error).message}`);
+      return apps;
+    }
+  }
+
+  /** Launch over ADB; false when ADB is disabled or fails. */
+  private async launchViaAdb(packageName: string): Promise<boolean> {
+    if (!this.adb) {
+      return false;
+    }
+    try {
+      return await this.adb.launch(packageName);
+    } catch (error) {
+      this.debug(`ADB launch failed: ${(error as Error).message}`);
+      return false;
+    }
   }
 
   /**
@@ -645,15 +678,20 @@ export class PhilipsTVClient {
       };
 
       if (className) {
-        return attempt({
+        return await attempt({
           component: { packageName, className },
           action: action ?? 'android.intent.action.MAIN',
-        });
+        }) || this.launchViaAdb(packageName);
       }
 
       const cached = this.appIntents.get(packageName);
       if (cached) {
-        return attempt(cached);
+        return await attempt(cached) || this.launchViaAdb(packageName);
+      }
+
+      // Not advertised by the TV: JointSpace would reject it, ADB launches by package alone
+      if (this.adb) {
+        return this.launchViaAdb(packageName);
       }
 
       // No cached intent (the TV hasn't enumerated its apps since we started).
@@ -679,7 +717,17 @@ export class PhilipsTVClient {
     const result = await this.get<{ component?: { packageName?: string } }>('/activities/current');
     // The literal "NA" (no trackable app in the foreground) is passed through —
     // the input manager resolves it against the current input.
-    return result?.component?.packageName ?? null;
+    const packageName = result?.component?.packageName ?? null;
+
+    // JointSpace also reports "NA" for third-party apps; ADB knows the real one
+    if (this.adb && packageName === 'NA') {
+      try {
+        return await this.adb.getCurrentPackage() ?? packageName;
+      } catch {
+        return packageName;
+      }
+    }
+    return packageName;
   }
 
   /**

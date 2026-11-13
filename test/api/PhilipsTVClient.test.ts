@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { PhilipsTVClient } from '../../src/api/PhilipsTVClient.js';
+import { AdbClient } from '../../src/api/AdbClient.js';
 import type * as UtilsModule from '../../src/api/utils.js';
 
 // ============================================================================
@@ -990,6 +991,45 @@ describe('PhilipsTVClient', () => {
   });
 
   describe('launchApplication', () => {
+    describe('with ADB enabled', () => {
+      let adbClient: PhilipsTVClient;
+      let adbLaunch: ReturnType<typeof vi.spyOn>;
+
+      beforeEach(() => {
+        adbClient = new PhilipsTVClient({ ...TEST_CONFIG, adb: true });
+        adbLaunch = vi.spyOn(AdbClient.prototype, 'launch').mockResolvedValue(true);
+      });
+
+      it('launches apps the TV does not advertise over ADB, without a JointSpace launch', async () => {
+        const promise = adbClient.launchApplication('com.google.android.youtube.tv');
+        await vi.runAllTimersAsync();
+
+        expect(await promise).toBe(true);
+        expect(adbLaunch).toHaveBeenCalledWith('com.google.android.youtube.tv');
+        expect(mockFetch).not.toHaveBeenCalledWith(expect.stringContaining('/activities/launch'), expect.anything(), expect.any(Number));
+      });
+
+      it('falls back to ADB when the TV rejects an explicit intent', async () => {
+        mockFetch.mockReturnValue(mockResponse({}, 400));
+
+        const promise = adbClient.launchApplication('com.netflix.ninja', 'com.netflix.ninja.MainActivity');
+        await vi.runAllTimersAsync();
+
+        expect(await promise).toBe(true);
+        expect(adbLaunch).toHaveBeenCalledWith('com.netflix.ninja');
+      });
+
+      it('resolves an "NA" foreground app over ADB', async () => {
+        vi.spyOn(AdbClient.prototype, 'getCurrentPackage').mockResolvedValue('com.google.android.youtube.tv');
+        mockFetch.mockReturnValue(mockResponse({ component: { packageName: 'NA', className: 'NA' } }));
+
+        const promise = adbClient.getCurrentActivity();
+        await vi.runAllTimersAsync();
+
+        expect(await promise).toBe('com.google.android.youtube.tv');
+      });
+    });
+
     it('should POST intent with correct action', async () => {
       mockFetch.mockReturnValue(mockResponse({}));
 
