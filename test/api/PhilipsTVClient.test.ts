@@ -990,46 +990,147 @@ describe('PhilipsTVClient', () => {
     });
   });
 
-  describe('launchApplication', () => {
-    describe('with ADB enabled', () => {
-      let adbClient: PhilipsTVClient;
-      let adbLaunch: ReturnType<typeof vi.spyOn>;
+  // ==========================================================================
+  // ADB FALLBACK
+  // ==========================================================================
 
-      beforeEach(() => {
-        adbClient = new PhilipsTVClient({ ...TEST_CONFIG, adb: true });
-        adbLaunch = vi.spyOn(AdbClient.prototype, 'launch').mockResolvedValue(true);
+  describe('with ADB enabled', () => {
+    const YOUTUBE = 'com.google.android.youtube.tv';
+    const NETFLIX = 'com.netflix.ninja';
+    const app = (packageName: string) => ({
+      id: packageName,
+      label: packageName,
+      intent: { component: { packageName, className: `${packageName}.Main` }, action: 'android.intent.action.MAIN' },
+    });
+    const launchCalls = () => mockFetch.mock.calls.filter(([url]) => String(url).includes('/activities/launch'));
+    const run = async <T>(promise: Promise<T>): Promise<T> => {
+      await vi.runAllTimersAsync();
+      return promise;
+    };
+
+    let adbClient: PhilipsTVClient;
+    let adbLaunch: ReturnType<typeof vi.spyOn>;
+    let adbList: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+      adbClient = new PhilipsTVClient({ ...TEST_CONFIG, adb: true });
+      adbLaunch = vi.spyOn(AdbClient.prototype, 'launch').mockResolvedValue(true);
+      adbList = vi.spyOn(AdbClient.prototype, 'getApplications').mockResolvedValue([app(NETFLIX), app(YOUTUBE)]);
+    });
+
+    describe('getApplicationList', () => {
+      it('adds apps only ADB reports, once per package', async () => {
+        mockFetch.mockReturnValue(mockResponse({ applications: [app(NETFLIX)] }));
+
+        const { apps, complete } = await run(adbClient.getApplicationList());
+
+        expect(apps.map(a => a.intent?.component?.packageName)).toEqual([NETFLIX, YOUTUBE]);
+        expect(complete).toBe(true);
       });
 
-      it('launches apps the TV does not advertise over ADB, without a JointSpace launch', async () => {
-        const promise = adbClient.launchApplication('com.google.android.youtube.tv');
-        await vi.runAllTimersAsync();
+      it('flags the list incomplete when ADB does not answer, so nothing is pruned', async () => {
+        adbList.mockRejectedValue(new Error('device offline'));
+        mockFetch.mockReturnValue(mockResponse({ applications: [app(NETFLIX)] }));
 
-        expect(await promise).toBe(true);
-        expect(adbLaunch).toHaveBeenCalledWith('com.google.android.youtube.tv');
-        expect(mockFetch).not.toHaveBeenCalledWith(expect.stringContaining('/activities/launch'), expect.anything(), expect.any(Number));
+        const { apps, complete } = await run(adbClient.getApplicationList());
+
+        expect(apps).toHaveLength(1);
+        expect(complete).toBe(false);
       });
 
-      it('falls back to ADB when the TV rejects an explicit intent', async () => {
-        mockFetch.mockReturnValue(mockResponse({}, 400));
+      it('flags the list incomplete when JointSpace does not answer', async () => {
+        mockFetch.mockReturnValue(mockResponse(null, 500));
 
-        const promise = adbClient.launchApplication('com.netflix.ninja', 'com.netflix.ninja.MainActivity');
-        await vi.runAllTimersAsync();
+        const { apps, complete } = await run(adbClient.getApplicationList());
 
-        expect(await promise).toBe(true);
-        expect(adbLaunch).toHaveBeenCalledWith('com.netflix.ninja');
+        expect(apps).toHaveLength(2);
+        expect(complete).toBe(false);
       });
 
-      it('resolves an "NA" foreground app over ADB', async () => {
-        vi.spyOn(AdbClient.prototype, 'getCurrentPackage').mockResolvedValue('com.google.android.youtube.tv');
-        mockFetch.mockReturnValue(mockResponse({ component: { packageName: 'NA', className: 'NA' } }));
+      it('gives ADB the caller-supplied timeout as a deadline', async () => {
+        mockFetch.mockReturnValue(mockResponse({ applications: [] }));
+        const before = Date.now();
 
-        const promise = adbClient.getCurrentActivity();
-        await vi.runAllTimersAsync();
+        await run(adbClient.getApplicationList(6000));
 
-        expect(await promise).toBe('com.google.android.youtube.tv');
+        expect(adbList).toHaveBeenCalledWith(before + 6000);
       });
     });
 
+    describe('launchApplication', () => {
+      const listApps = async () => {
+        mockFetch.mockReturnValue(mockResponse({ applications: [app(NETFLIX)] }));
+        await run(adbClient.getApplications());
+        mockFetch.mockReset();
+      };
+
+      it('launches apps only ADB lists over ADB, without a JointSpace launch', async () => {
+        await listApps();
+
+        expect(await run(adbClient.launchApplication(YOUTUBE))).toBe(true);
+        expect(adbLaunch).toHaveBeenCalledWith(YOUTUBE, undefined, expect.any(Number));
+        expect(launchCalls()).toHaveLength(0);
+      });
+
+      it('tries JointSpace first for apps the TV advertises, then ADB', async () => {
+        await listApps();
+        mockFetch.mockReturnValue(mockResponse({}, 400));
+
+        expect(await run(adbClient.launchApplication(NETFLIX))).toBe(true);
+        expect(launchCalls()).toHaveLength(1);
+        expect(adbLaunch).toHaveBeenCalledWith(NETFLIX, undefined, expect.any(Number));
+      });
+
+      it('falls back to ADB with the explicit activity, inside the interactive budget', async () => {
+        mockFetch.mockReturnValue(mockResponse({}, 400));
+        const before = Date.now();
+
+        expect(await run(adbClient.launchApplication(NETFLIX, `${NETFLIX}.MainActivity`))).toBe(true);
+        const [pkg, cls, deadline] = adbLaunch.mock.calls[0] as [string, string, number];
+        expect([pkg, cls]).toEqual([NETFLIX, `${NETFLIX}.MainActivity`]);
+        expect(deadline).toBeLessThanOrEqual(before + 7000);
+      });
+
+      it('still tries the JointSpace guess when ADB cannot launch an ADB-only app', async () => {
+        await listApps();
+        adbLaunch.mockRejectedValue(new Error('device offline'));
+        mockFetch.mockReturnValue(mockResponse({}));
+        const onAttempt = vi.fn();
+
+        expect(await run(adbClient.launchApplication(YOUTUBE, undefined, undefined, onAttempt))).toBe(true);
+        expect(onAttempt).toHaveBeenCalledWith(`${YOUTUBE}.MainActivity`);
+        expect(adbLaunch).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    describe('foreground app', () => {
+      beforeEach(() => {
+        mockFetch.mockReturnValue(mockResponse({ component: { packageName: 'NA', className: 'NA' } }));
+      });
+
+      it('resolves an "NA" foreground app over ADB', async () => {
+        vi.spyOn(AdbClient.prototype, 'getCurrentComponent').mockResolvedValue({ packageName: YOUTUBE, className: `${YOUTUBE}.Main` });
+
+        expect(await run(adbClient.getCurrentActivity())).toBe(YOUTUBE);
+      });
+
+      it('passes "NA" through when ADB cannot tell', async () => {
+        vi.spyOn(AdbClient.prototype, 'getCurrentComponent').mockRejectedValue(new Error('adb binary not found'));
+
+        expect(await run(adbClient.getCurrentActivity())).toBe('NA');
+        expect(await run(adbClient.getCurrentActivityIntent())).toBeNull();
+      });
+
+      it('lets Detect from TV capture an app the TV reports as "NA"', async () => {
+        vi.spyOn(AdbClient.prototype, 'getCurrentComponent').mockResolvedValue({ packageName: YOUTUBE, className: `${YOUTUBE}.Main` });
+
+        expect(await run(adbClient.getCurrentActivityIntent()))
+          .toEqual({ packageName: YOUTUBE, className: `${YOUTUBE}.Main`, action: 'android.intent.action.MAIN' });
+      });
+    });
+  });
+
+  describe('launchApplication', () => {
     it('should POST intent with correct action', async () => {
       mockFetch.mockReturnValue(mockResponse({}));
 

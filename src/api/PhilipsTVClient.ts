@@ -5,15 +5,16 @@
 
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { Dispatcher } from 'undici';
-import { TV_API_VERSION } from './constants.js';
+import { MIN_EXECUTION_MS, TV_API_VERSION } from './constants.js';
 import {
   buildUrl,
   createTvAgent,
   fetchWithTimeout,
+  sanitizeForLog,
   sendWakeOnLan,
 } from './utils.js';
 import { DigestAuthSession } from './DigestAuthSession.js';
-import { AdbClient } from './AdbClient.js';
+import { AdbClient, AdbUnavailableError } from './AdbClient.js';
 import type {
   PowerState,
   VolumeState,
@@ -53,14 +54,23 @@ const INTER_REQUEST_DELAY_MS = 100;
  */
 const REQUEST_BUDGET_MS = 7000;
 
-/** Remaining budget below which a request is not worth starting. */
-const MIN_EXECUTION_MS = 500;
-
 /** While a TV wakes from deep standby: how often it is asked for its power
  *  state, and how often the wake packets go out again while it does not answer
  *  at all (a packet sent while the network chip was still powering up is lost). */
 const WAKE_POLL_INTERVAL_MS = 2000;
 const WAKE_RESEND_INTERVAL_MS = 10_000;
+
+/** Budget for an ADB operation outside an interactive one (discovery). */
+const ADB_TIMEOUT_MS = 8000;
+
+/** Budget for reading the foreground app over ADB: it runs on every poll the
+ *  TV answers "NA", so it must stay well inside the polling interval. */
+const ADB_FOREGROUND_TIMEOUT_MS = 3000;
+
+/** What the TV's /activities/current reports when no app it tracks is in front. */
+const NO_APP_REPORT = 'NA';
+
+const MAIN_ACTION = 'android.intent.action.MAIN';
 
 /** Ambilight menu brightness node ID (from iOS app analysis). Only a fallback:
  *  node IDs differ between models and firmware, so the TV's own menu structure
@@ -182,6 +192,9 @@ export class PhilipsTVClient {
 
   /** ADB fallback for apps JointSpace hides or refuses to launch (null when disabled) */
   private readonly adb: AdbClient | null;
+
+  /** Packages only ADB lists: JointSpace rejects launching them, so they go to ADB first */
+  private adbOnlyPackages = new Set<string>();
 
   /** Dispatcher pinned to this TV's certificate (unpinned on legacy configs) */
   private readonly agent: Dispatcher;
@@ -400,6 +413,26 @@ export class PhilipsTVClient {
     return this.operationDeadline.run(Date.now() + REQUEST_BUDGET_MS, operation);
   }
 
+  /** Deadline for an ADB call: now + `timeout`, capped by the current interactive operation (if any). */
+  private adbDeadline(timeout: number): number {
+    return Math.min(this.operationDeadline.getStore() ?? Infinity, Date.now() + timeout);
+  }
+
+  /** Run an ADB operation; null when ADB is disabled or fails (failures are logged, backoff is not). */
+  private async withAdb<T>(label: string, operation: (adb: AdbClient) => Promise<T>): Promise<T | null> {
+    if (!this.adb) {
+      return null;
+    }
+    try {
+      return await operation(this.adb);
+    } catch (error) {
+      if (!(error instanceof AdbUnavailableError)) {
+        this.debug(`ADB ${label} failed: ${sanitizeForLog(error instanceof Error ? error.message : String(error))}`);
+      }
+      return null;
+    }
+  }
+
   /** The lesser of the per-request timeout and the budget left before `deadline`. */
   private budgetedTimeout(timeout: number, deadline: number): number {
     return Math.max(MIN_EXECUTION_MS, Math.min(timeout, deadline - Date.now()));
@@ -605,11 +638,44 @@ export class PhilipsTVClient {
   // APPLICATIONS
   // ==========================================================================
 
-  async getApplications(timeout?: number): Promise<TVApplication[]> {
-    const result = await this.get<TVApplicationList>('/applications', timeout);
-    const apps = result?.applications ?? [];
+  /**
+   * The TV's apps. `complete` is false when a source did not answer — JointSpace
+   * (TV unreachable) or ADB (still waking, debugging off) — so a caller must not
+   * treat an app missing from `apps` as uninstalled.
+   */
+  async getApplicationList(timeout?: number): Promise<{ apps: TVApplication[]; complete: boolean }> {
+    // Independent sources: query them side by side
+    const [jointSpace, adbApps] = await Promise.all([
+      this.fetchJointSpaceApps(timeout),
+      this.adb
+        ? this.withAdb('app listing', adb => adb.getApplications(this.adbDeadline(timeout ?? ADB_TIMEOUT_MS)))
+        : Promise.resolve([]),
+    ]);
+    const apps = jointSpace ?? [];
+    if (!adbApps) {
+      return { apps, complete: false };
+    }
 
-    // Cache intents so launchApplication can use the correct className/action
+    const known = new Set(apps.map(app => app.intent?.component?.packageName));
+    const extra = adbApps.filter(app => !known.has(app.intent?.component?.packageName));
+    if (this.adb) {
+      this.adbOnlyPackages = new Set(extra.map(app => app.id));
+      this.debug(`ADB adds ${extra.length} app(s)`);
+    }
+    return { apps: [...apps, ...extra], complete: jointSpace !== null };
+  }
+
+  async getApplications(timeout?: number): Promise<TVApplication[]> {
+    return (await this.getApplicationList(timeout)).apps;
+  }
+
+  /** JointSpace's app list, caching each launch intent for launchApplication; null when the TV did not answer. */
+  private async fetchJointSpaceApps(timeout?: number): Promise<TVApplication[] | null> {
+    const result = await this.get<TVApplicationList>('/applications', timeout);
+    if (!result) {
+      return null;
+    }
+    const apps = result.applications ?? [];
     for (const app of apps) {
       const comp = app.intent?.component;
       if (comp?.packageName && comp?.className && app.intent?.action) {
@@ -619,34 +685,12 @@ export class PhilipsTVClient {
         });
       }
     }
-
-    if (!this.adb) {
-      return apps;
-    }
-
-    // ADB-only apps are deliberately not cached above, so launchApplication routes them to ADB
-    try {
-      const known = new Set(apps.map(app => app.intent?.component?.packageName));
-      const adbApps = (await this.adb.getApplications()).filter(app => !known.has(app.intent?.component?.packageName));
-      this.debug(`ADB found ${adbApps.length} additional app(s)`);
-      return [...apps, ...adbApps];
-    } catch (error) {
-      this.debug(`ADB app listing failed: ${(error as Error).message}`);
-      return apps;
-    }
+    return apps;
   }
 
-  /** Launch over ADB; false when ADB is disabled or fails. */
-  private async launchViaAdb(packageName: string): Promise<boolean> {
-    if (!this.adb) {
-      return false;
-    }
-    try {
-      return await this.adb.launch(packageName);
-    } catch (error) {
-      this.debug(`ADB launch failed: ${(error as Error).message}`);
-      return false;
-    }
+  /** Launch over ADB within the operation's budget; false when ADB is disabled or fails. */
+  private async launchViaAdb(packageName: string, className?: string): Promise<boolean> {
+    return await this.withAdb('launch', adb => adb.launch(packageName, className, this.adbDeadline(ADB_TIMEOUT_MS))) ?? false;
   }
 
   /**
@@ -664,6 +708,9 @@ export class PhilipsTVClient {
    *   cannot work out which activity was tried — the resolution below draws on
    *   four different sources, and only this says which one was used. The last
    *   activity reported before a `false` result is the one the TV rejected.
+   *
+   * With ADB enabled, apps only ADB lists are launched over ADB first, and ADB
+   * is the last resort for anything JointSpace rejects.
    */
   launchApplication(
     packageName: string,
@@ -680,54 +727,75 @@ export class PhilipsTVClient {
       if (className) {
         return await attempt({
           component: { packageName, className },
-          action: action ?? 'android.intent.action.MAIN',
-        }) || this.launchViaAdb(packageName);
+          action: action ?? MAIN_ACTION,
+        }) || this.launchViaAdb(packageName, className);
       }
 
-      const cached = this.appIntents.get(packageName);
-      if (cached) {
-        return await attempt(cached) || this.launchViaAdb(packageName);
-      }
-
-      // Not advertised by the TV: JointSpace would reject it, ADB launches by package alone
-      if (this.adb) {
-        return this.launchViaAdb(packageName);
-      }
-
-      // No cached intent (the TV hasn't enumerated its apps since we started).
-      // The TV rejects a package-only launch, so guess the conventional
-      // `<package>.MainActivity` launcher activity.
-      const guessed = await attempt({
-        component: { packageName, className: `${packageName}.MainActivity` },
-        action: 'android.intent.action.MAIN',
-      });
-      if (guessed) {
+      const adbOnly = this.adbOnlyPackages.has(packageName);
+      if (adbOnly && await this.launchViaAdb(packageName)) {
         return true;
       }
-
-      // Guess rejected — refresh the TV's app list to learn the real launch
-      // intent and retry once (e.g. Disney+ uses a non-conventional activity).
-      await this.getApplications();
-      const learned = this.appIntents.get(packageName);
-      return learned ? attempt(learned) : false;
+      if (await this.launchViaJointSpace(packageName, attempt)) {
+        return true;
+      }
+      return !adbOnly && this.launchViaAdb(packageName);
     });
   }
 
-  async getCurrentActivity(): Promise<string | null> {
-    const result = await this.get<{ component?: { packageName?: string } }>('/activities/current');
-    // The literal "NA" (no trackable app in the foreground) is passed through —
-    // the input manager resolves it against the current input.
-    const packageName = result?.component?.packageName ?? null;
+  /** Launch with the cached intent, else the `<package>.MainActivity` guess, then the intent learned from a refresh. */
+  private async launchViaJointSpace(packageName: string, attempt: (intent: ApplicationIntent) => Promise<boolean>): Promise<boolean> {
+    const cached = this.appIntents.get(packageName);
+    if (cached) {
+      return attempt(cached);
+    }
 
-    // JointSpace also reports "NA" for third-party apps; ADB knows the real one
-    if (this.adb && packageName === 'NA') {
-      try {
-        return await this.adb.getCurrentPackage() ?? packageName;
-      } catch {
-        return packageName;
+    // No cached intent (the TV hasn't enumerated its apps since we started).
+    // The TV rejects a package-only launch, so guess the conventional
+    // `<package>.MainActivity` launcher activity.
+    const guessed = await attempt({
+      component: { packageName, className: `${packageName}.MainActivity` },
+      action: MAIN_ACTION,
+    });
+    if (guessed) {
+      return true;
+    }
+
+    // Guess rejected — refresh the TV's app list to learn the real launch
+    // intent and retry once (e.g. Disney+ uses a non-conventional activity).
+    await this.fetchJointSpaceApps();
+    const learned = this.appIntents.get(packageName);
+    return learned ? attempt(learned) : false;
+  }
+
+  /**
+   * The app in the foreground. The TV reports the literal "NA" when no app it
+   * tracks is in front (Home, live TV, and — on some firmwares — every
+   * third-party app); with ADB enabled that is resolved to the real app.
+   */
+  private async readCurrentActivity(): Promise<{ packageName: string; className: string | null; action: string | null } | null> {
+    const result = await this.get<{ component?: { packageName?: string; className?: string }; action?: string }>('/activities/current');
+    const packageName = result?.component?.packageName;
+    if (!packageName) {
+      return null;
+    }
+    if (packageName === NO_APP_REPORT) {
+      const component = await this.withAdb('foreground read', adb => adb.getCurrentComponent(this.adbDeadline(ADB_FOREGROUND_TIMEOUT_MS)));
+      if (component) {
+        return { ...component, action: MAIN_ACTION };
       }
     }
-    return packageName;
+    const className = result?.component?.className;
+    return {
+      packageName,
+      className: className && className !== NO_APP_REPORT ? className : null,
+      action: result?.action ?? null,
+    };
+  }
+
+  async getCurrentActivity(): Promise<string | null> {
+    // A remaining "NA" is passed through — the input manager resolves it
+    // against the current input.
+    return (await this.readCurrentActivity())?.packageName ?? null;
   }
 
   /**
@@ -735,19 +803,8 @@ export class PhilipsTVClient {
    * Used to capture the package/class/action of an app for a custom-app entry.
    */
   async getCurrentActivityIntent(): Promise<{ packageName: string; className: string | null; action: string | null } | null> {
-    const result = await this.get<{ component?: { packageName?: string; className?: string }; action?: string }>('/activities/current');
-    const packageName = result?.component?.packageName;
-    // The TV reports the literal "NA" when no trackable app is in the foreground
-    // (e.g. on Home or while watching TV).
-    if (!packageName || packageName === 'NA') {
-      return null;
-    }
-    const className = result?.component?.className;
-    return {
-      packageName,
-      className: className && className !== 'NA' ? className : null,
-      action: result?.action ?? null,
-    };
+    const activity = await this.readCurrentActivity();
+    return activity && activity.packageName !== NO_APP_REPORT ? activity : null;
   }
 
   private async launchIntent(intent: ApplicationIntent): Promise<boolean> {

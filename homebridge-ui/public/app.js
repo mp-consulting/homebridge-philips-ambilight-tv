@@ -263,6 +263,11 @@
   // API HELPERS
   // ============================================================================
 
+  /** What the server needs to reach a configured TV. */
+  const tvConnection = (tv) => ({
+    ip: tv.ip, username: tv.username, password: tv.password, mac: tv.mac, certFingerprint: tv.certFingerprint, adb: tv.adb,
+  });
+
   const api = {
     discover: () => withTimeout(
       homebridge.request('/discover'),
@@ -275,12 +280,8 @@
     wakeOnLan: (mac, ip) => homebridge.request('/wake-on-lan', { mac, ip }),
     // The TV's pinned certificate travels with its credentials so these
     // connections are verified like the plugin's own.
-    getSources: (tv) => homebridge.request('/get-sources', {
-      ip: tv.ip, username: tv.username, password: tv.password, mac: tv.mac, certFingerprint: tv.certFingerprint, adb: tv.adb,
-    }),
-    currentApp: (tv) => homebridge.request('/current-app', {
-      ip: tv.ip, username: tv.username, password: tv.password, mac: tv.mac, certFingerprint: tv.certFingerprint,
-    }),
+    getSources: (tv) => homebridge.request('/get-sources', tvConnection(tv)),
+    currentApp: (tv) => homebridge.request('/current-app', tvConnection(tv)),
   };
 
   // ============================================================================

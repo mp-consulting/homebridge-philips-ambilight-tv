@@ -117,11 +117,13 @@ function createMockDeps(overrides?: Partial<InputSourceManagerDeps>): InputSourc
     InputSource: { UUID: 'inputsource-uuid' },
   };
 
+  const getApplications = vi.fn().mockResolvedValue([]);
   return {
     Service: Svc as never,
     Characteristic: Char as never,
     tvClient: {
-      getApplications: vi.fn().mockResolvedValue([]),
+      getApplications,
+      getApplicationList: vi.fn(async () => ({ apps: await getApplications(), complete: true })),
       launchApplication: vi.fn().mockResolvedValue(true),
       setSource: vi.fn().mockResolvedValue(true),
       setChannel: vi.fn().mockResolvedValue(true),
@@ -1831,6 +1833,23 @@ describe('InputSourceManager', () => {
       await manager.fetchAppsFromTV();
       expect(manager.getSources().some(s => s.id === 'com.gone')).toBe(false);
       expect(deps.accessory.removeService).toHaveBeenCalled();
+    });
+
+    it('never counts an app missing from a partial listing (e.g. ADB not up yet)', async () => {
+      const deps = createMockDeps();
+      const getList = deps.tvClient.getApplicationList as ReturnType<typeof vi.fn>;
+      const manager = new InputSourceManager(deps);
+      manager.configureInputSources(createMockService() as never);
+
+      getList.mockResolvedValue({ apps: listing('com.keep', 'com.adb.only'), complete: true });
+      await manager.fetchAppsFromTV();
+      getList.mockResolvedValue({ apps: listing('com.keep', 'com.new'), complete: false });
+      await manager.fetchAppsFromTV();
+      await manager.fetchAppsFromTV();
+
+      const ids = manager.getSources().map(s => s.id);
+      expect(ids).toContain('com.adb.only');
+      expect(ids).toContain('com.new');
     });
 
     it('never removes a custom app, a configured-visible source or the current input', async () => {
